@@ -14,6 +14,15 @@
     />
   </head>
   <body>
+    <script>
+      // Hash-router bootstrap: ensure every path has a leading "/#/" so wouter's
+      // useHashLocation resolves routes even when Render serves bare paths like "/".
+      (function () {
+        if (!window.location.hash || window.location.hash === "#") {
+          window.location.replace(window.location.pathname + window.location.search + "#/");
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
