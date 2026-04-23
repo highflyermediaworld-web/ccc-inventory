@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { AppLayout } from "@/components/AppLayout";
+import { useRealtime } from "@/lib/realtime";
 import Dashboard from "@/pages/Dashboard";
 import Inventory from "@/pages/Inventory";
 import Marketplace from "@/pages/Marketplace";
@@ -15,6 +16,7 @@ import Scan from "@/pages/Scan";
 import NotFound from "@/pages/not-found";
 
 function AppRouter() {
+  useRealtime();
   return (
     <AppLayout>
       <Switch>

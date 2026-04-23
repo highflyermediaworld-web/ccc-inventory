@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRealtimeStatus } from "@/lib/realtime";
 
 const NAV = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard, testId: "nav-dashboard" },
@@ -75,8 +76,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             )}
             <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
           </button>
-          <div className="px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/40">
-            v1.0 · Collector
+          <div className="px-3 py-2 flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/40">
+            <span>v1.0 · Collector</span>
+            <ConnectionDot />
           </div>
         </div>
       </aside>
@@ -139,5 +141,27 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
     </div>
+  );
+}
+
+function ConnectionDot() {
+  const status = useRealtimeStatus();
+  const live = status === "open";
+  return (
+    <span
+      className="flex items-center gap-1.5 normal-case tracking-normal"
+      data-testid="realtime-status"
+      title={live ? "Realtime sync is live" : "Reconnecting to server\u2026"}
+    >
+      <span
+        className={cn(
+          "h-1.5 w-1.5 rounded-full",
+          live ? "bg-emerald-500" : "bg-amber-500 animate-pulse"
+        )}
+      />
+      <span className="text-[10px]">
+        {live ? "Live" : "Reconnecting\u2026"}
+      </span>
+    </span>
   );
 }

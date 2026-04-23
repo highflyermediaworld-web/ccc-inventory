@@ -37,6 +37,7 @@ import { AddItemDialog } from "@/components/AddItemDialog";
 import { CardThumb } from "@/components/CardThumb";
 import { SourceBadge } from "@/components/SourceBadge";
 import { ItemDetailDialog } from "@/components/ItemDetailDialog";
+import { EditableCell } from "@/components/EditableCell";
 import { formatCurrency, formatNumber, pnlClass } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { exportEbayCsv, exportTcgPlayerCsv } from "@/lib/exportListings";
@@ -62,6 +63,7 @@ import * as XLSX from "xlsx";
 const STATUSES = ["In Inventory", "Sold", "Listed", "Traded"];
 const CATEGORIES = ["Sealed", "Raw", "Slab"];
 const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG", "PSA 10", "PSA 9", "PSA 8", "CGC 9.5", "CGC 9", "BGS 7"];
+const RARITIES = ["Common", "Uncommon", "Rare", "Holo Rare", "Ultra Rare", "Secret Rare", "Promo", "Other"];
 
 type SortKey = "name" | "setName" | "marketValue" | "totalCost" | "gl" | "qty";
 type SortDir = "asc" | "desc";
@@ -322,6 +324,44 @@ export default function InventoryPage() {
       notes: r.notes ?? null,
     })).filter((x) => x.id);
     importMutation.mutate({ items: mapped, mode });
+  };
+
+  // Inline save: optimistic cache update then PATCH; rollback on error.
+  const saveField = async (id: string, field: string, newValue: any) => {
+    const prevList = queryClient.getQueryData<Inventory[]>(["/api/inventory"]);
+    const prevItem = prevList?.find((x) => x.id === id);
+    if (!prevItem) throw new Error("Item not found");
+    // Optimistic: compute next item including totalCost recompute for qty/costPerUnit.
+    const next: any = { ...prevItem, [field]: newValue };
+    if (field === "qty" || field === "costPerUnit") {
+      const q = Number(field === "qty" ? newValue : prevItem.qty) || 0;
+      const c = Number(field === "costPerUnit" ? newValue : prevItem.costPerUnit ?? 0) || 0;
+      next.totalCost = Math.round(q * c * 100) / 100;
+    }
+    queryClient.setQueryData<Inventory[] | undefined>(["/api/inventory"], (old) =>
+      old ? old.map((x) => (x.id === id ? (next as Inventory) : x)) : old
+    );
+    queryClient.setQueryData<Inventory | undefined>(["/api/inventory", id], next as Inventory);
+    try {
+      const res = await apiRequest("PATCH", `/api/inventory/${id}`, { [field]: newValue });
+      const saved = await res.json();
+      queryClient.setQueryData<Inventory[] | undefined>(["/api/inventory"], (old) =>
+        old ? old.map((x) => (x.id === id ? saved : x)) : old
+      );
+      queryClient.setQueryData<Inventory | undefined>(["/api/inventory", id], saved);
+    } catch (err: any) {
+      // Rollback
+      queryClient.setQueryData<Inventory[] | undefined>(["/api/inventory"], (old) =>
+        old ? old.map((x) => (x.id === id ? prevItem : x)) : old
+      );
+      queryClient.setQueryData<Inventory | undefined>(["/api/inventory", id], prevItem);
+      toast({
+        title: "Save failed",
+        description: err?.message || "Could not save change",
+        variant: "destructive",
+      });
+      throw err;
+    }
   };
 
   return (
@@ -591,21 +631,76 @@ export default function InventoryPage() {
                       <FranchiseBadge franchise={i.franchise} />
                     </td>
                     <td className="px-3 py-2.5"><CategoryBadge category={i.category} /></td>
-                    <td className="px-3 py-2.5 max-w-[180px] truncate text-muted-foreground" title={i.setName}>{i.setName}</td>
-                    <td className="px-3 py-2.5 max-w-[200px] truncate font-medium" title={i.name} data-testid={`text-name-${i.id}`}>{i.name}</td>
-                    <td className="px-3 py-2.5 text-xs text-muted-foreground">{i.condition ?? "—"}</td>
-                    <td className="px-3 py-2.5 text-right tnum">{i.qty}</td>
+                    <td className="px-3 py-2 max-w-[180px] text-muted-foreground" onClick={(e) => e.stopPropagation()} title={i.setName}>
+                      <EditableCell
+                        rowId={i.id}
+                        field="setName"
+                        value={i.setName}
+                        type="text"
+                        onSave={(v) => saveField(i.id, "setName", v)}
+                      />
+                    </td>
+                    <td className="px-3 py-2 max-w-[220px] font-medium" onClick={(e) => e.stopPropagation()} title={i.name} data-testid={`text-name-${i.id}`}>
+                      <EditableCell
+                        rowId={i.id}
+                        field="name"
+                        value={i.name}
+                        type="text"
+                        onSave={(v) => saveField(i.id, "name", v)}
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground" onClick={(e) => e.stopPropagation()}>
+                      <EditableCell
+                        rowId={i.id}
+                        field="condition"
+                        value={i.condition ?? ""}
+                        type="select"
+                        options={CONDITIONS}
+                        allowFreeEntry
+                        onSave={(v) => saveField(i.id, "condition", v || null)}
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right tnum" onClick={(e) => e.stopPropagation()}>
+                      <EditableCell
+                        rowId={i.id}
+                        field="qty"
+                        value={i.qty}
+                        type="number"
+                        integer
+                        numberMin={0}
+                        align="right"
+                        onSave={(v) => saveField(i.id, "qty", Number(v) || 0)}
+                      />
+                    </td>
                     <td className="px-3 py-2.5 text-right tnum text-muted-foreground">{formatCurrency(i.totalCost)}</td>
-                    <td className="px-3 py-2.5 text-right tnum font-semibold">
+                    <td className="px-3 py-2 text-right tnum font-semibold" onClick={(e) => e.stopPropagation()}>
                       <div className="flex flex-col items-end">
-                        <span>{formatCurrency(i.marketValue)}</span>
+                        <EditableCell
+                          rowId={i.id}
+                          field="marketValue"
+                          value={i.marketValue}
+                          type="number"
+                          align="right"
+                          display={(v) => <span>{formatCurrency(v)}</span>}
+                          onSave={(v) => saveField(i.id, "marketValue", v === null ? null : Number(v))}
+                        />
                         {sourceLabel && <SourceBadge source={sourceLabel} />}
                       </div>
                     </td>
                     <td className={`px-3 py-2.5 text-right tnum font-semibold ${pnlClass(gl)}`}>
                       {i.marketValue != null && i.totalCost != null ? (gl >= 0 ? "+" : "") + formatCurrency(gl) : "—"}
                     </td>
-                    <td className="px-3 py-2.5"><StatusBadge status={i.status} /></td>
+                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      <EditableCell
+                        rowId={i.id}
+                        field="status"
+                        value={i.status}
+                        type="select"
+                        options={STATUSES}
+                        display={(v) => <StatusBadge status={v} />}
+                        onSave={(v) => saveField(i.id, "status", v)}
+                      />
+                    </td>
                     <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1 opacity-60 group-hover:opacity-100">
                         <button

@@ -15,6 +15,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { registerScanRoutes } from "./scan";
 import { refreshItem, refreshAll, persistRefreshResult } from "./pricing";
+import { broadcast } from "./realtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -64,6 +65,8 @@ export async function registerRoutes(
       const result = await refreshItem(item);
       if (result.marketValue != null) {
         await persistRefreshResult(item, result);
+        const updated = await storage.getInventoryItem(item.id);
+        if (updated) broadcast({ type: "inventory:update", payload: updated });
       }
       res.json(result);
     } catch (err: any) {
@@ -76,6 +79,7 @@ export async function registerRoutes(
     // Long-running: client shows a spinner until this resolves.
     try {
       const result = await refreshAll();
+      broadcast({ type: "inventory:bulk", payload: {} });
       res.json(result);
     } catch (err: any) {
       console.error("pricing/refresh-all error:", err);
@@ -117,6 +121,7 @@ export async function registerRoutes(
           source: "Manual",
         });
       }
+      broadcast({ type: "inventory:create", payload: item });
       res.status(201).json(item);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -128,6 +133,20 @@ export async function registerRoutes(
       const patch = insertInventorySchema.partial().parse(req.body);
       const existing = await storage.getInventoryItem(req.params.id);
       if (!existing) return res.status(404).json({ message: "Not found" });
+      // Auto-recompute totalCost when qty or costPerUnit is edited.
+      if (
+        (patch.qty !== undefined || patch.costPerUnit !== undefined) &&
+        patch.totalCost === undefined
+      ) {
+        const nextQty = patch.qty !== undefined ? Number(patch.qty) : Number(existing.qty);
+        const nextCpu =
+          patch.costPerUnit !== undefined
+            ? Number(patch.costPerUnit)
+            : Number(existing.costPerUnit ?? 0);
+        if (!Number.isNaN(nextQty) && !Number.isNaN(nextCpu)) {
+          (patch as any).totalCost = Math.round(nextQty * nextCpu * 100) / 100;
+        }
+      }
       const item = await storage.updateInventory(req.params.id, patch);
       // If market value changed via manual edit, record a Manual history row
       if (
@@ -141,6 +160,7 @@ export async function registerRoutes(
           source: "Manual",
         });
       }
+      if (item) broadcast({ type: "inventory:update", payload: item });
       res.json(item);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -149,6 +169,7 @@ export async function registerRoutes(
 
   app.delete("/api/inventory/:id", async (req, res) => {
     await storage.deleteInventory(req.params.id);
+    broadcast({ type: "inventory:delete", payload: { id: req.params.id } });
     res.json({ ok: true });
   });
 
@@ -182,6 +203,9 @@ export async function registerRoutes(
       for (const l of existing.filter((x) => x.itemId === item.id && !x.sellerName)) {
         await storage.deactivateListing(l.id);
       }
+      if (updated) broadcast({ type: "inventory:update", payload: updated });
+      broadcast({ type: "transactions:update", payload: {} });
+      broadcast({ type: "listings:update", payload: {} });
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -209,6 +233,7 @@ export async function registerRoutes(
           }
         }
       }
+      broadcast({ type: "inventory:bulk", payload: {} });
       res.json({ ok: true, count: items.length });
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -243,7 +268,9 @@ export async function registerRoutes(
         itemSnapshot: null,
         active: 1,
       });
-      await storage.updateInventory(itemId, { status: "Listed", asking: askingPrice });
+      const updInv = await storage.updateInventory(itemId, { status: "Listed", asking: askingPrice });
+      broadcast({ type: "listings:update", payload: {} });
+      if (updInv) broadcast({ type: "inventory:update", payload: updInv });
       res.status(201).json(listing);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -258,8 +285,10 @@ export async function registerRoutes(
         askingPrice,
       });
       if (updated?.itemId) {
-        await storage.updateInventory(updated.itemId, { asking: askingPrice });
+        const updInv = await storage.updateInventory(updated.itemId, { asking: askingPrice });
+        if (updInv) broadcast({ type: "inventory:update", payload: updInv });
       }
+      broadcast({ type: "listings:update", payload: {} });
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -271,11 +300,13 @@ export async function registerRoutes(
     const listing = await storage.getListing(id);
     await storage.deactivateListing(id);
     if (listing?.itemId) {
-      await storage.updateInventory(listing.itemId, {
+      const updInv = await storage.updateInventory(listing.itemId, {
         status: "In Inventory",
         asking: null,
       });
+      if (updInv) broadcast({ type: "inventory:update", payload: updInv });
     }
+    broadcast({ type: "listings:update", payload: {} });
     res.json({ ok: true });
   });
 
@@ -325,6 +356,10 @@ export async function registerRoutes(
         notes: `Purchased from ${listing.sellerName}`,
       });
       await storage.deactivateListing(id);
+      const newItem = await storage.getInventoryItem(newId);
+      if (newItem) broadcast({ type: "inventory:create", payload: newItem });
+      broadcast({ type: "listings:update", payload: {} });
+      broadcast({ type: "transactions:update", payload: {} });
       await storage.createTransaction({
         type: "Buy",
         itemId: newId,
@@ -385,6 +420,7 @@ export async function registerRoutes(
         direction: "Outgoing",
         counterparty: listing.sellerName,
       });
+      broadcast({ type: "trades:update", payload: trade });
       res.status(201).json(trade);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -448,12 +484,16 @@ export async function registerRoutes(
       });
     }
     const updated = await storage.updateTrade(id, { status: "Accepted" });
+    broadcast({ type: "trades:update", payload: updated });
+    broadcast({ type: "inventory:bulk", payload: {} });
+    broadcast({ type: "transactions:update", payload: {} });
     res.json(updated);
   });
 
   app.post("/api/trades/:id/decline", async (req, res) => {
     const id = Number(req.params.id);
     const updated = await storage.updateTrade(id, { status: "Declined" });
+    broadcast({ type: "trades:update", payload: updated });
     res.json(updated);
   });
 

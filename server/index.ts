@@ -5,6 +5,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { init as initDatabase } from "./storage";
 import { createServer } from "node:http";
+import { attachRealtime } from "./realtime";
 
 const app = express();
 const httpServer = createServer(app);
@@ -65,6 +66,7 @@ app.use((req, res, next) => {
 
 (async () => {
   await initDatabase();
+  attachRealtime(httpServer);
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
