@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 // Inventory items — primary key is the human-readable SKU (e.g. "PK-001")
@@ -144,3 +145,34 @@ export const insertCustomerRequestSchema = createInsertSchema(customerRequests).
 });
 export type InsertCustomerRequest = z.infer<typeof insertCustomerRequestSchema>;
 export type CustomerRequest = typeof customerRequests.$inferSelect;
+
+// ── Auth: users + sessions ───────────────────────────────────────
+export const users = sqliteTable("users", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  username: text("username").notNull().unique(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  role: text("role").notNull().default("admin"), // 'admin' | 'staff' (future)
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+});
+
+export const sessions = sqliteTable("sessions", {
+  id: text("id").primaryKey(), // random hex token
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: integer("expires_at").notNull(), // unix seconds
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+});
+
+export const insertUserSchema = createInsertSchema(users)
+  .omit({ id: true, passwordHash: true, createdAt: true, role: true })
+  .extend({
+    username: z.string().trim().min(2, "Username too short").max(32),
+    email: z.string().trim().email("Enter a valid email"),
+    password: z.string().min(8, "At least 8 characters"),
+  });
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
+export type PublicUser = Omit<User, "passwordHash">;
+export type Session = typeof sessions.$inferSelect;

@@ -248,7 +248,7 @@ export default function ShopPage() {
 
         {/* Subtle admin link pinned bottom-right */}
         <a
-          href="/#/"
+          href="/#/admin"
           className="absolute bottom-2 right-3 text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/30 hover:text-sidebar-foreground/70 transition-colors"
           data-testid="link-admin"
         >

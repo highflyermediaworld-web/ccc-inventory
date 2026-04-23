@@ -177,12 +177,12 @@ function getStatus() {
 
 export function useRealtime() {
   useEffect(() => {
-    // Public shop page doesn't need live sync — skip opening the socket.
-    if (
-      typeof window !== "undefined" &&
-      window.location.hash.startsWith("#/shop")
-    ) {
-      return;
+    // Only connect the WebSocket inside the admin area. The public shop page,
+    // login, and signup pages never need live sync — and the server now
+    // rejects unauthenticated upgrades, so trying would just loop.
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash;
+      if (!hash.startsWith("#/admin")) return;
     }
     startOnce();
   }, []);

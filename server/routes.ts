@@ -7,6 +7,7 @@ import {
   insertListingSchema,
   insertTradeSchema,
   insertCustomerRequestSchema,
+  insertUserSchema,
   inventory,
   listings,
   transactions,
@@ -20,6 +21,14 @@ import { broadcast } from "./realtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
+import {
+  requireAuth,
+  hashPassword,
+  verifyPassword,
+  cookieOptions,
+  SESSION_TTL_SECONDS,
+  SESSION_COOKIE,
+} from "./auth";
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
 const CUSTOMER_UPLOADS_DIR = path.join(UPLOADS_DIR, "customer");
@@ -32,6 +41,106 @@ export async function registerRoutes(
 ): Promise<Server> {
   // ===== Uploads (scan photos) =====
   app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "30d" }));
+
+  // ===== AUTH (public) =====
+  // Signup is gated by ADMIN_INVITE_CODE env var. The status endpoint lets the
+  // UI show the right message when signup is disabled.
+  app.get("/api/auth/status", async (_req, res) => {
+    try {
+      const userCount = await storage.countUsers();
+      const signupEnabled = !!(process.env.ADMIN_INVITE_CODE ?? "").trim();
+      res.json({ userCount, signupEnabled });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Status unavailable" });
+    }
+  });
+
+  app.post("/api/auth/signup", async (req, res) => {
+    try {
+      const inviteCode = (process.env.ADMIN_INVITE_CODE ?? "").trim();
+      if (!inviteCode) {
+        return res
+          .status(503)
+          .json({ message: "Sign-up not available \u2014 ADMIN_INVITE_CODE not configured" });
+      }
+      const schema = insertUserSchema.extend({ inviteCode: z.string() });
+      const parsed = schema.parse(req.body);
+      if (parsed.inviteCode !== inviteCode) {
+        return res.status(403).json({ message: "Invalid invite code" });
+      }
+      // Uniqueness
+      const existingByName = await storage.getUserByUsernameOrEmail(parsed.username);
+      if (existingByName) return res.status(409).json({ message: "Username already taken" });
+      const existingByEmail = await storage.getUserByUsernameOrEmail(parsed.email);
+      if (existingByEmail) return res.status(409).json({ message: "Email already registered" });
+
+      const passwordHash = await hashPassword(parsed.password);
+      const user = await storage.createUser({
+        username: parsed.username.trim(),
+        email: parsed.email.trim().toLowerCase(),
+        passwordHash,
+      });
+      const session = await storage.createSession(user.id, SESSION_TTL_SECONDS);
+      res.cookie(SESSION_COOKIE, session.id, cookieOptions());
+      const { passwordHash: _omit, ...pub } = user;
+      res.status(201).json({ user: pub });
+    } catch (err: any) {
+      if (err?.issues) {
+        return res.status(400).json({ message: err.issues[0]?.message || "Invalid input" });
+      }
+      res.status(400).json({ message: err?.message || "Sign-up failed" });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const schema = z.object({
+        identifier: z.string().trim().min(1),
+        password: z.string().min(1),
+      });
+      const { identifier, password } = schema.parse(req.body);
+      const user = await storage.getUserByUsernameOrEmail(identifier);
+      if (!user) return res.status(401).json({ message: "Invalid credentials" });
+      const ok = await verifyPassword(password, user.passwordHash);
+      if (!ok) return res.status(401).json({ message: "Invalid credentials" });
+      const session = await storage.createSession(user.id, SESSION_TTL_SECONDS);
+      res.cookie(SESSION_COOKIE, session.id, cookieOptions());
+      const { passwordHash: _omit, ...pub } = user;
+      res.json({ user: pub });
+    } catch (err: any) {
+      res.status(400).json({ message: err?.message || "Login failed" });
+    }
+  });
+
+  app.post("/api/auth/logout", requireAuth, async (req, res) => {
+    try {
+      const token = req.cookies?.[SESSION_COOKIE];
+      if (token) await storage.deleteSession(token);
+      res.clearCookie(SESSION_COOKIE, { path: "/" });
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Logout failed" });
+    }
+  });
+
+  app.get("/api/auth/me", requireAuth, async (req, res) => {
+    res.json({ user: (req as any).user });
+  });
+
+  // ===== AUTH GUARD =====
+  // Every /api/* route is protected except the allowlist below. This runs after
+  // all /api/auth/* handlers (registered above) because Express resolves them
+  // in definition order — routes registered first match first.
+  const PUBLIC_PREFIXES = [
+    "/api/auth/",
+    "/api/shop/", // public storefront: listings, buy, trade, upload
+  ];
+  app.use("/api", (req, res, next) => {
+    // Full req.path here is relative to the "/api" mount: "/inventory", etc.
+    const full = "/api" + req.path;
+    if (PUBLIC_PREFIXES.some((p) => full.startsWith(p))) return next();
+    return requireAuth(req, res, next);
+  });
 
   // Accept a base64 image, persist to disk, return a relative URL.
   app.post("/api/uploads/image", async (req, res) => {

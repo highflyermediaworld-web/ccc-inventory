@@ -48,13 +48,24 @@ The server listens on port 5000 (configurable via `PORT`).
 
 3. **In Render:** New → Blueprint → point it at the repo. Render reads `render.yaml` and creates a web service + 1 GB persistent disk for scan uploads.
 
-4. **Paste the three secrets** when Render prompts:
+4. **Paste the secrets** when Render prompts:
 
    - `TURSO_DATABASE_URL` — the libsql:// URL from step 1
    - `TURSO_AUTH_TOKEN` — the token from step 1
    - `ANTHROPIC_API_KEY` — your Anthropic API key
+   - `ADMIN_INVITE_CODE` — a secret code required for new admin sign-ups (set any hard-to-guess string)
+   - `ADMIN_INITIAL_USERNAME` — username for the bootstrap admin (e.g. `chris`). Only used on first boot when no users exist; **delete this var after you've signed in once** as a best practice.
+   - `ADMIN_INITIAL_PASSWORD` — password for the bootstrap admin. **Delete this var after first sign-in.**
 
-5. **Deploy.** First boot runs migrations and seeds the demo inventory + mock marketplace listings + mock incoming trades.
+5. **Deploy.** First boot runs migrations, seeds the demo inventory + mock marketplace listings + mock incoming trades, and (if `ADMIN_INITIAL_USERNAME`/`ADMIN_INITIAL_PASSWORD` are set) creates your bootstrap admin account.
+
+## Authentication
+
+- The customer shop at `/` is public — anyone can browse and submit Buy/Trade requests.
+- Every admin page (`/admin`, `/admin/inventory`, `/admin/scan`, `/admin/marketplace`, `/admin/trades`, `/admin/transactions`, `/admin/requests`) requires sign-in.
+- Sessions last 24 hours and are stored in the `sessions` table.
+- To invite an additional admin, share your `ADMIN_INVITE_CODE` — they sign up at `/signup`.
+- To rotate the invite code, update the env var in Render; existing admins keep their accounts.
 
 ## Features
 

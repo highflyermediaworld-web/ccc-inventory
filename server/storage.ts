@@ -5,6 +5,8 @@ import {
   trades,
   priceHistory,
   customerRequests,
+  users,
+  sessions,
 } from "@shared/schema";
 import type {
   Inventory,
@@ -19,10 +21,13 @@ import type {
   InsertPriceHistory,
   CustomerRequest,
   InsertCustomerRequest,
+  User,
+  Session,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
-import { eq, desc, asc } from "drizzle-orm";
+import { eq, desc, asc, or, sql } from "drizzle-orm";
+import crypto from "node:crypto";
 
 const client = createClient({
   url: process.env.TURSO_DATABASE_URL || "file:./data.db",
@@ -120,6 +125,25 @@ export async function runMigrations() {
       );
 
       CREATE INDEX IF NOT EXISTS idx_customer_requests_status ON customer_requests(status, created_at);
+
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'admin',
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
     `);
     console.log("[db] Migrations complete");
   } catch (err) {
@@ -180,6 +204,15 @@ export interface IStorage {
     id: number,
     patch: Partial<CustomerRequest>
   ): Promise<CustomerRequest | undefined>;
+
+  // Auth
+  createUser(data: { username: string; email: string; passwordHash: string }): Promise<User>;
+  getUserByUsernameOrEmail(identifier: string): Promise<User | undefined>;
+  getUserById(id: number): Promise<User | undefined>;
+  countUsers(): Promise<number>;
+  createSession(userId: number, ttlSeconds: number): Promise<Session>;
+  getSession(token: string): Promise<Session | undefined>;
+  deleteSession(token: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -359,6 +392,64 @@ export class DatabaseStorage implements IStorage {
       .where(eq(customerRequests.id, id))
       .returning();
     return result[0] as CustomerRequest | undefined;
+  }
+
+  // ── Auth ──────────────────────────────────────────────────────────
+  async createUser(data: {
+    username: string;
+    email: string;
+    passwordHash: string;
+  }): Promise<User> {
+    const result = await db
+      .insert(users)
+      .values({
+        username: data.username,
+        email: data.email,
+        passwordHash: data.passwordHash,
+      })
+      .returning();
+    return result[0] as User;
+  }
+
+  async getUserByUsernameOrEmail(identifier: string): Promise<User | undefined> {
+    const id = identifier.trim();
+    const rows = await db
+      .select()
+      .from(users)
+      .where(or(eq(users.username, id), eq(users.email, id)))
+      .all();
+    return rows[0] as User | undefined;
+  }
+
+  async getUserById(id: number): Promise<User | undefined> {
+    const rows = await db.select().from(users).where(eq(users.id, id)).all();
+    return rows[0] as User | undefined;
+  }
+
+  async countUsers(): Promise<number> {
+    const rows = await db.select({ c: sql<number>`count(*)` }).from(users).all();
+    const n = (rows[0] as any)?.c;
+    return typeof n === "number" ? n : Number(n ?? 0);
+  }
+
+  async createSession(userId: number, ttlSeconds: number): Promise<Session> {
+    const token = crypto.randomBytes(32).toString("hex");
+    const now = Math.floor(Date.now() / 1000);
+    const expiresAt = now + ttlSeconds;
+    const result = await db
+      .insert(sessions)
+      .values({ id: token, userId, expiresAt })
+      .returning();
+    return result[0] as Session;
+  }
+
+  async getSession(token: string): Promise<Session | undefined> {
+    const rows = await db.select().from(sessions).where(eq(sessions.id, token)).all();
+    return rows[0] as Session | undefined;
+  }
+
+  async deleteSession(token: string): Promise<void> {
+    await db.delete(sessions).where(eq(sessions.id, token));
   }
 }
 

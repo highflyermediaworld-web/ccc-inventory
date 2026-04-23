@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { db } from "./storage";
+import { db, storage } from "./storage";
 import { inventory, listings, trades } from "@shared/schema";
+import { hashPassword } from "./auth";
 
 type SeedItem = {
   id: string;
@@ -387,6 +388,27 @@ export async function runSeed() {
       });
     }
     console.log(`[seed] inserted ${MOCK_LISTINGS.length} mock listings`);
+  }
+
+  // Seed initial admin from environment variables (only if no users exist).
+  // Env vars: ADMIN_INITIAL_USERNAME + ADMIN_INITIAL_PASSWORD. Safe to run
+  // repeatedly — becomes a no-op after the first user is created.
+  try {
+    const userCount = await storage.countUsers();
+    const seedUsername = (process.env.ADMIN_INITIAL_USERNAME ?? "").trim();
+    const seedPassword = process.env.ADMIN_INITIAL_PASSWORD ?? "";
+    if (userCount === 0 && seedUsername && seedPassword) {
+      const email = `${seedUsername}@cpulls.cards`;
+      const passwordHash = await hashPassword(seedPassword);
+      await storage.createUser({
+        username: seedUsername,
+        email: email.toLowerCase(),
+        passwordHash,
+      });
+      console.log(`[seed] created initial admin user: ${seedUsername}`);
+    }
+  } catch (err) {
+    console.error("[seed] initial-admin seed failed:", err);
   }
 
   // Mock incoming trades

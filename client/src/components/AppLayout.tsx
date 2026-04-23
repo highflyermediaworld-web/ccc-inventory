@@ -5,6 +5,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Logo } from "./Logo";
 import { SocialLinks } from "./SocialLinks";
 import { useTheme } from "./ThemeProvider";
+import { useAuth } from "@/lib/auth";
 import type { CustomerRequest } from "@shared/schema";
 import {
   LayoutDashboard,
@@ -18,24 +19,32 @@ import {
   Sun,
   Menu,
   X,
+  LogOut,
+  UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRealtimeStatus } from "@/lib/realtime";
 
 const NAV = [
-  { path: "/", label: "Dashboard", icon: LayoutDashboard, testId: "nav-dashboard" },
-  { path: "/inventory", label: "Inventory", icon: Package, testId: "nav-inventory" },
-  { path: "/scan", label: "Scan", icon: ScanLine, testId: "nav-scan" },
-  { path: "/marketplace", label: "Marketplace", icon: Store, testId: "nav-marketplace" },
-  { path: "/trades", label: "Trades", icon: ArrowLeftRight, testId: "nav-trades" },
-  { path: "/transactions", label: "Transactions", icon: Receipt, testId: "nav-transactions" },
-  { path: "/requests", label: "Requests", icon: Inbox, testId: "nav-requests" },
+  { path: "/admin", label: "Dashboard", icon: LayoutDashboard, testId: "nav-dashboard" },
+  { path: "/admin/inventory", label: "Inventory", icon: Package, testId: "nav-inventory" },
+  { path: "/admin/scan", label: "Scan", icon: ScanLine, testId: "nav-scan" },
+  { path: "/admin/marketplace", label: "Marketplace", icon: Store, testId: "nav-marketplace" },
+  { path: "/admin/trades", label: "Trades", icon: ArrowLeftRight, testId: "nav-trades" },
+  { path: "/admin/transactions", label: "Transactions", icon: Receipt, testId: "nav-transactions" },
+  { path: "/admin/requests", label: "Requests", icon: Inbox, testId: "nav-requests" },
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { theme, toggle } = useTheme();
+  const { user, logout } = useAuth();
+
+  async function handleSignOut() {
+    await logout();
+    setLocation("/");
+  }
 
   // Unread "New" customer requests count — lights a dot on the Requests nav.
   const { data: newRequests = [] } = useQuery<CustomerRequest[]>({
@@ -55,9 +64,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   // Clear the "pulse" when the user actually visits the Requests page.
   const [lastSeenCount, setLastSeenCount] = useState(0);
   useEffect(() => {
-    if (location === "/requests") setLastSeenCount(unreadCount);
+    if (location === "/admin/requests") setLastSeenCount(unreadCount);
   }, [location, unreadCount]);
-  const showUnreadDot = unreadCount > 0 && location !== "/requests";
+  const showUnreadDot = unreadCount > 0 && location !== "/admin/requests";
 
   return (
     <TooltipContextHack>
@@ -71,7 +80,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {NAV.map((item) => {
             const active = location === item.path;
             const Icon = item.icon;
-            const isRequests = item.path === "/requests";
+            const isRequests = item.path === "/admin/requests";
             return (
               <Link
                 key={item.path}
@@ -120,6 +129,30 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             )}
             <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
           </button>
+
+          {user && (
+            <div className="mt-2 rounded-md border border-sidebar-border/50 bg-sidebar-accent/30 px-3 py-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <UserCircle className="h-4 w-4 shrink-0 text-sidebar-foreground/70" />
+                <span
+                  className="truncate text-xs font-semibold text-sidebar-foreground"
+                  data-testid="text-current-username"
+                  title={user.email}
+                >
+                  {user.username}
+                </span>
+              </div>
+              <button
+                onClick={handleSignOut}
+                data-testid="button-sign-out"
+                className="mt-2 flex w-full items-center gap-2 rounded-sm px-1 py-1 text-[11px] uppercase tracking-[0.14em] text-sidebar-foreground/60 hover:text-sidebar-foreground"
+              >
+                <LogOut className="h-3 w-3" />
+                Sign out
+              </button>
+            </div>
+          )}
+
           <div className="px-3 pt-2 pb-1 flex items-center justify-between">
             <span className="text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/40">
               @cpulls.cards
@@ -166,7 +199,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             {NAV.map((item) => {
               const active = location === item.path;
               const Icon = item.icon;
-              const isRequests = item.path === "/requests";
+              const isRequests = item.path === "/admin/requests";
               return (
                 <Link
                   key={item.path}
@@ -189,11 +222,28 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               );
             })}
           </nav>
-          <div className="px-4 pt-4 pb-8 flex items-center justify-between border-t border-sidebar-border mt-4">
-            <span className="text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/40">
-              @cpulls.cards
-            </span>
-            <SocialLinks size="sm" variant="ghost" />
+          <div className="px-4 pt-4 pb-6 border-t border-sidebar-border mt-4 space-y-3">
+            {user && (
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <UserCircle className="h-4 w-4 shrink-0 text-sidebar-foreground/70" />
+                  <span className="truncate text-sm font-semibold">{user.username}</span>
+                </div>
+                <button
+                  onClick={handleSignOut}
+                  data-testid="button-sign-out-mobile"
+                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] uppercase tracking-[0.14em] text-sidebar-foreground/60 hover:text-sidebar-foreground"
+                >
+                  <LogOut className="h-3 w-3" /> Sign out
+                </button>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/40">
+                @cpulls.cards
+              </span>
+              <SocialLinks size="sm" variant="ghost" />
+            </div>
           </div>
         </div>
       )}
