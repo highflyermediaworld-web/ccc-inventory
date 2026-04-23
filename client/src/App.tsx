@@ -1,4 +1,4 @@
-import { Switch, Route, Router } from "wouter";
+import { Switch, Route, Router, useLocation } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -13,10 +13,19 @@ import Marketplace from "@/pages/Marketplace";
 import Trades from "@/pages/Trades";
 import Transactions from "@/pages/Transactions";
 import Scan from "@/pages/Scan";
+import Shop from "@/pages/Shop";
+import Requests from "@/pages/Requests";
 import NotFound from "@/pages/not-found";
 
 function AppRouter() {
+  const [location] = useLocation();
   useRealtime();
+
+  // Public shop page renders standalone — no admin sidebar.
+  if (location.startsWith("/shop")) {
+    return <Shop />;
+  }
+
   return (
     <AppLayout>
       <Switch>
@@ -26,6 +35,7 @@ function AppRouter() {
         <Route path="/trades" component={Trades} />
         <Route path="/transactions" component={Transactions} />
         <Route path="/scan" component={Scan} />
+        <Route path="/requests" component={Requests} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

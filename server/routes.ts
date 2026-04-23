@@ -6,6 +6,7 @@ import {
   insertInventorySchema,
   insertListingSchema,
   insertTradeSchema,
+  insertCustomerRequestSchema,
   inventory,
   listings,
   transactions,
@@ -21,7 +22,9 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
+const CUSTOMER_UPLOADS_DIR = path.join(UPLOADS_DIR, "customer");
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+fs.mkdirSync(CUSTOMER_UPLOADS_DIR, { recursive: true });
 
 export async function registerRoutes(
   httpServer: Server,
@@ -495,6 +498,183 @@ export async function registerRoutes(
     const updated = await storage.updateTrade(id, { status: "Declined" });
     broadcast({ type: "trades:update", payload: updated });
     res.json(updated);
+  });
+
+  // ===== PUBLIC SHOP =====
+  // Public listings feed — only returns YOUR listings (sellerName null)
+  // with asking price > 0. Strips out admin-only fields (cost, P/L).
+  app.get("/api/shop/listings", async (_req, res) => {
+    try {
+      const inv = await storage.listInventory();
+      const filtered = inv
+        .filter((i) => i.status === "Listed" && typeof i.asking === "number" && (i.asking ?? 0) > 0)
+        .map((i) => ({
+          id: i.id,
+          name: i.name,
+          setName: i.setName,
+          rarity: i.rarity,
+          condition: i.condition,
+          category: i.category,
+          franchise: i.franchise,
+          qty: i.qty,
+          askingPrice: i.asking,
+          marketValue: i.marketValue,
+          imageUrl: i.imageUrl,
+          notes: i.notes,
+        }));
+      res.json(filtered);
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Shop load failed" });
+    }
+  });
+
+  // Customer upload (for trade photos) — base64 in, URL out
+  app.post("/api/shop/upload", async (req, res) => {
+    try {
+      const schema = z.object({
+        imageBase64: z.string().min(10),
+        mediaType: z.string().optional(),
+      });
+      const { imageBase64, mediaType } = schema.parse(req.body);
+      const clean = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+      const buffer = Buffer.from(clean, "base64");
+      if (buffer.length > 5 * 1024 * 1024) {
+        return res.status(400).json({ message: "Image exceeds 5 MB" });
+      }
+      const ext =
+        mediaType && mediaType.includes("png")
+          ? "png"
+          : mediaType && mediaType.includes("webp")
+            ? "webp"
+            : "jpg";
+      const filename = `${randomUUID()}.${ext}`;
+      const fullPath = path.join(CUSTOMER_UPLOADS_DIR, filename);
+      fs.writeFileSync(fullPath, buffer);
+      res.json({ url: `/uploads/customer/${filename}` });
+    } catch (err: any) {
+      res.status(400).json({ message: err?.message || "Upload failed" });
+    }
+  });
+
+  // Submit a Buy request
+  app.post("/api/shop/buy", async (req, res) => {
+    try {
+      const parsed = insertCustomerRequestSchema.parse({
+        ...req.body,
+        type: "Buy",
+      });
+      const request = await storage.createCustomerRequest(parsed);
+      broadcast({ type: "customerRequest:new", payload: request });
+      res.status(201).json({ ok: true, requestId: request.id });
+    } catch (err: any) {
+      res.status(400).json({ message: err?.message || "Buy request failed" });
+    }
+  });
+
+  // Submit a Trade request
+  app.post("/api/shop/trade", async (req, res) => {
+    try {
+      const parsed = insertCustomerRequestSchema.parse({
+        ...req.body,
+        type: "Trade",
+      });
+      const request = await storage.createCustomerRequest(parsed);
+      broadcast({ type: "customerRequest:new", payload: request });
+      res.status(201).json({ ok: true, requestId: request.id });
+    } catch (err: any) {
+      res.status(400).json({ message: err?.message || "Trade request failed" });
+    }
+  });
+
+  // ===== ADMIN: CUSTOMER REQUESTS =====
+  app.get("/api/requests", async (req, res) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const rows = await storage.listCustomerRequests(
+        status && status !== "All" ? status : undefined
+      );
+      // Attach item thumbnails for convenience
+      const inv = await storage.listInventory();
+      const invMap = new Map(inv.map((i) => [i.id, i] as const));
+      const enriched = rows.map((r) => ({
+        ...r,
+        item: r.itemId ? invMap.get(r.itemId) ?? null : null,
+      }));
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Requests load failed" });
+    }
+  });
+
+  app.patch("/api/requests/:id", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const schema = z.object({
+        status: z.enum(["New", "Accepted", "Declined", "Completed"]).optional(),
+        adminNote: z.string().optional().nullable(),
+      });
+      const patch = schema.parse(req.body);
+      const updated = await storage.updateCustomerRequest(id, patch as any);
+      if (updated) broadcast({ type: "customerRequest:update", payload: updated });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: err?.message || "Update failed" });
+    }
+  });
+
+  // Accept a Buy request — optionally mark item Sold and create Sell transaction
+  app.post("/api/requests/:id/accept-buy", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const schema = z.object({
+        markSold: z.boolean().default(true),
+        adminNote: z.string().optional().nullable(),
+      });
+      const { markSold, adminNote } = schema.parse(req.body);
+      const request = await storage.getCustomerRequest(id);
+      if (!request) return res.status(404).json({ message: "Request not found" });
+      if (request.type !== "Buy") {
+        return res.status(400).json({ message: "Not a Buy request" });
+      }
+      const updated = await storage.updateCustomerRequest(id, {
+        status: "Accepted",
+        adminNote: adminNote ?? null,
+      } as any);
+      if (markSold && request.itemId) {
+        const item = await storage.getInventoryItem(request.itemId);
+        if (item) {
+          const soldPrice = request.offerPrice ?? item.asking ?? 0;
+          const updInv = await storage.updateInventory(item.id, {
+            status: "Sold",
+            soldPrice,
+          });
+          const pnl = (soldPrice ?? 0) - (item.totalCost ?? 0);
+          await storage.createTransaction({
+            type: "Sell",
+            itemId: item.id,
+            itemName: `${item.setName} — ${item.name}`,
+            counterparty: request.customerName,
+            price: soldPrice,
+            pnl,
+            notes: `Shop request #${id}`,
+          });
+          // Deactivate any active listings for this item
+          const allListings = await storage.listListings();
+          for (const l of allListings.filter(
+            (x) => x.itemId === item.id && !x.sellerName
+          )) {
+            await storage.deactivateListing(l.id);
+          }
+          if (updInv) broadcast({ type: "inventory:update", payload: updInv });
+          broadcast({ type: "transactions:update", payload: {} });
+          broadcast({ type: "listings:update", payload: {} });
+        }
+      }
+      if (updated) broadcast({ type: "customerRequest:update", payload: updated });
+      res.json({ ok: true, request: updated });
+    } catch (err: any) {
+      res.status(400).json({ message: err?.message || "Accept failed" });
+    }
   });
 
   return httpServer;

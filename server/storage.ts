@@ -4,6 +4,7 @@ import {
   listings,
   trades,
   priceHistory,
+  customerRequests,
 } from "@shared/schema";
 import type {
   Inventory,
@@ -16,6 +17,8 @@ import type {
   InsertTrade,
   PriceHistory,
   InsertPriceHistory,
+  CustomerRequest,
+  InsertCustomerRequest,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
@@ -96,6 +99,27 @@ export async function runMigrations() {
       );
 
       CREATE INDEX IF NOT EXISTS idx_price_history_item ON price_history(item_id, recorded_at);
+
+      CREATE TABLE IF NOT EXISTS customer_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL,
+        item_id TEXT,
+        customer_name TEXT NOT NULL,
+        customer_email TEXT NOT NULL,
+        customer_phone TEXT,
+        customer_handle TEXT,
+        preferred_contact TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        offer_price REAL,
+        offer_description TEXT,
+        offer_image_urls TEXT,
+        message TEXT,
+        admin_note TEXT,
+        status TEXT NOT NULL DEFAULT 'New',
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_customer_requests_status ON customer_requests(status, created_at);
     `);
     console.log("[db] Migrations complete");
   } catch (err) {
@@ -147,6 +171,15 @@ export interface IStorage {
   // Price history
   listPriceHistory(itemId: string): Promise<PriceHistory[]>;
   createPriceHistory(p: InsertPriceHistory): Promise<PriceHistory>;
+
+  // Customer requests
+  listCustomerRequests(status?: string): Promise<CustomerRequest[]>;
+  getCustomerRequest(id: number): Promise<CustomerRequest | undefined>;
+  createCustomerRequest(r: InsertCustomerRequest): Promise<CustomerRequest>;
+  updateCustomerRequest(
+    id: number,
+    patch: Partial<CustomerRequest>
+  ): Promise<CustomerRequest | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -287,6 +320,45 @@ export class DatabaseStorage implements IStorage {
   async createPriceHistory(p: InsertPriceHistory): Promise<PriceHistory> {
     const result = await db.insert(priceHistory).values(p).returning();
     return result[0] as PriceHistory;
+  }
+
+  async listCustomerRequests(status?: string): Promise<CustomerRequest[]> {
+    if (status) {
+      return (await db
+        .select()
+        .from(customerRequests)
+        .where(eq(customerRequests.status, status))
+        .orderBy(desc(customerRequests.createdAt))
+        .all()) as CustomerRequest[];
+    }
+    return (await db
+      .select()
+      .from(customerRequests)
+      .orderBy(desc(customerRequests.createdAt))
+      .all()) as CustomerRequest[];
+  }
+  async getCustomerRequest(id: number): Promise<CustomerRequest | undefined> {
+    const rows = await db
+      .select()
+      .from(customerRequests)
+      .where(eq(customerRequests.id, id))
+      .all();
+    return rows[0] as CustomerRequest | undefined;
+  }
+  async createCustomerRequest(r: InsertCustomerRequest): Promise<CustomerRequest> {
+    const result = await db.insert(customerRequests).values(r).returning();
+    return result[0] as CustomerRequest;
+  }
+  async updateCustomerRequest(
+    id: number,
+    patch: Partial<CustomerRequest>
+  ): Promise<CustomerRequest | undefined> {
+    const result = await db
+      .update(customerRequests)
+      .set(patch)
+      .where(eq(customerRequests.id, id))
+      .returning();
+    return result[0] as CustomerRequest | undefined;
   }
 }
 

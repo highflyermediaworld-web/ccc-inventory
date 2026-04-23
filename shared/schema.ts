@@ -113,3 +113,34 @@ export const insertTradeSchema = createInsertSchema(trades).omit({
 });
 export type InsertTrade = z.infer<typeof insertTradeSchema>;
 export type Trade = typeof trades.$inferSelect;
+
+// Customer requests — inbound Buy/Trade requests from the public shop page
+export const customerRequests = sqliteTable("customer_requests", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  type: text("type").notNull(), // 'Buy' | 'Trade'
+  itemId: text("item_id"),
+  customerName: text("customer_name").notNull(),
+  customerEmail: text("customer_email").notNull(),
+  customerPhone: text("customer_phone"),
+  customerHandle: text("customer_handle"), // Instagram/TikTok handle for trade requests
+  preferredContact: text("preferred_contact").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  offerPrice: real("offer_price"),
+  offerDescription: text("offer_description"),
+  offerImageUrls: text("offer_image_urls"), // JSON array string
+  message: text("message"),
+  adminNote: text("admin_note"),
+  status: text("status").notNull().default("New"), // New | Accepted | Declined | Completed
+  createdAt: integer("created_at")
+    .notNull()
+    .$defaultFn(() => Math.floor(Date.now() / 1000)),
+});
+
+export const insertCustomerRequestSchema = createInsertSchema(customerRequests).omit({
+  id: true,
+  createdAt: true,
+  status: true,
+  adminNote: true,
+});
+export type InsertCustomerRequest = z.infer<typeof insertCustomerRequestSchema>;
+export type CustomerRequest = typeof customerRequests.$inferSelect;

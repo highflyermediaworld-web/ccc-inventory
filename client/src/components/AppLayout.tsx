@@ -1,7 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { Logo } from "./Logo";
+import { SocialLinks } from "./SocialLinks";
 import { useTheme } from "./ThemeProvider";
+import type { CustomerRequest } from "@shared/schema";
 import {
   LayoutDashboard,
   Package,
@@ -9,6 +13,7 @@ import {
   ArrowLeftRight,
   Receipt,
   ScanLine,
+  Inbox,
   Moon,
   Sun,
   Menu,
@@ -24,6 +29,7 @@ const NAV = [
   { path: "/marketplace", label: "Marketplace", icon: Store, testId: "nav-marketplace" },
   { path: "/trades", label: "Trades", icon: ArrowLeftRight, testId: "nav-trades" },
   { path: "/transactions", label: "Transactions", icon: Receipt, testId: "nav-transactions" },
+  { path: "/requests", label: "Requests", icon: Inbox, testId: "nav-requests" },
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -31,7 +37,30 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { theme, toggle } = useTheme();
 
+  // Unread "New" customer requests count — lights a dot on the Requests nav.
+  const { data: newRequests = [] } = useQuery<CustomerRequest[]>({
+    queryKey: ["/api/requests", "New"],
+    queryFn: async () => {
+      try {
+        const res = await apiRequest("GET", "/api/requests?status=New");
+        return await res.json();
+      } catch {
+        return [];
+      }
+    },
+    refetchInterval: 60_000,
+  });
+  const unreadCount = newRequests.length;
+
+  // Clear the "pulse" when the user actually visits the Requests page.
+  const [lastSeenCount, setLastSeenCount] = useState(0);
+  useEffect(() => {
+    if (location === "/requests") setLastSeenCount(unreadCount);
+  }, [location, unreadCount]);
+  const showUnreadDot = unreadCount > 0 && location !== "/requests";
+
   return (
+    <TooltipContextHack>
     <div className="flex min-h-screen w-full bg-background text-foreground">
       {/* Sidebar (desktop) */}
       <aside className="hidden md:flex md:w-60 lg:w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
@@ -42,6 +71,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {NAV.map((item) => {
             const active = location === item.path;
             const Icon = item.icon;
+            const isRequests = item.path === "/requests";
             return (
               <Link
                 key={item.path}
@@ -56,7 +86,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               >
                 <Icon className="h-4 w-4" />
                 <span>{item.label}</span>
-                {active && (
+                {isRequests && showUnreadDot && (
+                  <span
+                    className="ml-auto inline-flex items-center gap-1.5"
+                    data-testid="requests-unread-dot"
+                  >
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inset-0 rounded-full bg-primary animate-ping opacity-75" />
+                      <span className="relative rounded-full h-2 w-2 bg-primary" />
+                    </span>
+                    <span className="text-[10px] tabular-nums text-primary font-bold">
+                      {unreadCount}
+                    </span>
+                  </span>
+                )}
+                {active && !(isRequests && showUnreadDot) && (
                   <span className="ml-auto h-1.5 w-1.5 rounded-full bg-sidebar-primary" />
                 )}
               </Link>
@@ -76,6 +120,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             )}
             <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
           </button>
+          <div className="px-3 pt-2 pb-1 flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/40">
+              @cpulls.cards
+            </span>
+            <SocialLinks size="sm" variant="ghost" />
+          </div>
           <div className="px-3 py-2 flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/40">
             <span>v1.0 · Collector</span>
             <ConnectionDot />
@@ -109,13 +159,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Mobile drawer */}
       {mobileOpen && (
         <div
-          className="md:hidden fixed inset-0 top-14 z-30 bg-sidebar text-sidebar-foreground"
+          className="md:hidden fixed inset-0 top-14 z-30 bg-sidebar text-sidebar-foreground overflow-y-auto"
           onClick={() => setMobileOpen(false)}
         >
           <nav className="p-4 space-y-1">
             {NAV.map((item) => {
               const active = location === item.path;
               const Icon = item.icon;
+              const isRequests = item.path === "/requests";
               return (
                 <Link
                   key={item.path}
@@ -129,10 +180,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 >
                   <Icon className="h-5 w-5" />
                   {item.label}
+                  {isRequests && showUnreadDot && (
+                    <span className="ml-auto inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                      {unreadCount}
+                    </span>
+                  )}
                 </Link>
               );
             })}
           </nav>
+          <div className="px-4 pt-4 pb-8 flex items-center justify-between border-t border-sidebar-border mt-4">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/40">
+              @cpulls.cards
+            </span>
+            <SocialLinks size="sm" variant="ghost" />
+          </div>
         </div>
       )}
 
@@ -141,7 +203,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
     </div>
+    </TooltipContextHack>
   );
+}
+
+// Small wrapper to satisfy JSX fragment wrapping (keeps diff minimal).
+function TooltipContextHack({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
 }
 
 function ConnectionDot() {

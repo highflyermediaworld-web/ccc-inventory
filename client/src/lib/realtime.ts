@@ -85,6 +85,10 @@ function handleEvent(evt: Event) {
     case "trades:delete":
       queryClient.invalidateQueries({ queryKey: ["/api/trades"] });
       break;
+    case "customerRequest:new":
+    case "customerRequest:update":
+      queryClient.invalidateQueries({ queryKey: ["/api/requests"] });
+      break;
     default:
       break;
   }
@@ -173,6 +177,13 @@ function getStatus() {
 
 export function useRealtime() {
   useEffect(() => {
+    // Public shop page doesn't need live sync — skip opening the socket.
+    if (
+      typeof window !== "undefined" &&
+      window.location.hash.startsWith("#/shop")
+    ) {
+      return;
+    }
     startOnce();
   }, []);
 }
