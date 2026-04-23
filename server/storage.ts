@@ -1,0 +1,293 @@
+import {
+  inventory,
+  transactions,
+  listings,
+  trades,
+  priceHistory,
+} from "@shared/schema";
+import type {
+  Inventory,
+  InsertInventory,
+  Transaction,
+  InsertTransaction,
+  Listing,
+  InsertListing,
+  Trade,
+  InsertTrade,
+  PriceHistory,
+  InsertPriceHistory,
+} from "@shared/schema";
+import { drizzle } from "drizzle-orm/libsql";
+import { createClient } from "@libsql/client";
+import { eq, desc, asc } from "drizzle-orm";
+
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL || "file:./data.db",
+  authToken: process.env.TURSO_AUTH_TOKEN || "",
+});
+
+export const db = drizzle(client);
+
+// ── Migrations (run on startup) ───────────────────────────────
+export async function runMigrations() {
+  try {
+    await client.executeMultiple(`
+      CREATE TABLE IF NOT EXISTS inventory (
+        id TEXT PRIMARY KEY,
+        franchise TEXT NOT NULL,
+        category TEXT NOT NULL,
+        set_name TEXT NOT NULL,
+        name TEXT NOT NULL,
+        rarity TEXT,
+        condition TEXT,
+        qty INTEGER NOT NULL DEFAULT 1,
+        source TEXT,
+        cost_per_unit REAL,
+        total_cost REAL,
+        market_value REAL,
+        asking REAL,
+        sold_price REAL,
+        status TEXT NOT NULL DEFAULT 'In Inventory',
+        notes TEXT,
+        image_url TEXT,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL,
+        item_id TEXT,
+        item_name TEXT,
+        counterparty TEXT,
+        price REAL,
+        pnl REAL,
+        date INTEGER NOT NULL,
+        notes TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS listings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id TEXT,
+        asking_price REAL NOT NULL,
+        listed_at INTEGER NOT NULL,
+        seller_name TEXT,
+        item_snapshot TEXT,
+        active INTEGER NOT NULL DEFAULT 1
+      );
+
+      CREATE TABLE IF NOT EXISTS trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        offered_item_id TEXT,
+        offered_snapshot TEXT,
+        requested_listing_id INTEGER,
+        requested_snapshot TEXT,
+        status TEXT NOT NULL DEFAULT 'Pending',
+        direction TEXT NOT NULL,
+        counterparty TEXT,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS price_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id TEXT NOT NULL,
+        price REAL NOT NULL,
+        source TEXT NOT NULL,
+        recorded_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_price_history_item ON price_history(item_id, recorded_at);
+    `);
+    console.log("[db] Migrations complete");
+  } catch (err) {
+    console.error("[db] Migration error:", err);
+    throw err;
+  }
+}
+
+// ── Init (migrations + optional seed) ──────────────────────────
+export async function init() {
+  await runMigrations();
+  // Lazy import to avoid circular dependency at module load time.
+  const { runSeed } = await import("./seed");
+  await runSeed();
+}
+
+export interface IStorage {
+  // Inventory
+  listInventory(): Promise<Inventory[]>;
+  getInventoryItem(id: string): Promise<Inventory | undefined>;
+  createInventory(item: InsertInventory): Promise<Inventory>;
+  updateInventory(
+    id: string,
+    patch: Partial<InsertInventory>
+  ): Promise<Inventory | undefined>;
+  deleteInventory(id: string): Promise<void>;
+  replaceInventory(items: InsertInventory[]): Promise<void>;
+
+  // Transactions
+  listTransactions(): Promise<Transaction[]>;
+  createTransaction(t: InsertTransaction): Promise<Transaction>;
+
+  // Listings
+  listListings(): Promise<Listing[]>;
+  getListing(id: number): Promise<Listing | undefined>;
+  createListing(l: InsertListing): Promise<Listing>;
+  updateListing(
+    id: number,
+    patch: Partial<InsertListing>
+  ): Promise<Listing | undefined>;
+  deactivateListing(id: number): Promise<void>;
+
+  // Trades
+  listTrades(): Promise<Trade[]>;
+  getTrade(id: number): Promise<Trade | undefined>;
+  createTrade(t: InsertTrade): Promise<Trade>;
+  updateTrade(id: number, patch: Partial<InsertTrade>): Promise<Trade | undefined>;
+
+  // Price history
+  listPriceHistory(itemId: string): Promise<PriceHistory[]>;
+  createPriceHistory(p: InsertPriceHistory): Promise<PriceHistory>;
+}
+
+export class DatabaseStorage implements IStorage {
+  async listInventory(): Promise<Inventory[]> {
+    return (await db.select().from(inventory).all()) as Inventory[];
+  }
+  async getInventoryItem(id: string): Promise<Inventory | undefined> {
+    const rows = await db.select().from(inventory).where(eq(inventory.id, id)).all();
+    return rows[0] as Inventory | undefined;
+  }
+  async createInventory(item: InsertInventory): Promise<Inventory> {
+    const result = await db.insert(inventory).values(item).returning();
+    return result[0] as Inventory;
+  }
+  async updateInventory(
+    id: string,
+    patch: Partial<InsertInventory>
+  ): Promise<Inventory | undefined> {
+    const existing = await this.getInventoryItem(id);
+    if (!existing) return undefined;
+    const result = await db
+      .update(inventory)
+      .set(patch)
+      .where(eq(inventory.id, id))
+      .returning();
+    return result[0] as Inventory | undefined;
+  }
+  async deleteInventory(id: string): Promise<void> {
+    await db.delete(inventory).where(eq(inventory.id, id));
+  }
+  async replaceInventory(items: InsertInventory[]): Promise<void> {
+    await db.delete(inventory);
+    const now = Math.floor(Date.now() / 1000);
+    // libsql has no sync transaction API like better-sqlite3; insert in
+    // modest batches using Drizzle's query builder.
+    const batchSize = 50;
+    for (let i = 0; i < items.length; i += batchSize) {
+      const slice = items.slice(i, i + batchSize).map((it: any) => ({
+        id: it.id,
+        franchise: it.franchise,
+        category: it.category,
+        setName: it.setName,
+        name: it.name,
+        rarity: it.rarity ?? null,
+        condition: it.condition ?? null,
+        qty: it.qty ?? 1,
+        source: it.source ?? null,
+        costPerUnit: it.costPerUnit ?? null,
+        totalCost: it.totalCost ?? null,
+        marketValue: it.marketValue ?? null,
+        asking: it.asking ?? null,
+        soldPrice: it.soldPrice ?? null,
+        status: it.status ?? "In Inventory",
+        notes: it.notes ?? null,
+        imageUrl: it.imageUrl ?? null,
+        createdAt: now,
+      }));
+      if (slice.length > 0) {
+        await db.insert(inventory).values(slice);
+      }
+    }
+  }
+
+  async listTransactions(): Promise<Transaction[]> {
+    return (await db
+      .select()
+      .from(transactions)
+      .orderBy(desc(transactions.date))
+      .all()) as Transaction[];
+  }
+  async createTransaction(t: InsertTransaction): Promise<Transaction> {
+    const result = await db.insert(transactions).values(t).returning();
+    return result[0] as Transaction;
+  }
+
+  async listListings(): Promise<Listing[]> {
+    return (await db
+      .select()
+      .from(listings)
+      .where(eq(listings.active, 1))
+      .orderBy(desc(listings.listedAt))
+      .all()) as Listing[];
+  }
+  async getListing(id: number): Promise<Listing | undefined> {
+    const rows = await db.select().from(listings).where(eq(listings.id, id)).all();
+    return rows[0] as Listing | undefined;
+  }
+  async createListing(l: InsertListing): Promise<Listing> {
+    const result = await db.insert(listings).values(l).returning();
+    return result[0] as Listing;
+  }
+  async updateListing(
+    id: number,
+    patch: Partial<InsertListing>
+  ): Promise<Listing | undefined> {
+    const result = await db
+      .update(listings)
+      .set(patch)
+      .where(eq(listings.id, id))
+      .returning();
+    return result[0] as Listing | undefined;
+  }
+  async deactivateListing(id: number): Promise<void> {
+    await db.update(listings).set({ active: 0 }).where(eq(listings.id, id));
+  }
+
+  async listTrades(): Promise<Trade[]> {
+    return (await db.select().from(trades).orderBy(desc(trades.createdAt)).all()) as Trade[];
+  }
+  async getTrade(id: number): Promise<Trade | undefined> {
+    const rows = await db.select().from(trades).where(eq(trades.id, id)).all();
+    return rows[0] as Trade | undefined;
+  }
+  async createTrade(t: InsertTrade): Promise<Trade> {
+    const result = await db.insert(trades).values(t).returning();
+    return result[0] as Trade;
+  }
+  async updateTrade(
+    id: number,
+    patch: Partial<InsertTrade>
+  ): Promise<Trade | undefined> {
+    const result = await db
+      .update(trades)
+      .set(patch)
+      .where(eq(trades.id, id))
+      .returning();
+    return result[0] as Trade | undefined;
+  }
+
+  async listPriceHistory(itemId: string): Promise<PriceHistory[]> {
+    return (await db
+      .select()
+      .from(priceHistory)
+      .where(eq(priceHistory.itemId, itemId))
+      .orderBy(asc(priceHistory.recordedAt))
+      .all()) as PriceHistory[];
+  }
+  async createPriceHistory(p: InsertPriceHistory): Promise<PriceHistory> {
+    const result = await db.insert(priceHistory).values(p).returning();
+    return result[0] as PriceHistory;
+  }
+}
+
+export const storage = new DatabaseStorage();

@@ -1,0 +1,320 @@
+import { storage } from "./storage";
+import type { Inventory } from "@shared/schema";
+import Anthropic from "@anthropic-ai/sdk";
+
+// ===================================================================
+// Pricing feed module
+// - Scryfall for Magic The Gathering
+// - TCGdex for Pok\u00e9mon
+// - Claude (existing) as a fallback for everything else
+// ===================================================================
+
+const UA = "CCC-Inventory/1.0";
+const COMMON_HEADERS = {
+  "User-Agent": UA,
+  Accept: "application/json",
+};
+
+// --- 1-hour in-memory cache ---------------------------------------------------
+interface CacheEntry {
+  result: PriceResult;
+  expiresAt: number;
+}
+const CACHE = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function cacheKey(franchise: string, name: string, set: string) {
+  return `${franchise}:${(name ?? "").toLowerCase().trim()}:${(set ?? "").toLowerCase().trim()}`;
+}
+function cacheGet(key: string): PriceResult | null {
+  const e = CACHE.get(key);
+  if (!e) return null;
+  if (Date.now() > e.expiresAt) {
+    CACHE.delete(key);
+    return null;
+  }
+  return e.result;
+}
+function cacheSet(key: string, result: PriceResult) {
+  CACHE.set(key, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+export type PriceSource = "Scryfall" | "TCGdex" | "AI est" | "Manual" | "Seed";
+
+export interface PriceResult {
+  marketValue: number | null;
+  imageUrl: string | null;
+  source: PriceSource;
+  note?: string;
+}
+
+// --- helpers ------------------------------------------------------------------
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+// --- Scryfall -----------------------------------------------------------------
+export async function getScryfallPrice(
+  name: string,
+  set?: string | null
+): Promise<PriceResult | null> {
+  if (!name) return null;
+  const params = new URLSearchParams();
+  params.set("fuzzy", name);
+  if (set) params.set("set", set.toLowerCase().replace(/^.*?([a-z0-9]{2,5}).*$/i, "$1"));
+  const url = `https://api.scryfall.com/cards/named?${params.toString()}`;
+  try {
+    const res = await fetch(url, { headers: COMMON_HEADERS });
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    const usdStr = data?.prices?.usd ?? data?.prices?.usd_foil ?? null;
+    const price = usdStr ? Number(usdStr) : null;
+    const image =
+      data?.image_uris?.normal ??
+      data?.card_faces?.[0]?.image_uris?.normal ??
+      null;
+    if (price == null) return null;
+    return {
+      marketValue: price,
+      imageUrl: image,
+      source: "Scryfall",
+    };
+  } catch {
+    return null;
+  }
+}
+
+// --- TCGdex -------------------------------------------------------------------
+export async function getTcgdexPrice(
+  name: string,
+  set?: string | null
+): Promise<PriceResult | null> {
+  if (!name) return null;
+  try {
+    // 1. Search by name \u2192 list of minimal cards
+    const searchUrl = `https://api.tcgdex.net/v2/en/cards?name=${encodeURIComponent(name)}`;
+    const searchRes = await fetch(searchUrl, { headers: COMMON_HEADERS });
+    if (!searchRes.ok) return null;
+    const searchData: any = await searchRes.json();
+    if (!Array.isArray(searchData) || searchData.length === 0) return null;
+
+    // Narrow by set name if provided (substring match, case-insensitive)
+    let chosen: any = searchData[0];
+    if (set) {
+      const setLc = set.toLowerCase();
+      const match = searchData.find((c: any) => {
+        const candidateSet = (c?.set?.name ?? c?.set ?? "").toLowerCase?.() ?? "";
+        return candidateSet.includes(setLc) || setLc.includes(candidateSet);
+      });
+      if (match) chosen = match;
+    }
+
+    if (!chosen?.id) return null;
+
+    // 2. Fetch full card with pricing
+    const detailUrl = `https://api.tcgdex.net/v2/en/cards/${encodeURIComponent(chosen.id)}?pricing=true`;
+    const detailRes = await fetch(detailUrl, { headers: COMMON_HEADERS });
+    if (!detailRes.ok) return null;
+    const card: any = await detailRes.json();
+
+    // Pricing sources
+    const tcgMarket = firstPriceFrom(card?.pricing?.tcgplayer, "market");
+    const tcgMid = firstPriceFrom(card?.pricing?.tcgplayer, "mid");
+    const cmAvg = firstPriceFrom(card?.pricing?.cardmarket, "avg");
+
+    let price: number | null = null;
+    let note: string | undefined;
+    if (tcgMarket != null) price = tcgMarket;
+    else if (tcgMid != null) price = tcgMid;
+    else if (cmAvg != null) {
+      price = cmAvg * 1.08; // EUR \u2192 USD, approximate
+      note = "Converted from EUR at ~1.08 (approximate)";
+    }
+
+    if (price == null) return null;
+
+    // Image: append /high.png for full-res (TCGdex convention)
+    const image = card?.image ? `${card.image}/high.png` : null;
+
+    return {
+      marketValue: Math.round(price * 100) / 100,
+      imageUrl: image,
+      source: "TCGdex",
+      note,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// TCGdex pricing objects nest variants (normal/holo/reverse etc.). Pick the
+// first available number at the requested key across any variant.
+function firstPriceFrom(obj: any, key: string): number | null {
+  if (!obj || typeof obj !== "object") return null;
+  // Direct {key: number}
+  if (typeof obj[key] === "number") return obj[key];
+  // Variants: {normal: {market: n}, holo: {...}, ...}
+  for (const variantKey of Object.keys(obj)) {
+    const v = obj[variantKey];
+    if (v && typeof v === "object" && typeof v[key] === "number") {
+      return v[key];
+    }
+  }
+  return null;
+}
+
+// --- Claude fallback (same signature as /api/scan/price) ---------------------
+const anthropic = new Anthropic();
+const MODEL = "claude_sonnet_4_6";
+
+export async function getClaudeEstimate(opts: {
+  name: string;
+  set: string;
+  franchise: string;
+  rarity: string;
+  condition: string;
+}): Promise<PriceResult | null> {
+  const { name, set, franchise, rarity, condition } = opts;
+  if (!name && !set) return null;
+  const prompt = `Estimate current secondary-market value in USD for this trading card / product. Reason from general TCG market knowledge (eBay sold, TCGPlayer, etc.). Return ONLY valid JSON:\n{ "marketValue": number (USD), "disclaimer": string }\nDetails:\n- Name: ${name}\n- Set: ${set}\n- Franchise: ${franchise}\n- Rarity: ${rarity}\n- Condition: ${condition || "NM"}\n\nIf uncertain, return a best-guess number and make the disclaimer clearly call out the uncertainty. Always include the disclaimer string. Never return null for marketValue \u2014 use 0 if completely unknown.`;
+  try {
+    const msg = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 250,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const text = msg.content.find((b: any) => b.type === "text")?.text ?? "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]);
+    const v = typeof parsed.marketValue === "number" ? parsed.marketValue : 0;
+    return {
+      marketValue: v,
+      imageUrl: null,
+      source: "AI est",
+      note: parsed.disclaimer,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// --- Per-item refresh ---------------------------------------------------------
+export async function refreshItem(item: Inventory): Promise<PriceResult> {
+  const name = item.name;
+  const set = item.setName ?? null;
+  const franchise = item.franchise;
+
+  const key = cacheKey(franchise, name, set ?? "");
+  const hit = cacheGet(key);
+  if (hit) return hit;
+
+  let result: PriceResult | null = null;
+  if (franchise === "Magic The Gathering") {
+    result = await getScryfallPrice(name, set);
+  } else if (franchise === "Pok\u00e9mon") {
+    result = await getTcgdexPrice(name, set);
+  }
+
+  // Fallback to Claude for Other / One Piece / DBZ / Union Arena / LoL \u2014 and as
+  // last-resort fallback if the dedicated API returned null.
+  if (!result) {
+    const fallback = await getClaudeEstimate({
+      name,
+      set: set ?? "",
+      franchise,
+      rarity: item.rarity ?? "",
+      condition: item.condition ?? "NM",
+    });
+    if (fallback) result = fallback;
+  }
+
+  if (!result) {
+    result = { marketValue: null, imageUrl: null, source: "AI est", note: "Unable to estimate" };
+  }
+
+  cacheSet(key, result);
+  return result;
+}
+
+// Attempts only the real sources; returns null if nothing found. Used by the
+// legacy /api/scan/price endpoint to try real APIs before falling back to AI.
+export async function tryRealSourcesOnly(opts: {
+  name: string;
+  set: string;
+  franchise: string;
+}): Promise<PriceResult | null> {
+  const { franchise, name, set } = opts;
+  if (franchise === "Magic The Gathering") {
+    const r = await getScryfallPrice(name, set);
+    if (r) return r;
+  } else if (franchise === "Pok\u00e9mon") {
+    const r = await getTcgdexPrice(name, set);
+    if (r) return r;
+  }
+  return null;
+}
+
+// --- Persist helpers ----------------------------------------------------------
+export async function persistRefreshResult(
+  item: Inventory,
+  result: PriceResult
+) {
+  const patch: Partial<Inventory> = {};
+  if (result.marketValue != null) {
+    patch.marketValue = result.marketValue;
+  }
+  if (result.imageUrl && !item.imageUrl) {
+    patch.imageUrl = result.imageUrl;
+  }
+  if (Object.keys(patch).length > 0) {
+    await storage.updateInventory(item.id, patch as any);
+  }
+  if (result.marketValue != null) {
+    await storage.createPriceHistory({
+      itemId: item.id,
+      price: result.marketValue,
+      source: result.source,
+    });
+  }
+}
+
+// --- Bulk refresh with throttling --------------------------------------------
+export async function refreshAll(): Promise<{
+  updated: number;
+  failed: number;
+  skipped: number;
+}> {
+  const items = await storage.listInventory();
+  const active = items.filter((i) => i.status === "In Inventory" || i.status === "Listed");
+  let updated = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const item of active) {
+    try {
+      const result = await refreshItem(item);
+      if (result.marketValue != null) {
+        await persistRefreshResult(item, result);
+        updated++;
+      } else {
+        skipped++;
+      }
+    } catch (err) {
+      console.error("[pricing] refresh failed for", item.id, err);
+      failed++;
+    }
+    // Throttle: 150ms for Scryfall (MTG), 500ms for TCGdex (Pok\u00e9mon), 0 otherwise
+    if (item.franchise === "Magic The Gathering") {
+      await sleep(150);
+    } else if (item.franchise === "Pok\u00e9mon") {
+      await sleep(500);
+    } else {
+      await sleep(50);
+    }
+  }
+
+  return { updated, failed, skipped };
+}
+
+export { sleep };
