@@ -323,16 +323,17 @@ function CameraTab({ onIdentified }: { onIdentified: OpenAddFn }) {
     <Card>
       <CardContent className="p-4 md:p-6 space-y-4">
         <div className="relative aspect-[3/4] md:aspect-video w-full max-w-[640px] mx-auto bg-muted/50 rounded-lg overflow-hidden border border-border">
-          {cameraState === "ready" ? (
-            <video
-              ref={videoRef}
-              className="w-full h-full object-cover"
-              playsInline
-              muted
-              autoPlay
-              data-testid="video-camera"
-            />
-          ) : (
+          <video
+            ref={videoRef}
+            className={`w-full h-full object-cover ${
+              cameraState === "ready" ? "" : "hidden"
+            }`}
+            playsInline
+            muted
+            autoPlay
+            data-testid="video-camera"
+          />
+          {cameraState !== "ready" && (
             <div
               className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center"
               data-testid="state-camera-placeholder"
