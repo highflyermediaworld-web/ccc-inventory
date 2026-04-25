@@ -163,6 +163,87 @@ export async function registerRoutes(
     res.json({ user: (req as any).user });
   });
 
+  // ===== ADMIN USER MANAGEMENT =====
+  // List, create, reset, and delete admin users. All require an authenticated session.
+  app.get("/api/admin/users", requireAuth, async (_req, res) => {
+    try {
+      const rows = await storage.listUsers();
+      const pub = rows.map((u: any) => {
+        const { passwordHash: _omit, ...rest } = u;
+        return rest;
+      });
+      res.json({ users: pub });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Failed to list users" });
+    }
+  });
+
+  app.post("/api/admin/users", requireAuth, async (req, res) => {
+    try {
+      const schema = z.object({
+        username: z.string().trim().min(2).max(64),
+        password: z.string().min(8, "At least 8 characters"),
+        email: z.string().trim().email().optional(),
+      });
+      const parsed = schema.parse(req.body);
+      const username = parsed.username;
+      const email = (parsed.email ?? `${username}@cpulls.cards`).toLowerCase();
+
+      const existsName = await storage.getUserByUsernameOrEmail(username);
+      if (existsName) return res.status(409).json({ message: "Username already taken" });
+      const existsEmail = await storage.getUserByUsernameOrEmail(email);
+      if (existsEmail) return res.status(409).json({ message: "Email already registered" });
+
+      const passwordHash = await hashPassword(parsed.password);
+      const user = await storage.createUser({ username, email, passwordHash });
+      const { passwordHash: _omit, ...pub } = user;
+      res.status(201).json({ user: pub });
+    } catch (err: any) {
+      if (err?.issues) {
+        return res.status(400).json({ message: err.issues[0]?.message || "Invalid input" });
+      }
+      res.status(400).json({ message: err?.message || "Failed to create user" });
+    }
+  });
+
+  app.patch("/api/admin/users/:id/password", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid id" });
+      const schema = z.object({ password: z.string().min(8, "At least 8 characters") });
+      const { password } = schema.parse(req.body);
+      const user = await storage.getUserById(id);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      const passwordHash = await hashPassword(password);
+      await storage.updateUserPassword(id, passwordHash);
+      // Invalidate all sessions for that user so they have to sign in again
+      await storage.deleteSessionsForUser(id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      if (err?.issues) {
+        return res.status(400).json({ message: err.issues[0]?.message || "Invalid input" });
+      }
+      res.status(400).json({ message: err?.message || "Failed to reset password" });
+    }
+  });
+
+  app.delete("/api/admin/users/:id", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid id" });
+      const me = (req as any).user;
+      if (me?.id === id) return res.status(400).json({ message: "Cannot delete the currently signed-in account" });
+      const total = await storage.countUsers();
+      if (total <= 1) return res.status(400).json({ message: "At least one admin must remain" });
+      await storage.deleteSessionsForUser(id);
+      await storage.deleteUser(id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(400).json({ message: err?.message || "Failed to delete user" });
+    }
+  });
+
+
   // ===== AUTH GUARD =====
   // Every /api/* route is protected except the allowlist below. This runs after
   // all /api/auth/* handlers (registered above) because Express resolves them

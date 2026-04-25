@@ -211,6 +211,9 @@ export interface IStorage {
   getUserById(id: number): Promise<User | undefined>;
   updateUserPassword(id: number, passwordHash: string): Promise<void>;
   countUsers(): Promise<number>;
+  listUsers(): Promise<User[]>;
+  deleteUser(id: number): Promise<void>;
+  deleteSessionsForUser(userId: number): Promise<void>;
   createSession(userId: number, ttlSeconds: number): Promise<Session>;
   getSession(token: string): Promise<Session | undefined>;
   deleteSession(token: string): Promise<void>;
@@ -429,6 +432,19 @@ export class DatabaseStorage implements IStorage {
 
   async updateUserPassword(id: number, passwordHash: string): Promise<void> {
     await db.update(users).set({ passwordHash }).where(eq(users.id, id)).run();
+  }
+
+  async listUsers(): Promise<User[]> {
+    const rows = await db.select().from(users).orderBy(users.createdAt).all();
+    return rows as User[];
+  }
+
+  async deleteUser(id: number): Promise<void> {
+    await db.delete(users).where(eq(users.id, id)).run();
+  }
+
+  async deleteSessionsForUser(userId: number): Promise<void> {
+    await db.delete(sessions).where(eq(sessions.userId, userId)).run();
   }
 
   async countUsers(): Promise<number> {

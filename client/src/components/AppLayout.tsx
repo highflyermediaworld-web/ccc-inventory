@@ -15,6 +15,7 @@ import {
   Receipt,
   ScanLine,
   Inbox,
+  Users as UsersIcon,
   Moon,
   Sun,
   Menu,
@@ -33,6 +34,7 @@ const NAV = [
   { path: "/admin/trades", label: "Trades", icon: ArrowLeftRight, testId: "nav-trades" },
   { path: "/admin/transactions", label: "Transactions", icon: Receipt, testId: "nav-transactions" },
   { path: "/admin/requests", label: "Requests", icon: Inbox, testId: "nav-requests" },
+  { path: "/admin/users", label: "Admin Users", icon: UsersIcon, testId: "nav-users" },
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {

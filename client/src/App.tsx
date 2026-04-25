@@ -18,6 +18,7 @@ import Transactions from "@/pages/Transactions";
 import Scan from "@/pages/Scan";
 import Shop from "@/pages/Shop";
 import Requests from "@/pages/Requests";
+import Users from "@/pages/Users";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import NotFound from "@/pages/not-found";
@@ -45,6 +46,7 @@ function AdminShell() {
           <Route path="/admin/transactions" component={Transactions} />
           <Route path="/admin/scan" component={Scan} />
           <Route path="/admin/requests" component={Requests} />
+          <Route path="/admin/users" component={Users} />
           <Route component={NotFound} />
         </Switch>
       </AppLayout>
