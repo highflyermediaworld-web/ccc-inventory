@@ -209,6 +209,7 @@ export interface IStorage {
   createUser(data: { username: string; email: string; passwordHash: string }): Promise<User>;
   getUserByUsernameOrEmail(identifier: string): Promise<User | undefined>;
   getUserById(id: number): Promise<User | undefined>;
+  updateUserPassword(id: number, passwordHash: string): Promise<void>;
   countUsers(): Promise<number>;
   createSession(userId: number, ttlSeconds: number): Promise<Session>;
   getSession(token: string): Promise<Session | undefined>;
@@ -424,6 +425,10 @@ export class DatabaseStorage implements IStorage {
   async getUserById(id: number): Promise<User | undefined> {
     const rows = await db.select().from(users).where(eq(users.id, id)).all();
     return rows[0] as User | undefined;
+  }
+
+  async updateUserPassword(id: number, passwordHash: string): Promise<void> {
+    await db.update(users).set({ passwordHash }).where(eq(users.id, id)).run();
   }
 
   async countUsers(): Promise<number> {

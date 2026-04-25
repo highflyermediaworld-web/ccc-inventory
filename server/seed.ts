@@ -390,22 +390,47 @@ export async function runSeed() {
     console.log(`[seed] inserted ${MOCK_LISTINGS.length} mock listings`);
   }
 
-  // Seed initial admin from environment variables (only if no users exist).
-  // Env vars: ADMIN_INITIAL_USERNAME + ADMIN_INITIAL_PASSWORD. Safe to run
-  // repeatedly — becomes a no-op after the first user is created.
+  // Seed / reset admin from environment variables.
+  //
+  //  - ADMIN_INITIAL_USERNAME + ADMIN_INITIAL_PASSWORD: creates the first admin
+  //    on a fresh DB. No-op once any user exists.
+  //  - ADMIN_RESET=true together with the two vars above: forcefully resets the
+  //    matching account's password (or creates it if missing). Use this to recover
+  //    from a forgotten password — set the three vars in Render, redeploy, log in,
+  //    then DELETE ADMIN_RESET (and rotate the password) so it can't run again.
   try {
     const userCount = await storage.countUsers();
     const seedUsername = (process.env.ADMIN_INITIAL_USERNAME ?? "").trim();
     const seedPassword = process.env.ADMIN_INITIAL_PASSWORD ?? "";
-    if (userCount === 0 && seedUsername && seedPassword) {
-      const email = `${seedUsername}@cpulls.cards`;
+    const resetFlag = (process.env.ADMIN_RESET ?? "").trim().toLowerCase() === "true";
+
+    if (seedUsername && seedPassword) {
+      const email = `${seedUsername}@cpulls.cards`.toLowerCase();
       const passwordHash = await hashPassword(seedPassword);
-      await storage.createUser({
-        username: seedUsername,
-        email: email.toLowerCase(),
-        passwordHash,
-      });
-      console.log(`[seed] created initial admin user: ${seedUsername}`);
+
+      if (userCount === 0) {
+        await storage.createUser({
+          username: seedUsername,
+          email,
+          passwordHash,
+        });
+        console.log(`[seed] created initial admin user: ${seedUsername}`);
+      } else if (resetFlag) {
+        const existing =
+          (await storage.getUserByUsernameOrEmail(seedUsername)) ??
+          (await storage.getUserByUsernameOrEmail(email));
+        if (existing) {
+          await storage.updateUserPassword(existing.id, passwordHash);
+          console.log(`[seed] ADMIN_RESET: password reset for user ${existing.username}`);
+        } else {
+          await storage.createUser({
+            username: seedUsername,
+            email,
+            passwordHash,
+          });
+          console.log(`[seed] ADMIN_RESET: created admin user: ${seedUsername}`);
+        }
+      }
     }
   } catch (err) {
     console.error("[seed] initial-admin seed failed:", err);
