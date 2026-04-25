@@ -92,6 +92,13 @@ export async function registerRoutes(
     }
   });
 
+  // ── Admin credentials (env var — same pattern as Montalvo) ──
+  // Owner can change ADMIN_USERNAME / ADMIN_PASSWORD in Render at any time;
+  // login matches against env vars first, then upserts the user row so existing
+  // session infrastructure keeps working.
+  const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "Cpullscards";
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "cpulls2026";
+
   app.post("/api/auth/login", async (req, res) => {
     try {
       const schema = z.object({
@@ -99,6 +106,35 @@ export async function registerRoutes(
         password: z.string().min(1),
       });
       const { identifier, password } = schema.parse(req.body);
+
+      // Env-var admin path: matches username (case-insensitive) + password.
+      const matchesEnvAdmin =
+        identifier.toLowerCase() === ADMIN_USERNAME.toLowerCase() &&
+        password === ADMIN_PASSWORD;
+
+      if (matchesEnvAdmin) {
+        const email = `${ADMIN_USERNAME}@cpulls.cards`.toLowerCase();
+        let user =
+          (await storage.getUserByUsernameOrEmail(ADMIN_USERNAME)) ??
+          (await storage.getUserByUsernameOrEmail(email));
+        const passwordHash = await hashPassword(ADMIN_PASSWORD);
+        if (!user) {
+          user = await storage.createUser({
+            username: ADMIN_USERNAME,
+            email,
+            passwordHash,
+          });
+        } else {
+          // Keep stored hash in sync so old sessions that reach requireAuth still work
+          await storage.updateUserPassword(user.id, passwordHash);
+        }
+        const session = await storage.createSession(user.id, SESSION_TTL_SECONDS);
+        res.cookie(SESSION_COOKIE, session.id, cookieOptions());
+        const { passwordHash: _omit, ...pub } = user;
+        return res.json({ user: pub });
+      }
+
+      // Fallback: existing DB-stored user lookup
       const user = await storage.getUserByUsernameOrEmail(identifier);
       if (!user) return res.status(401).json({ message: "Invalid credentials" });
       const ok = await verifyPassword(password, user.passwordHash);
