@@ -100,11 +100,13 @@ export function AddItemDialog({
 
   const [form, setForm] = useState(() => buildInitial(defaults, existingIds));
 
-  // reset form when defaults or open change
+  // Reset form ONLY when the dialog transitions to open. Do NOT re-run on
+  // inventory updates or defaults churn while open — that wipes the user's
+  // in-progress edits.
   useEffect(() => {
     if (open) setForm(buildInitial(defaults, existingIds));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, JSON.stringify(defaults ?? {}), (existingIds ?? []).length]);
+  }, [open]);
 
   // when franchise changes and SKU was auto-suggested, re-suggest
   useEffect(() => {
