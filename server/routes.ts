@@ -979,5 +979,40 @@ export async function registerRoutes(
     }
   });
 
+  // ── Live stream banner ──────────────────────────────────────────
+  // Public: customers fetch this to show the live banner on the shop
+  app.get("/api/live", async (_req, res) => {
+    try {
+      const isLive = (await storage.getSetting("live_isLive")) === "true";
+      const platform = (await storage.getSetting("live_platform")) || "tiktok";
+      const handle = (await storage.getSetting("live_handle")) || "cpulls.cards";
+      const url = (await storage.getSetting("live_url")) || "";
+      const title = (await storage.getSetting("live_title")) || "Live pulls — come hang out";
+      res.json({ isLive, platform, handle, url, title });
+    } catch (err: any) {
+      console.error("GET /api/live error:", err);
+      res.status(500).json({ message: err?.message || "Failed to load live status" });
+    }
+  });
+
+  // Admin: toggle live + set channel info
+  app.post("/api/live", requireAuth, async (req, res) => {
+    try {
+      const { isLive, platform, handle, url, title } = req.body ?? {};
+      if (typeof isLive === "boolean") {
+        await storage.setSetting("live_isLive", isLive ? "true" : "false");
+      }
+      if (typeof platform === "string") await storage.setSetting("live_platform", platform);
+      if (typeof handle === "string") await storage.setSetting("live_handle", handle);
+      if (typeof url === "string") await storage.setSetting("live_url", url);
+      if (typeof title === "string") await storage.setSetting("live_title", title);
+      broadcast({ type: "live:update", payload: {} });
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("POST /api/live error:", err);
+      res.status(500).json({ message: err?.message || "Failed to save live status" });
+    }
+  });
+
   return httpServer;
 }

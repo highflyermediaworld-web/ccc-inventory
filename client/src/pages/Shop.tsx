@@ -24,6 +24,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { CardThumb } from "@/components/CardThumb";
 import { CategoryBadge, FranchiseBadge } from "@/components/Badges";
 import { SocialLinks, BRAND_HANDLE, TIKTOK_URL, INSTAGRAM_URL } from "@/components/SocialLinks";
+import { LiveStreamBanner } from "@/components/LiveStreamBanner";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -211,6 +212,13 @@ export default function ShopPage() {
           Admin →
         </a>
       </header>
+
+      {/* ============ LIVE STREAM BANNER ============ */}
+      <section className="border-b border-border bg-background">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 py-4">
+          <LiveStreamBanner />
+        </div>
+      </section>
 
       {/* ============ HERO STRIP ============ */}
       <section className="border-b border-border bg-muted/30">

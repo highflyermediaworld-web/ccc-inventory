@@ -17,6 +17,7 @@ import {
   Inbox,
   Users as UsersIcon,
   FileSpreadsheet,
+  Radio,
   Moon,
   Sun,
   Menu,
@@ -37,6 +38,7 @@ const NAV = [
   { path: "/admin/requests", label: "Requests", icon: Inbox, testId: "nav-requests" },
   { path: "/admin/users", label: "Admin Users", icon: UsersIcon, testId: "nav-users" },
   { path: "/admin/auto-import", label: "Auto-import", icon: FileSpreadsheet, testId: "nav-auto-import" },
+  { path: "/admin/live", label: "Live stream", icon: Radio, testId: "nav-live" },
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {

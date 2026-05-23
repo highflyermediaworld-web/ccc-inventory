@@ -455,4 +455,15 @@ export async function runSeed() {
     }
     console.log(`[seed] inserted ${MOCK_INCOMING_TRADES.length} mock trades`);
   }
+
+  // Seed default live-stream settings only if no values are set yet
+  const { storage } = await import("./storage");
+  if (!(await storage.getSetting("live_handle"))) {
+    await storage.setSetting("live_platform", "tiktok");
+    await storage.setSetting("live_handle", "cpulls.cards");
+    await storage.setSetting("live_url", "https://www.tiktok.com/@cpulls.cards/live");
+    await storage.setSetting("live_title", "Live pulls \u2014 come hang out");
+    await storage.setSetting("live_isLive", "false");
+    console.log("[seed] seeded default live-stream settings");
+  }
 }

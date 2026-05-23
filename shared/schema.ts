@@ -156,6 +156,13 @@ export const users = sqliteTable("users", {
   createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
 });
 
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+});
+export type AppSetting = typeof appSettings.$inferSelect;
+
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey(), // random hex token
   userId: integer("user_id")

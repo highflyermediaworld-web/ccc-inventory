@@ -20,6 +20,7 @@ import Shop from "@/pages/Shop";
 import Requests from "@/pages/Requests";
 import Users from "@/pages/Users";
 import AutoImport from "@/pages/AutoImport";
+import AdminLive from "@/pages/AdminLive";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import NotFound from "@/pages/not-found";
@@ -49,6 +50,7 @@ function AdminShell() {
           <Route path="/admin/requests" component={Requests} />
           <Route path="/admin/users" component={Users} />
           <Route path="/admin/auto-import" component={AutoImport} />
+          <Route path="/admin/live" component={AdminLive} />
           <Route component={NotFound} />
         </Switch>
       </AppLayout>

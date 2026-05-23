@@ -7,6 +7,7 @@ import {
   customerRequests,
   users,
   sessions,
+  appSettings,
 } from "@shared/schema";
 import type {
   Inventory,
@@ -144,6 +145,12 @@ export async function runMigrations() {
 
       CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
       CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
     `);
     console.log("[db] Migrations complete");
   } catch (err) {
@@ -471,6 +478,34 @@ export class DatabaseStorage implements IStorage {
 
   async deleteSession(token: string): Promise<void> {
     await db.delete(sessions).where(eq(sessions.id, token));
+  }
+
+  // ── App settings (key/value) ────────────────────────────────────
+  async getSetting(key: string): Promise<string | null> {
+    const rows = await db
+      .select()
+      .from(appSettings)
+      .where(eq(appSettings.key, key))
+      .all();
+    return rows[0]?.value ?? null;
+  }
+
+  async setSetting(key: string, value: string): Promise<void> {
+    const now = Math.floor(Date.now() / 1000);
+    await db
+      .insert(appSettings)
+      .values({ key, value, updatedAt: now })
+      .onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value, updatedAt: now },
+      });
+  }
+
+  async getAllSettings(): Promise<Record<string, string>> {
+    const rows = await db.select().from(appSettings).all();
+    const out: Record<string, string> = {};
+    for (const r of rows) out[r.key] = r.value;
+    return out;
   }
 }
 
