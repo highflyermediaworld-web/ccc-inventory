@@ -20,7 +20,7 @@ services:
       - key: ADMIN_INVITE_CODE
         sync: false
       - key: AUTO_IMPORT_URL
-        value: https://docs.google.com/spreadsheets/d/1FTlGmSOFr-W8pS3IJ1Bpvs63PBXGTaZe/edit?usp=drivesdk&ouid=111457623217732031956&rtpof=true&sd=true
+        value: https://docs.google.com/spreadsheets/d/1o01iG3cIHHTlHwCER2G1RmOCGN6LcYYuvFJ14RUkzB4/edit?usp=drivesdk
       - key: AUTO_IMPORT_INTERVAL_MIN
         value: "30"
     disk:
