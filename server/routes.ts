@@ -763,22 +763,38 @@ export async function registerRoutes(
   app.get("/api/shop/listings", async (_req, res) => {
     try {
       const inv = await storage.listInventory();
+      // Everything currently in stock is shoppable. We treat any item with
+      // qty > 0 and status in {In Inventory, Listed} as a live listing.
+      // Price priority: asking → marketValue. Items with neither are skipped.
+      const SHOPPABLE_STATUSES = new Set(["In Inventory", "Listed"]);
       const filtered = inv
-        .filter((i) => i.status === "Listed" && typeof i.asking === "number" && (i.asking ?? 0) > 0)
-        .map((i) => ({
-          id: i.id,
-          name: i.name,
-          setName: i.setName,
-          rarity: i.rarity,
-          condition: i.condition,
-          category: i.category,
-          franchise: i.franchise,
-          qty: i.qty,
-          askingPrice: i.asking,
-          marketValue: i.marketValue,
-          imageUrl: i.imageUrl,
-          notes: i.notes,
-        }));
+        .filter((i) => {
+          if (!SHOPPABLE_STATUSES.has(i.status)) return false;
+          if ((i.qty ?? 0) <= 0) return false;
+          const price =
+            (typeof i.asking === "number" && i.asking > 0 ? i.asking : null) ??
+            (typeof i.marketValue === "number" && i.marketValue > 0 ? i.marketValue : null);
+          return price !== null;
+        })
+        .map((i) => {
+          const price =
+            (typeof i.asking === "number" && i.asking > 0 ? i.asking : null) ??
+            (typeof i.marketValue === "number" && i.marketValue > 0 ? i.marketValue : 0);
+          return {
+            id: i.id,
+            name: i.name,
+            setName: i.setName,
+            rarity: i.rarity,
+            condition: i.condition,
+            category: i.category,
+            franchise: i.franchise,
+            qty: i.qty,
+            askingPrice: price,
+            marketValue: i.marketValue,
+            imageUrl: i.imageUrl,
+            notes: i.notes,
+          };
+        });
       res.json(filtered);
     } catch (err: any) {
       res.status(500).json({ message: err?.message || "Shop load failed" });

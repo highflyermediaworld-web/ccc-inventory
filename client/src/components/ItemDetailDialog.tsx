@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { Inventory, PriceHistory } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -15,7 +15,7 @@ import { CategoryBadge, FranchiseBadge, StatusBadge } from "@/components/Badges"
 import { CardThumb } from "@/components/CardThumb";
 import { SourceBadge } from "@/components/SourceBadge";
 import { formatCurrency, formatDate, pnlClass } from "@/lib/format";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Camera, X as XIcon } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -44,6 +44,63 @@ export function ItemDetailDialog({
       return res.json();
     },
     enabled: !!itemId,
+  });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const photoMutation = useMutation({
+    mutationFn: async (file: File) => {
+      if (!itemId) return null;
+      // Convert file → base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          const match = result.match(/^data:(.+?);base64,(.*)$/);
+          if (!match) return reject(new Error("Invalid file"));
+          resolve(JSON.stringify({ mediaType: match[1], imageBase64: match[2] }));
+        };
+        reader.onerror = () => reject(new Error("Read failed"));
+        reader.readAsDataURL(file);
+      });
+      const { mediaType, imageBase64 } = JSON.parse(base64);
+      const upRes = await apiRequest("POST", "/api/uploads/image", {
+        imageBase64,
+        mediaType,
+      });
+      const { url } = await upRes.json();
+      const patchRes = await apiRequest("PATCH", `/api/inventory/${itemId}`, {
+        imageUrl: url,
+      });
+      return patchRes.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/listings"] });
+      toast({ title: "Photo updated" });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Upload failed",
+        description: err?.message ?? "",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const removePhotoMutation = useMutation({
+    mutationFn: async () => {
+      if (!itemId) return null;
+      const res = await apiRequest("PATCH", `/api/inventory/${itemId}`, {
+        imageUrl: null,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/listings"] });
+      toast({ title: "Photo removed" });
+    },
   });
 
   const refreshMutation = useMutation({
@@ -120,6 +177,51 @@ export function ItemDetailDialog({
                   size="lg"
                   alt={item.name}
                 />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) photoMutation.mutate(f);
+                    e.target.value = "";
+                  }}
+                  data-testid={`input-photo-${item.id}`}
+                />
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={photoMutation.isPending}
+                    data-testid={`button-upload-photo-${item.id}`}
+                    className="flex-1"
+                  >
+                    <Camera className="h-3.5 w-3.5 mr-1.5" />
+                    {photoMutation.isPending
+                      ? "Uploading\u2026"
+                      : item.imageUrl
+                        ? "Change photo"
+                        : "Add photo"}
+                  </Button>
+                  {item.imageUrl && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removePhotoMutation.mutate()}
+                      disabled={removePhotoMutation.isPending}
+                      data-testid={`button-remove-photo-${item.id}`}
+                      title="Remove photo"
+                    >
+                      <XIcon className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  Visible to customers in the shop.
+                </p>
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   <FranchiseBadge franchise={item.franchise} />
                   <CategoryBadge category={item.category} />
