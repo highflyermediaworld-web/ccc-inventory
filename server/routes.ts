@@ -16,6 +16,11 @@ import {
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { registerScanRoutes } from "./scan";
+import {
+  getAutoImportStatus,
+  runAutoImport,
+  setAutoImportConfig,
+} from "./autoImport";
 import { refreshItem, refreshAll, persistRefreshResult } from "./pricing";
 import { broadcast } from "./realtime";
 import * as fs from "node:fs";
@@ -280,6 +285,31 @@ export async function registerRoutes(
       res.json({ url: `/uploads/${filename}` });
     } catch (err: any) {
       res.status(400).json({ message: err?.message || "Upload failed" });
+    }
+  });
+
+  // ===== AUTO IMPORT (Excel from Google Drive every 30 min) =====
+  app.get("/api/admin/auto-import", requireAuth, async (_req, res) => {
+    res.json(getAutoImportStatus());
+  });
+
+  app.post("/api/admin/auto-import/run", requireAuth, async (_req, res) => {
+    const result = await runAutoImport();
+    res.json(result);
+  });
+
+  app.patch("/api/admin/auto-import", requireAuth, async (req, res) => {
+    try {
+      const schema = z.object({
+        url: z.string().nullable().optional(),
+        enabled: z.boolean().optional(),
+        intervalMin: z.number().int().min(5).max(1440).optional(),
+      });
+      const patch = schema.parse(req.body);
+      const next = setAutoImportConfig(patch);
+      res.json(next);
+    } catch (err: any) {
+      res.status(400).json({ message: err?.message || "Invalid config" });
     }
   });
 

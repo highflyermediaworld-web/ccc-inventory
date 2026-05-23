@@ -16,6 +16,7 @@ import {
   ScanLine,
   Inbox,
   Users as UsersIcon,
+  FileSpreadsheet,
   Moon,
   Sun,
   Menu,
@@ -35,6 +36,7 @@ const NAV = [
   { path: "/admin/transactions", label: "Transactions", icon: Receipt, testId: "nav-transactions" },
   { path: "/admin/requests", label: "Requests", icon: Inbox, testId: "nav-requests" },
   { path: "/admin/users", label: "Admin Users", icon: UsersIcon, testId: "nav-users" },
+  { path: "/admin/auto-import", label: "Auto-import", icon: FileSpreadsheet, testId: "nav-auto-import" },
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {

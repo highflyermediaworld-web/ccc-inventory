@@ -19,6 +19,10 @@ services:
         value: cpulls2026
       - key: ADMIN_INVITE_CODE
         sync: false
+      - key: AUTO_IMPORT_URL
+        value: https://docs.google.com/spreadsheets/d/1FTlGmSOFr-W8pS3IJ1Bpvs63PBXGTaZe/edit?usp=drivesdk&ouid=111457623217732031956&rtpof=true&sd=true
+      - key: AUTO_IMPORT_INTERVAL_MIN
+        value: "30"
     disk:
       name: uploads
       mountPath: /opt/render/project/src/uploads
