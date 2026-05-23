@@ -8,9 +8,26 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { formatDateTime } from "@/lib/format";
-import { RefreshCcw, FileSpreadsheet, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  RefreshCcw,
+  FileSpreadsheet,
+  CheckCircle2,
+  AlertCircle,
+  Trash2,
+} from "lucide-react";
 
 type AutoImportStatus = {
   enabled: boolean;
@@ -47,8 +64,8 @@ export default function AutoImportPage() {
   }, [statusQuery.data?.url, statusQuery.data?.intervalMin]);
 
   const runMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/admin/auto-import/run", {});
+    mutationFn: async (wipe: boolean = false) => {
+      const res = await apiRequest("POST", "/api/admin/auto-import/run", { wipe });
       return res.json();
     },
     onSuccess: (data: AutoImportStatus) => {
@@ -92,14 +109,51 @@ export default function AutoImportPage() {
         title="Auto-import from Excel"
         description="Pull inventory from a Google Drive Excel file on a schedule. Existing items are updated by SKU; new items are added; everything else is left alone."
         actions={
-          <Button
-            onClick={() => runMutation.mutate()}
-            disabled={runMutation.isPending || !s?.url}
-            data-testid="button-run-now"
-          >
-            <RefreshCcw className={`h-4 w-4 mr-2 ${runMutation.isPending ? "animate-spin" : ""}`} />
-            {runMutation.isPending ? "Running…" : "Run now"}
-          </Button>
+          <div className="flex gap-2">
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="destructive"
+                  disabled={runMutation.isPending || !s?.url}
+                  data-testid="button-wipe-import"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Wipe & re-import
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Wipe all current inventory?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This deletes every item currently in inventory, then imports
+                    a fresh copy from your Google Sheet. Anything you've added
+                    via Scan that isn't in the sheet will be lost. This cannot
+                    be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => runMutation.mutate(true)}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    data-testid="button-confirm-wipe"
+                  >
+                    Wipe and import fresh
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <Button
+              onClick={() => runMutation.mutate(false)}
+              disabled={runMutation.isPending || !s?.url}
+              data-testid="button-run-now"
+            >
+              <RefreshCcw
+                className={`h-4 w-4 mr-2 ${runMutation.isPending ? "animate-spin" : ""}`}
+              />
+              {runMutation.isPending ? "Running…" : "Run now"}
+            </Button>
+          </div>
         }
       />
 

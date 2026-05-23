@@ -293,8 +293,9 @@ export async function registerRoutes(
     res.json(getAutoImportStatus());
   });
 
-  app.post("/api/admin/auto-import/run", requireAuth, async (_req, res) => {
-    const result = await runAutoImport();
+  app.post("/api/admin/auto-import/run", requireAuth, async (req, res) => {
+    const wipe = req.body?.wipe === true;
+    const result = await runAutoImport({ wipe });
     res.json(result);
   });
 

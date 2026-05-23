@@ -237,7 +237,7 @@ async function fetchWorkbook(url: string): Promise<XLSX.WorkBook> {
   return XLSX.read(buf, { type: "buffer" });
 }
 
-export async function runAutoImport(): Promise<AutoImportStatus> {
+export async function runAutoImport(opts: { wipe?: boolean } = {}): Promise<AutoImportStatus> {
   if (runningPromise) return runningPromise;
   runningPromise = (async () => {
     const startedAt = Date.now();
@@ -280,26 +280,30 @@ export async function runAutoImport(): Promise<AutoImportStatus> {
       for (const it of incoming) bySku.set(it.id, it);
       const items = Array.from(bySku.values());
 
-      const existing = await storage.listInventory();
-      const existingIds = new Set(existing.map((r) => r.id));
-
       let inserted = 0;
       let updated = 0;
       let skipped = 0;
 
-      for (const it of items) {
-        try {
-          if (existingIds.has(it.id)) {
-            const u = await storage.updateInventory(it.id, it);
-            if (u) updated += 1;
-            else skipped += 1;
-          } else {
-            await storage.createInventory(it);
-            inserted += 1;
+      if (opts.wipe) {
+        await storage.replaceInventory(items);
+        inserted = items.length;
+      } else {
+        const existing = await storage.listInventory();
+        const existingIds = new Set(existing.map((r) => r.id));
+        for (const it of items) {
+          try {
+            if (existingIds.has(it.id)) {
+              const u = await storage.updateInventory(it.id, it);
+              if (u) updated += 1;
+              else skipped += 1;
+            } else {
+              await storage.createInventory(it);
+              inserted += 1;
+            }
+          } catch (err) {
+            skipped += 1;
+            console.warn(`[autoImport] row skipped (${it.id})`, err);
           }
-        } catch (err) {
-          skipped += 1;
-          console.warn(`[autoImport] row skipped (${it.id})`, err);
         }
       }
 
@@ -307,7 +311,9 @@ export async function runAutoImport(): Promise<AutoImportStatus> {
       status.lastInserted = inserted;
       status.lastUpdated = updated;
       status.lastSkipped = skipped;
-      status.lastRunMessage = `Imported ${items.length} rows (${inserted} new, ${updated} updated, ${skipped} skipped)`;
+      status.lastRunMessage = opts.wipe
+        ? `Wiped and imported ${items.length} rows fresh`
+        : `Imported ${items.length} rows (${inserted} new, ${updated} updated, ${skipped} skipped)`;
 
       broadcast({ type: "inventory:bulk", payload: { source: "autoImport" } });
       console.log(`[autoImport] ${status.lastRunMessage}`);
