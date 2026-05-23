@@ -237,6 +237,86 @@ export async function refreshItem(item: Inventory): Promise<PriceResult> {
   return result;
 }
 
+// Fetch only an image URL for an item (no pricing). Tries Scryfall (MTG) or
+// TCGdex (Pokémon) directly, then falls back to asking Claude for a public
+// product image URL (TCGplayer / eBay / official set page) for other
+// franchises.
+export async function fetchImageOnly(item: Inventory): Promise<string | null> {
+  const name = item.name;
+  const set = item.setName ?? null;
+  const franchise = item.franchise;
+
+  // 1. Use the same dedicated APIs the pricing module uses
+  if (franchise === "Magic The Gathering") {
+    const r = await getScryfallPrice(name, set);
+    if (r?.imageUrl) return r.imageUrl;
+  } else if (franchise === "Pok\u00e9mon") {
+    const r = await getTcgdexPrice(name, set);
+    if (r?.imageUrl) return r.imageUrl;
+  }
+
+  // 2. Ask Claude for a likely public product image URL.
+  // Constrained to common TCG image hosts to avoid hallucination of random URLs.
+  try {
+    const prompt = `Provide a single direct public image URL (ends in .jpg, .jpeg, .png, or .webp) for this trading card / collectible product. Prefer images hosted on tcgplayer.com (product-images.tcgplayer.com), TCGdex, Scryfall, the official manufacturer site, or a well-known card database. Return ONLY valid JSON:\n{ "imageUrl": string | null }\nProduct:\n- Name: ${name}\n- Set: ${set ?? ""}\n- Franchise: ${franchise}\n- Rarity: ${item.rarity ?? ""}\nIf you cannot find a high-confidence direct image URL, return null. Do not fabricate URLs.`;
+    const msg = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 200,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const text = msg.content.find((b: any) => b.type === "text")?.text ?? "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]);
+    const url = typeof parsed.imageUrl === "string" ? parsed.imageUrl.trim() : null;
+    if (!url) return null;
+    // Basic sanity check: must be http(s) and look like an image
+    if (!/^https?:\/\//i.test(url)) return null;
+    if (!/\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(url)) {
+      // Some hosts (TCGdex/Scryfall) omit extensions \u2014 still accept those
+      if (!/(scryfall|tcgdex|tcgplayer)/i.test(url)) return null;
+    }
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+// Bulk image fetch with throttling. Only touches items where imageUrl is null.
+export async function fetchMissingImages(): Promise<{
+  updated: number;
+  failed: number;
+  skipped: number;
+}> {
+  const items = await storage.listInventory();
+  const candidates = items.filter(
+    (i) => !i.imageUrl && (i.status === "In Inventory" || i.status === "Listed")
+  );
+  let updated = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const item of candidates) {
+    try {
+      const url = await fetchImageOnly(item);
+      if (url) {
+        await storage.updateInventory(item.id, { imageUrl: url } as any);
+        updated++;
+      } else {
+        skipped++;
+      }
+    } catch (err) {
+      console.error("[pricing] image fetch failed for", item.id, err);
+      failed++;
+    }
+    if (item.franchise === "Magic The Gathering") await sleep(150);
+    else if (item.franchise === "Pok\u00e9mon") await sleep(500);
+    else await sleep(100);
+  }
+
+  return { updated, failed, skipped };
+}
+
 // Attempts only the real sources; returns null if nothing found. Used by the
 // legacy /api/scan/price endpoint to try real APIs before falling back to AI.
 export async function tryRealSourcesOnly(opts: {

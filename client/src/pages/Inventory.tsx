@@ -57,6 +57,7 @@ import {
   ChevronDown,
   FileText,
   MoreHorizontal,
+  ImageIcon,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -198,6 +199,28 @@ export default function InventoryPage() {
     onError: (err: any) => {
       toast({
         title: "Bulk refresh failed",
+        description: err?.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const fetchImagesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/inventory/fetch-missing-images");
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/listings"] });
+      toast({
+        title: "Photos fetched",
+        description: `${data.updated} added · ${data.skipped} not found · ${data.failed} failed`,
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Photo fetch failed",
         description: err?.message,
         variant: "destructive",
       });
@@ -404,6 +427,20 @@ export default function InventoryPage() {
                 }`}
               />
               {refreshAllMutation.isPending ? "Refreshing…" : "Refresh prices"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchImagesMutation.mutate()}
+              disabled={fetchImagesMutation.isPending}
+              data-testid="button-fetch-images"
+            >
+              <ImageIcon
+                className={`h-4 w-4 mr-1.5 ${
+                  fetchImagesMutation.isPending ? "animate-pulse" : ""
+                }`}
+              />
+              {fetchImagesMutation.isPending ? "Fetching photos…" : "Fetch photos"}
             </Button>
             <Button
               variant="outline"

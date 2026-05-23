@@ -21,7 +21,7 @@ import {
   runAutoImport,
   setAutoImportConfig,
 } from "./autoImport";
-import { refreshItem, refreshAll, persistRefreshResult } from "./pricing";
+import { refreshItem, refreshAll, persistRefreshResult, fetchImageOnly, fetchMissingImages } from "./pricing";
 import { broadcast } from "./realtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -344,6 +344,35 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("pricing/refresh-all error:", err);
       res.status(500).json({ message: err?.message || "Refresh failed" });
+    }
+  });
+
+  // Fetch image for a single item (no price change)
+  app.post("/api/inventory/:id/fetch-image", async (req, res) => {
+    try {
+      const item = await storage.getInventoryItem(req.params.id);
+      if (!item) return res.status(404).json({ message: "Item not found" });
+      const url = await fetchImageOnly(item);
+      if (!url) return res.json({ imageUrl: null, found: false });
+      await storage.updateInventory(item.id, { imageUrl: url } as any);
+      const updated = await storage.getInventoryItem(item.id);
+      if (updated) broadcast({ type: "inventory:update", payload: updated });
+      res.json({ imageUrl: url, found: true });
+    } catch (err: any) {
+      console.error("inventory/fetch-image error:", err);
+      res.status(500).json({ message: err?.message || "Image fetch failed" });
+    }
+  });
+
+  // Bulk-fetch images for every in-stock item that's missing one
+  app.post("/api/inventory/fetch-missing-images", async (_req, res) => {
+    try {
+      const result = await fetchMissingImages();
+      broadcast({ type: "inventory:bulk", payload: {} });
+      res.json(result);
+    } catch (err: any) {
+      console.error("inventory/fetch-missing-images error:", err);
+      res.status(500).json({ message: err?.message || "Bulk image fetch failed" });
     }
   });
 

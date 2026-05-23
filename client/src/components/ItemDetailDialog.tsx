@@ -15,7 +15,7 @@ import { CategoryBadge, FranchiseBadge, StatusBadge } from "@/components/Badges"
 import { CardThumb } from "@/components/CardThumb";
 import { SourceBadge } from "@/components/SourceBadge";
 import { formatCurrency, formatDate, pnlClass } from "@/lib/format";
-import { RefreshCw, Camera, X as XIcon } from "lucide-react";
+import { RefreshCw, Camera, X as XIcon, ImageIcon } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -82,6 +82,34 @@ export function ItemDetailDialog({
     onError: (err: any) => {
       toast({
         title: "Upload failed",
+        description: err?.message ?? "",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const findImageMutation = useMutation({
+    mutationFn: async () => {
+      if (!itemId) return null;
+      const res = await apiRequest("POST", `/api/inventory/${itemId}/fetch-image`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/listings"] });
+      if (data?.found) {
+        toast({ title: "Image found", description: "Pulled from TCG source." });
+      } else {
+        toast({
+          title: "No image found",
+          description: "Try uploading one manually.",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Image lookup failed",
         description: err?.message ?? "",
         variant: "destructive",
       });
@@ -219,6 +247,19 @@ export function ItemDetailDialog({
                     </Button>
                   )}
                 </div>
+                {!item.imageUrl && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => findImageMutation.mutate()}
+                    disabled={findImageMutation.isPending}
+                    data-testid={`button-find-image-${item.id}`}
+                    className="w-full mt-2"
+                  >
+                    <ImageIcon className="h-3.5 w-3.5 mr-1.5" />
+                    {findImageMutation.isPending ? "Searching\u2026" : "Find image online"}
+                  </Button>
+                )}
                 <p className="text-[10px] text-muted-foreground mt-2">
                   Visible to customers in the shop.
                 </p>
