@@ -152,57 +152,13 @@ export default function ShopPage() {
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
             <div className="flex items-start gap-4">
               {/* Logo */}
-              <svg
-                width="56"
-                height="56"
-                viewBox="0 0 32 32"
-                fill="none"
-                aria-label="CPulls Cards logo"
-                className="shrink-0"
-              >
-                <rect
-                  x="4.5"
-                  y="8"
-                  width="13"
-                  height="18"
-                  rx="2"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  opacity="0.35"
-                />
-                <rect
-                  x="8.5"
-                  y="6"
-                  width="13"
-                  height="18"
-                  rx="2"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  opacity="0.6"
-                />
-                <rect
-                  x="12.5"
-                  y="4"
-                  width="14"
-                  height="20"
-                  rx="2"
-                  fill="hsl(var(--primary))"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth="1.5"
-                />
-                <text
-                  x="19.5"
-                  y="17"
-                  textAnchor="middle"
-                  fontSize="10"
-                  fontWeight="800"
-                  fill="hsl(var(--primary-foreground))"
-                  fontFamily="Inter, sans-serif"
-                  letterSpacing="-0.5"
-                >
-                  C
-                </text>
-              </svg>
+              <img
+                src="/logo.jpeg"
+                alt="Chris Collects Co logo"
+                width={64}
+                height={64}
+                className="shrink-0 h-16 w-16 rounded-full object-cover ring-2 ring-primary/40 shadow-md"
+              />
               <div className="min-w-0">
                 <div className="text-[10px] uppercase tracking-[0.28em] text-primary font-semibold mb-1.5">
                   {BRAND_HANDLE}
