@@ -120,8 +120,13 @@ export default function AutoImportPage() {
             <div className="flex items-center gap-2">
               <Switch
                 checked={!!s?.enabled}
-                onCheckedChange={(v) => configMutation.mutate({ enabled: v })}
-                disabled={!s?.url}
+                onCheckedChange={(v) =>
+                  configMutation.mutate({
+                    enabled: v,
+                    url: (urlDraft || s?.url) ?? null,
+                  })
+                }
+                disabled={!urlDraft && !s?.url}
                 data-testid="switch-enabled"
               />
               <Label className="text-sm">{s?.enabled ? "On" : "Off"}</Label>

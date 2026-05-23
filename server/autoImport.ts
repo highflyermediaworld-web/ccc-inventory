@@ -118,14 +118,22 @@ function parseStr(v: unknown): string {
   return String(v).trim();
 }
 
+function normalizeKey(k: string): string {
+  // Lowercase, strip parentheticals, strip all non-alphanumerics.
+  return k
+    .toLowerCase()
+    .replace(/\(.*?\)/g, "") // remove (per unit), (who / where), etc.
+    .replace(/[^a-z0-9]/g, "");
+}
+
 function pick(row: Record<string, any>, ...keys: string[]): any {
-  // Try each candidate column key (case-insensitive, ignoring spaces/underscores).
+  // Try each candidate column key (case-insensitive, ignoring spaces/punct).
   const normalized = Object.keys(row).reduce<Record<string, string>>((acc, k) => {
-    acc[k.toLowerCase().replace(/[\s_-]+/g, "")] = k;
+    acc[normalizeKey(k)] = k;
     return acc;
   }, {});
   for (const key of keys) {
-    const lookup = key.toLowerCase().replace(/[\s_-]+/g, "");
+    const lookup = normalizeKey(key);
     const realKey = normalized[lookup];
     if (realKey !== undefined) {
       const val = row[realKey];
@@ -136,8 +144,10 @@ function pick(row: Record<string, any>, ...keys: string[]): any {
 }
 
 function rowToItem(row: Record<string, any>, sheetFranchise: string): InsertInventory | null {
-  const id = parseStr(pick(row, "id", "sku", "card id", "cardid"));
-  const name = parseStr(pick(row, "name", "card name", "item", "title"));
+  const id = parseStr(pick(row, "id", "sku", "item id", "itemid", "card id", "cardid"));
+  const name = parseStr(
+    pick(row, "name", "item name", "itemname", "card name", "item", "title")
+  );
   if (!id || !name) return null;
 
   return {
@@ -149,15 +159,64 @@ function rowToItem(row: Record<string, any>, sheetFranchise: string): InsertInve
     rarity: parseStr(pick(row, "rarity")) || null,
     condition: parseStr(pick(row, "condition", "grade")) || null,
     qty: parseNum(pick(row, "qty", "quantity", "count")) ?? 1,
-    source: parseStr(pick(row, "source", "supplier", "acquired from")) || null,
-    costPerUnit: parseNum(pick(row, "cost per unit", "cost", "costperunit", "unit cost")),
+    source: parseStr(
+      pick(
+        row,
+        "source",
+        "supplier",
+        "acquired from",
+        "acquisition source",
+        "acquisitionsource"
+      )
+    ) || null,
+    costPerUnit: parseNum(
+      pick(row, "cost per unit", "cost", "costperunit", "unit cost")
+    ),
     totalCost: parseNum(pick(row, "total cost", "totalcost")),
-    marketValue: parseNum(pick(row, "market value", "marketvalue", "value")),
-    asking: parseNum(pick(row, "asking", "asking price", "price")),
-    soldPrice: parseNum(pick(row, "sold price", "soldprice", "sale price")),
-    status: parseStr(pick(row, "status")) || "In Inventory",
+    marketValue: parseNum(
+      pick(
+        row,
+        "market value",
+        "marketvalue",
+        "value",
+        "current market value",
+        "currentmarketvalue"
+      )
+    ),
+    asking: parseNum(
+      pick(row, "asking", "asking price", "price", "askingprice")
+    ),
+    soldPrice: parseNum(
+      pick(
+        row,
+        "sold price",
+        "soldprice",
+        "sale price",
+        "actual sale price",
+        "actualsaleprice"
+      )
+    ),
+    status: parseStr(pick(row, "status", "inventory status", "inventorystatus")) || "In Inventory",
     notes: parseStr(pick(row, "notes", "note", "comment")) || null,
   } as InsertInventory;
+}
+
+/**
+ * Detect whether a sheet looks like an inventory sheet (has Item ID + Item Name
+ * columns, or sheet name contains "inventory"). Skips Sales Log, Events,
+ * Expenses, Grading queue, Dashboard, etc.
+ */
+function looksLikeInventorySheet(sheetName: string, firstRow?: Record<string, any>): boolean {
+  const n = sheetName.toLowerCase();
+  if (/sales|expense|event|grading|dashboard|cheat|helper/.test(n)) return false;
+  if (/inventory|stash|stock|items?/.test(n)) return true;
+  if (!firstRow) return false;
+  const keys = Object.keys(firstRow).map(normalizeKey);
+  const hasId = keys.some((k) => k === "id" || k === "sku" || k === "itemid" || k === "cardid");
+  const hasName = keys.some(
+    (k) => k === "name" || k === "itemname" || k === "cardname" || k === "item"
+  );
+  return hasId && hasName;
 }
 
 async function fetchWorkbook(url: string): Promise<XLSX.WorkBook> {
@@ -190,17 +249,31 @@ export async function runAutoImport(): Promise<AutoImportStatus> {
       const workbook = await fetchWorkbook(downloadUrl);
 
       const incoming: InsertInventory[] = [];
+      const sheetsScanned: string[] = [];
+      const sheetsSkipped: string[] = [];
       for (const sheetName of workbook.SheetNames) {
         const sheet = workbook.Sheets[sheetName];
         const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
           defval: null,
           raw: true,
         });
+        if (!looksLikeInventorySheet(sheetName, rows[0])) {
+          sheetsSkipped.push(sheetName);
+          continue;
+        }
+        sheetsScanned.push(sheetName);
+        // Derive a default franchise hint from sheet name (e.g. "Pokémon - Inventory").
+        const franchiseHint =
+          sheetName.replace(/[-_–].*/, "").replace(/inventory/i, "").trim() ||
+          sheetName;
         for (const row of rows) {
-          const item = rowToItem(row, sheetName);
+          const item = rowToItem(row, franchiseHint);
           if (item) incoming.push(item);
         }
       }
+      console.log(
+        `[autoImport] scanned sheets: ${sheetsScanned.join(", ") || "(none)"}; skipped: ${sheetsSkipped.join(", ") || "(none)"}`
+      );
 
       // De-duplicate by SKU (keep last occurrence).
       const bySku = new Map<string, InsertInventory>();
