@@ -1,6 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import type { Inventory, Transaction } from "@shared/schema";
 import { PageHeader } from "@/components/PageHeader";
+import { GoLiveToggle } from "@/components/GoLiveToggle";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CategoryBadge, FranchiseBadge } from "@/components/Badges";
@@ -168,6 +169,9 @@ export default function Dashboard() {
           </Button>
         }
       />
+
+      {/* Go Live one-tap toggle */}
+      <GoLiveToggle />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
