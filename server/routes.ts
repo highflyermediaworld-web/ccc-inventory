@@ -979,6 +979,429 @@ export async function registerRoutes(
     }
   });
 
+  // ── Buy / Trade Intake (admin) ────────────────────────────────
+  // List open deals (incoming pending trades + new customer requests) for the
+  // intake page's "attach to a deal" dropdown.
+  app.get("/api/intake/open-deals", requireAuth, async (_req, res) => {
+    try {
+      const allTrades = await storage.listTrades();
+      const allRequests = await storage.listCustomerRequests();
+      const openTrades = allTrades
+        .filter((t) => t.status === "Pending" && t.direction === "Incoming")
+        .map((t) => ({
+          kind: "trade" as const,
+          id: t.id,
+          label: `Trade #${t.id} \u2014 ${t.counterparty ?? "unknown"}`,
+          counterparty: t.counterparty,
+        }));
+      const openRequests = allRequests
+        .filter((r) => r.status === "New" && (r.type === "Trade" || r.type === "Buy"))
+        .map((r) => ({
+          kind: "request" as const,
+          id: r.id,
+          label: `${r.type} req #${r.id} \u2014 ${r.customerName}`,
+          counterparty: r.customerName,
+        }));
+      res.json({ deals: [...openTrades, ...openRequests] });
+    } catch (err: any) {
+      console.error("intake/open-deals error:", err);
+      res.status(500).json({ message: err.message || "Failed to list deals" });
+    }
+  });
+
+  // Scan a card and add it directly to inventory (optionally attach a Buy txn
+  // and link to an open trade/request). Returns the new inventory row.
+  app.post("/api/intake/scan-add", requireAuth, async (req, res) => {
+    try {
+      const schema = z.object({
+        franchise: z.string().min(1),
+        category: z.string().min(1), // Sealed | Raw | Slab
+        setName: z.string().default(""),
+        name: z.string().min(1),
+        rarity: z.string().optional().default(""),
+        condition: z.string().optional().default("NM"),
+        qty: z.number().int().min(1).default(1),
+        costPerUnit: z.number().nullable().optional(),
+        marketValue: z.number().nullable().optional(),
+        imageUrl: z.string().optional().nullable(),
+        notes: z.string().optional(),
+        // Intake-specific
+        counterparty: z.string().optional(), // who you're buying/trading from
+        intakeType: z.enum(["Buy", "Trade"]).default("Buy"),
+        attachTo: z
+          .object({ kind: z.enum(["trade", "request"]), id: z.number() })
+          .nullable()
+          .optional(),
+      });
+      const body = schema.parse(req.body);
+
+      // Build SKU server-side using the same prefix convention as the client
+      const PREFIX: Record<string, string> = {
+        "Pok\u00e9mon": "PK",
+        "One Piece": "OP",
+        "Magic The Gathering": "MTG",
+        DBZ: "DBZ",
+        "League of Legends": "LOL",
+        "Union Arena": "UA",
+        Other: "X",
+      };
+      const prefix = PREFIX[body.franchise] ?? "X";
+      const existing = await storage.listInventory();
+      const maxN = existing
+        .map((i) => i.id)
+        .filter((id) => id.startsWith(prefix + "-"))
+        .map((id) => parseInt(id.split("-")[1] || "0", 10))
+        .filter((n) => !Number.isNaN(n))
+        .reduce((a, b) => Math.max(a, b), 0);
+      const sku = `${prefix}-${String(maxN + 1).padStart(3, "0")}`;
+
+      const qty = body.qty;
+      const cpu = body.costPerUnit ?? 0;
+      const totalCost = Math.round(qty * cpu * 100) / 100;
+
+      const item = await storage.createInventory({
+        id: sku,
+        franchise: body.franchise,
+        category: body.category,
+        setName: body.setName,
+        name: body.name,
+        rarity: body.rarity || null,
+        condition: body.condition || "NM",
+        qty,
+        source: body.intakeType === "Trade" ? "Trade In" : "Buy In",
+        costPerUnit: cpu || null,
+        totalCost: totalCost || null,
+        marketValue: body.marketValue ?? null,
+        asking: null,
+        soldPrice: null,
+        status: "In Inventory",
+        notes: body.notes || null,
+        imageUrl: body.imageUrl || null,
+      } as any);
+
+      if (item?.marketValue != null) {
+        await storage.createPriceHistory({
+          itemId: item.id,
+          price: Number(item.marketValue),
+          source: "Manual",
+        });
+      }
+
+      // Record a Buy/Trade transaction so it shows up in the ledger
+      const baseNote =
+        body.intakeType === "Trade"
+          ? "Scanned in from a walk-up trade"
+          : "Scanned in from a walk-up buy";
+      const linkNote = body.attachTo
+        ? ` \u00b7 ${body.attachTo.kind === "trade" ? "Trade" : "Request"} #${body.attachTo.id}`
+        : "";
+      await storage.createTransaction({
+        type: body.intakeType === "Trade" ? "Trade" : "Buy",
+        itemId: sku,
+        itemName: body.name,
+        counterparty: body.counterparty || null,
+        price: cpu || 0,
+        pnl: null,
+        notes: baseNote + linkNote,
+      } as any);
+
+      // Optionally append a note to the linked trade/request.
+      // Trades have no notes column — we surface the linkage on the
+      // transaction notes instead (already done above when intakeType=Trade).
+      if (body.attachTo) {
+        try {
+          if (body.attachTo.kind === "trade") {
+            // No-op for now: trades schema has no notes column. We rely on the
+            // matching counterparty + transaction ledger to surface the link.
+            console.log(
+              `intake: scanned ${sku} for trade #${body.attachTo.id}`
+            );
+          } else if (body.attachTo.kind === "request") {
+            const r = await storage.getCustomerRequest(body.attachTo.id);
+            if (r) {
+              const prev = (r as any).adminNote ?? "";
+              const append = `Scanned in: ${sku} \u2014 ${body.name}`;
+              await storage.updateCustomerRequest(body.attachTo.id, {
+                adminNote: prev ? `${prev}\n${append}` : append,
+              } as any);
+            }
+          }
+        } catch (e) {
+          console.warn("intake: failed to attach to deal", e);
+        }
+      }
+
+      broadcast({ type: "inventory:create", payload: item });
+      res.status(201).json({ ok: true, item });
+    } catch (err: any) {
+      console.error("intake/scan-add error:", err);
+      res.status(400).json({ message: err.message || "Intake failed" });
+    }
+  });
+
+  // ── Payments (admin POS) ────────────────────────────────────────
+  // Cart-style sale: takes N inventory items, marks them Sold, records one
+  // Sell transaction per item with the payment method captured in notes.
+  app.post("/api/payments/sell", requireAuth, async (req, res) => {
+    try {
+      const schema = z.object({
+        items: z
+          .array(
+            z.object({
+              itemId: z.string().min(1),
+              soldPrice: z.number(),
+            })
+          )
+          .min(1),
+        counterparty: z.string().optional().nullable(),
+        paymentMethod: z
+          .enum(["Cash", "Venmo", "Zelle", "CashApp", "Other"])
+          .default("Cash"),
+        discount: z.number().optional().default(0),
+        tax: z.number().optional().default(0),
+        notes: z.string().optional().nullable(),
+      });
+      const body = schema.parse(req.body);
+
+      const results: any[] = [];
+      let subtotal = 0;
+      let totalPnl = 0;
+
+      for (const line of body.items) {
+        const item = await storage.getInventoryItem(line.itemId);
+        if (!item) {
+          results.push({ itemId: line.itemId, ok: false, error: "Not found" });
+          continue;
+        }
+        if (item.status === "Sold") {
+          results.push({ itemId: line.itemId, ok: false, error: "Already sold" });
+          continue;
+        }
+        const updated = await storage.updateInventory(line.itemId, {
+          status: "Sold",
+          soldPrice: line.soldPrice,
+        });
+        const pnl = (line.soldPrice ?? 0) - (item.totalCost ?? 0);
+        subtotal += line.soldPrice ?? 0;
+        totalPnl += pnl;
+        await storage.createTransaction({
+          type: "Sell",
+          itemId: item.id,
+          itemName: `${item.setName} \u2014 ${item.name}`,
+          counterparty: body.counterparty || null,
+          price: line.soldPrice,
+          pnl,
+          notes: `Paid via ${body.paymentMethod}${
+            body.notes ? " \u00b7 " + body.notes : ""
+          }`,
+        } as any);
+        // Deactivate any user listings for this item
+        const existing = await storage.listListings();
+        for (const l of existing.filter(
+          (x) => x.itemId === item.id && !x.sellerName
+        )) {
+          await storage.deactivateListing(l.id);
+        }
+        if (updated) broadcast({ type: "inventory:update", payload: updated });
+        results.push({ itemId: line.itemId, ok: true, item: updated });
+      }
+
+      const total =
+        Math.round((subtotal + (body.tax ?? 0) - (body.discount ?? 0)) * 100) /
+        100;
+      broadcast({ type: "transactions:update", payload: {} });
+      broadcast({ type: "listings:update", payload: {} });
+      res.json({
+        ok: true,
+        subtotal: Math.round(subtotal * 100) / 100,
+        tax: body.tax ?? 0,
+        discount: body.discount ?? 0,
+        total,
+        pnl: Math.round(totalPnl * 100) / 100,
+        paymentMethod: body.paymentMethod,
+        lines: results,
+      });
+    } catch (err: any) {
+      console.error("payments/sell error:", err);
+      res.status(400).json({ message: err?.message || "Sale failed" });
+    }
+  });
+
+  // Two-sided trade commit: their items become new inventory rows (intake),
+  // your items get marked Traded with a Trade transaction. Optional cash
+  // boot (difference) is recorded as a separate transaction.
+  app.post("/api/payments/trade", requireAuth, async (req, res) => {
+    try {
+      const schema = z.object({
+        // Items the customer is giving us
+        theirItems: z
+          .array(
+            z.object({
+              franchise: z.string().min(1),
+              category: z.string().min(1),
+              setName: z.string().default(""),
+              name: z.string().min(1),
+              rarity: z.string().optional().default(""),
+              condition: z.string().optional().default("NM"),
+              marketValue: z.number().nullable().optional(),
+              imageUrl: z.string().nullable().optional(),
+            })
+          )
+          .default([]),
+        // Items we're giving them (from existing inventory)
+        ourItemIds: z.array(z.string()).default([]),
+        counterparty: z.string().optional().nullable(),
+        cashBoot: z.number().optional().default(0), // positive = they pay us cash on top
+        bootDirection: z
+          .enum(["in", "out", "none"])
+          .optional()
+          .default("none"),
+        bootMethod: z
+          .enum(["Cash", "Venmo", "Zelle", "CashApp", "Other"])
+          .optional()
+          .default("Cash"),
+        notes: z.string().optional().nullable(),
+      });
+      const body = schema.parse(req.body);
+
+      // SKU helper
+      const PREFIX: Record<string, string> = {
+        "Pok\u00e9mon": "PK",
+        "One Piece": "OP",
+        "Magic The Gathering": "MTG",
+        DBZ: "DBZ",
+        "League of Legends": "LOL",
+        "Union Arena": "UA",
+        Other: "X",
+      };
+
+      const allInv = await storage.listInventory();
+      function nextSku(franchise: string, existing: string[]): string {
+        const prefix = PREFIX[franchise] ?? "X";
+        const maxN = existing
+          .filter((id) => id.startsWith(prefix + "-"))
+          .map((id) => parseInt(id.split("-")[1] || "0", 10))
+          .filter((n) => !Number.isNaN(n))
+          .reduce((a, b) => Math.max(a, b), 0);
+        return `${prefix}-${String(maxN + 1).padStart(3, "0")}`;
+      }
+
+      // Their items → create inventory rows
+      const usedIds = allInv.map((i) => i.id);
+      const created: any[] = [];
+      let theirValue = 0;
+      for (const it of body.theirItems) {
+        const sku = nextSku(it.franchise, usedIds);
+        usedIds.push(sku);
+        const row = await storage.createInventory({
+          id: sku,
+          franchise: it.franchise,
+          category: it.category,
+          setName: it.setName,
+          name: it.name,
+          rarity: it.rarity || null,
+          condition: it.condition || "NM",
+          qty: 1,
+          source: "Trade In",
+          costPerUnit: it.marketValue ?? null,
+          totalCost: it.marketValue ?? null,
+          marketValue: it.marketValue ?? null,
+          asking: null,
+          soldPrice: null,
+          status: "In Inventory",
+          notes: `Acquired via trade with ${body.counterparty ?? "customer"}`,
+          imageUrl: it.imageUrl || null,
+        } as any);
+        if (row?.marketValue != null) {
+          await storage.createPriceHistory({
+            itemId: row.id,
+            price: Number(row.marketValue),
+            source: "Manual",
+          });
+        }
+        theirValue += it.marketValue ?? 0;
+        await storage.createTransaction({
+          type: "Trade",
+          itemId: sku,
+          itemName: it.name,
+          counterparty: body.counterparty || null,
+          price: it.marketValue ?? 0,
+          pnl: null,
+          notes: `Trade-in from ${body.counterparty ?? "customer"}`,
+        } as any);
+        if (row) broadcast({ type: "inventory:create", payload: row });
+        created.push(row);
+      }
+
+      // Our items → mark Traded
+      const ourLines: any[] = [];
+      let ourValue = 0;
+      for (const id of body.ourItemIds) {
+        const item = await storage.getInventoryItem(id);
+        if (!item) {
+          ourLines.push({ itemId: id, ok: false, error: "Not found" });
+          continue;
+        }
+        const updated = await storage.updateInventory(id, {
+          status: "Traded",
+          soldPrice: item.marketValue ?? null,
+        });
+        const pnl =
+          (item.marketValue ?? 0) - (item.totalCost ?? 0);
+        ourValue += item.marketValue ?? 0;
+        await storage.createTransaction({
+          type: "Trade",
+          itemId: id,
+          itemName: `${item.setName} \u2014 ${item.name}`,
+          counterparty: body.counterparty || null,
+          price: item.marketValue ?? 0,
+          pnl,
+          notes: `Trade-out to ${body.counterparty ?? "customer"}`,
+        } as any);
+        // Deactivate any user listings for this item
+        const listings = await storage.listListings();
+        for (const l of listings.filter(
+          (x) => x.itemId === id && !x.sellerName
+        )) {
+          await storage.deactivateListing(l.id);
+        }
+        if (updated) broadcast({ type: "inventory:update", payload: updated });
+        ourLines.push({ itemId: id, ok: true, item: updated });
+      }
+
+      // Cash boot — record as a separate Buy/Sell-style transaction
+      if (body.bootDirection !== "none" && (body.cashBoot ?? 0) > 0) {
+        await storage.createTransaction({
+          type: body.bootDirection === "in" ? "Sell" : "Buy",
+          itemId: null,
+          itemName: "Cash boot (trade)",
+          counterparty: body.counterparty || null,
+          price: body.cashBoot,
+          pnl: null,
+          notes: `${body.bootDirection === "in" ? "Customer paid" : "Paid customer"} ${body.cashBoot} via ${body.bootMethod}${
+            body.notes ? " \u00b7 " + body.notes : ""
+          }`,
+        } as any);
+      }
+
+      broadcast({ type: "transactions:update", payload: {} });
+      broadcast({ type: "listings:update", payload: {} });
+
+      res.json({
+        ok: true,
+        theirValue: Math.round(theirValue * 100) / 100,
+        ourValue: Math.round(ourValue * 100) / 100,
+        cashBoot: body.cashBoot ?? 0,
+        bootDirection: body.bootDirection,
+        created,
+        ourLines,
+      });
+    } catch (err: any) {
+      console.error("payments/trade error:", err);
+      res.status(400).json({ message: err?.message || "Trade failed" });
+    }
+  });
+
   // ── Live stream banner ──────────────────────────────────────────
   // Public: customers fetch this to show the live banner on the shop
   app.get("/api/live", async (_req, res) => {

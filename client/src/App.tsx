@@ -21,6 +21,8 @@ import Requests from "@/pages/Requests";
 import Users from "@/pages/Users";
 import AutoImport from "@/pages/AutoImport";
 import AdminLive from "@/pages/AdminLive";
+import Intake from "@/pages/Intake";
+import Payments from "@/pages/Payments";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import NotFound from "@/pages/not-found";
@@ -51,6 +53,8 @@ function AdminShell() {
           <Route path="/admin/users" component={Users} />
           <Route path="/admin/auto-import" component={AutoImport} />
           <Route path="/admin/live" component={AdminLive} />
+          <Route path="/admin/intake" component={Intake} />
+          <Route path="/admin/payments" component={Payments} />
           <Route component={NotFound} />
         </Switch>
       </AppLayout>
