@@ -215,6 +215,140 @@
   color: hsl(var(--primary));
 }
 
+/* ============================================================
+   ANIME / MANGA STYLING
+   ============================================================ */
+
+/* Display font (poster-bold manga feel) */
+.font-anime {
+  font-family: 'Bebas Neue', 'Russo One', 'Bangers', Impact, sans-serif;
+  letter-spacing: 0.04em;
+}
+.font-anime-alt {
+  font-family: 'Russo One', 'Bebas Neue', Impact, sans-serif;
+  letter-spacing: 0.02em;
+}
+
+/* Manga halftone dots (subtle pattern overlay) */
+.bg-halftone {
+  background-image: radial-gradient(circle at center, hsl(var(--primary) / 0.4) 0.8px, transparent 1.2px);
+  background-size: 6px 6px;
+  background-position: 0 0;
+}
+.bg-halftone-lg {
+  background-image: radial-gradient(circle at center, hsl(var(--primary) / 0.35) 1.2px, transparent 1.8px);
+  background-size: 12px 12px;
+}
+
+/* Diagonal speed-lines (anime motion lines) */
+.bg-speedlines {
+  background-image: repeating-linear-gradient(
+    -68deg,
+    hsl(var(--primary) / 0.18) 0 1px,
+    transparent 1px 10px,
+    hsl(var(--primary) / 0.08) 10px 11px,
+    transparent 11px 22px
+  );
+}
+.bg-speedlines-burst {
+  background-image: repeating-conic-gradient(
+    from 0deg at 50% 50%,
+    hsl(var(--primary) / 0.18) 0deg 1.2deg,
+    transparent 1.2deg 6deg
+  );
+}
+
+/* Red neon glow */
+.glow-red {
+  text-shadow:
+    0 0 6px hsl(var(--primary) / 0.55),
+    0 0 18px hsl(var(--primary) / 0.35);
+}
+.glow-red-sm {
+  text-shadow: 0 0 4px hsl(var(--primary) / 0.4);
+}
+.shadow-glow-red {
+  box-shadow:
+    0 0 0 1px hsl(var(--primary) / 0.4),
+    0 0 24px -4px hsl(var(--primary) / 0.5),
+    0 0 60px -12px hsl(var(--primary) / 0.35);
+}
+.shadow-glow-red-strong {
+  box-shadow:
+    0 0 0 2px hsl(var(--primary) / 0.6),
+    0 0 32px -2px hsl(var(--primary) / 0.7),
+    0 0 80px -8px hsl(var(--primary) / 0.5);
+}
+
+/* Manga panel-border (thick black outline + red shadow offset) */
+.manga-panel {
+  border: 2px solid hsl(0 0% 0%);
+  box-shadow: 4px 4px 0 0 hsl(var(--primary));
+}
+.dark .manga-panel {
+  border: 2px solid hsl(0 0% 100%);
+  box-shadow: 4px 4px 0 0 hsl(var(--primary));
+}
+
+/* Holo / foil card sheen */
+@keyframes holo-shine {
+  0% { background-position: -200% 50%; }
+  100% { background-position: 200% 50%; }
+}
+.holo-sheen {
+  position: relative;
+  overflow: hidden;
+}
+.holo-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 35%,
+    hsl(var(--primary) / 0.25) 48%,
+    rgba(255,255,255,0.35) 50%,
+    hsl(var(--primary) / 0.25) 52%,
+    transparent 65%
+  );
+  background-size: 200% 200%;
+  background-position: -200% 50%;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: holo-shine 4.5s ease-in-out infinite;
+}
+
+/* Card hover tilt + lift */
+.card-tilt {
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.35s ease;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.card-tilt:hover {
+  transform: perspective(900px) translateY(-4px) rotateX(4deg) rotateY(-4deg) scale(1.02);
+  box-shadow:
+    0 18px 40px -10px hsl(var(--primary) / 0.35),
+    0 0 0 1px hsl(var(--primary) / 0.4);
+}
+
+/* Animated entrance */
+@keyframes anime-slide-up {
+  0% { opacity: 0; transform: translateY(18px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.anime-enter {
+  animation: anime-slide-up 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Marquee for the chip strip */
+@keyframes anime-marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.anime-marquee {
+  animation: anime-marquee 30s linear infinite;
+}
+
 /* Live pulse animation for live-stream banner */
 @keyframes live-pulse {
   0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.55); }
@@ -222,6 +356,26 @@
 }
 .live-pulse-dot {
   animation: live-pulse 1.6s ease-out infinite;
+}
+
+/* Spotlight scan across the hero */
+@keyframes anime-spotlight {
+  0%, 100% { transform: translateX(-30%) rotate(12deg); opacity: 0; }
+  20% { opacity: 0.5; }
+  60% { opacity: 0.5; }
+  90% { transform: translateX(130%) rotate(12deg); opacity: 0; }
+}
+.anime-spotlight {
+  animation: anime-spotlight 7s ease-in-out infinite;
+}
+
+/* Subtle background twinkle (sparkles) */
+@keyframes anime-twinkle {
+  0%, 100% { opacity: 0.25; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+.anime-twinkle {
+  animation: anime-twinkle 2.6s ease-in-out infinite;
 }
 
 .positive {

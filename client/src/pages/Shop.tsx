@@ -139,15 +139,13 @@ export default function ShopPage() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* ============ HEADER BAND ============ */}
-      <header className="relative border-b border-border bg-gradient-to-br from-[hsl(var(--sidebar))] via-[hsl(var(--sidebar))] to-[hsl(var(--sidebar))]/95 text-sidebar-foreground overflow-hidden">
-        {/* Decorative diagonal pattern */}
+      <header className="relative border-b-2 border-primary/30 bg-black text-sidebar-foreground overflow-hidden">
+        {/* Halftone + speedline decoration */}
+        <div aria-hidden className="absolute inset-0 bg-halftone opacity-30 pointer-events-none" />
+        <div aria-hidden className="absolute inset-0 bg-speedlines opacity-30 pointer-events-none" />
         <div
           aria-hidden
-          className="absolute inset-0 opacity-[0.05] pointer-events-none"
-          style={{
-            backgroundImage:
-              "repeating-linear-gradient(45deg, hsl(var(--primary)) 0 1px, transparent 1px 24px)",
-          }}
+          className="absolute -top-32 -right-24 h-96 w-96 rounded-full bg-primary/15 blur-3xl pointer-events-none"
         />
         <div className="relative mx-auto max-w-7xl px-5 sm:px-8 pt-10 pb-12">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
@@ -165,7 +163,7 @@ export default function ShopPage() {
                   {BRAND_HANDLE}
                 </div>
                 <h1
-                  className="text-3xl sm:text-4xl font-bold tracking-tight leading-[1.05]"
+                  className="font-anime text-4xl sm:text-5xl tracking-wide leading-[0.95] uppercase glow-red-sm"
                   data-testid="text-shop-title"
                 >
                   CPulls Cards
@@ -220,48 +218,72 @@ export default function ShopPage() {
         </div>
       </section>
 
-      {/* ============ HERO STRIP ============ */}
-      <section className="border-b border-border bg-muted/30">
-        <div className="mx-auto max-w-7xl px-5 sm:px-8 py-10">
-          <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 border border-primary/20 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-primary font-semibold mb-4">
-                <Sparkles className="h-3 w-3" /> New drops weekly
+      {/* ============ ANIME HERO ============ */}
+      <section className="relative overflow-hidden border-b-2 border-primary/40 bg-black text-white">
+        {/* Halftone dot layer */}
+        <div className="absolute inset-0 bg-halftone-lg opacity-40 pointer-events-none" />
+        {/* Speed-line burst from upper-right */}
+        <div
+          className="absolute -top-40 -right-40 w-[640px] h-[640px] bg-speedlines-burst opacity-50 pointer-events-none"
+          style={{ maskImage: "radial-gradient(circle, black 0%, transparent 70%)" }}
+        />
+        {/* Spotlight scan */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div
+            className="anime-spotlight absolute -top-20 left-0 h-[200%] w-40 bg-gradient-to-b from-transparent via-primary/20 to-transparent blur-2xl"
+          />
+        </div>
+        {/* Soft red vignette */}
+        <div className="absolute inset-0 bg-gradient-to-tr from-primary/15 via-transparent to-transparent pointer-events-none" />
+
+        <div className="relative mx-auto max-w-7xl px-5 sm:px-8 py-12 sm:py-16">
+          <div className="grid gap-10 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div className="anime-enter">
+              <div className="inline-flex items-center gap-2 rounded-full border border-primary/60 bg-primary/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-primary font-bold mb-5 shadow-glow-red">
+                <Sparkles className="h-3 w-3 anime-twinkle" /> New drops weekly
               </div>
-              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-3">
-                Hand-picked pulls, ready to ship.
+              <h2 className="font-anime text-5xl sm:text-7xl leading-[0.92] mb-4 uppercase">
+                <span className="block text-white glow-red-sm">Hand-picked</span>
+                <span className="block text-primary glow-red">pulls.</span>
+                <span className="block text-white/90 text-3xl sm:text-4xl mt-1">
+                  Ready to ship.
+                </span>
               </h2>
-              <p className="text-sm text-muted-foreground max-w-xl">
-                Every card in the shop was pulled, graded, or sourced personally. Buy outright or
-                propose a trade — Chris reviews every request.
+              <p className="text-sm sm:text-base text-white/70 max-w-xl leading-relaxed">
+                Every card was pulled, graded, or sourced personally. Buy outright or propose a
+                trade — Chris reviews every request.
               </p>
-              <div className="mt-5 flex items-center gap-3">
+              <div className="mt-7 flex items-center gap-4 flex-wrap">
                 <Button
                   size="lg"
                   onClick={scrollToListings}
                   data-testid="button-shop-cta"
-                  className="gap-2"
+                  className="gap-2 font-anime text-lg uppercase tracking-wider shadow-glow-red hover:shadow-glow-red-strong transition-shadow"
                 >
                   Browse listings <ArrowDown className="h-4 w-4" />
                 </Button>
                 {hasAnyListings && (
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {listings.length} {listings.length === 1 ? "card" : "cards"} available
+                  <span className="text-xs text-white/60 tabular-nums font-anime-alt tracking-widest uppercase">
+                    {listings.length} {listings.length === 1 ? "card" : "cards"} in stock
                   </span>
                 )}
               </div>
             </div>
 
             {featured.length > 0 && (
-              <div className="hidden lg:flex gap-3">
-                {featured.slice(0, 4).map((l) => (
+              <div className="hidden lg:flex gap-4 items-end">
+                {featured.slice(0, 4).map((l, idx) => (
                   <button
                     key={l.id}
                     onClick={() => setBuyTarget(l)}
-                    className="group w-32 text-left rounded-lg border border-border bg-card overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-lg hover:border-primary/30"
+                    className={[
+                      "card-tilt holo-sheen group relative w-36 text-left rounded-lg border-2 border-primary/40 bg-zinc-900 overflow-hidden anime-enter",
+                      idx % 2 === 0 ? "translate-y-2" : "-translate-y-2",
+                    ].join(" ")}
+                    style={{ animationDelay: `${idx * 80}ms` }}
                     data-testid={`featured-${l.id}`}
                   >
-                    <div className="aspect-[3/4] bg-muted/50">
+                    <div className="aspect-[3/4] bg-black">
                       <CardThumb
                         imageUrl={l.imageUrl}
                         franchise={l.franchise}
@@ -269,12 +291,12 @@ export default function ShopPage() {
                         className="h-full w-full"
                       />
                     </div>
-                    <div className="p-2">
-                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground truncate">
+                    <div className="p-2 bg-black/80 backdrop-blur-sm">
+                      <div className="text-[10px] uppercase tracking-wider text-white/50 truncate">
                         {l.setName}
                       </div>
-                      <div className="text-[11px] font-semibold truncate">{l.name}</div>
-                      <div className="mt-1 text-sm font-bold text-primary tabular-nums">
+                      <div className="text-[11px] font-semibold truncate text-white">{l.name}</div>
+                      <div className="mt-1 text-sm font-bold text-primary tabular-nums glow-red-sm">
                         {formatCurrency(l.askingPrice)}
                       </div>
                     </div>
@@ -282,6 +304,35 @@ export default function ShopPage() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Bottom marquee chip strip */}
+        <div className="relative border-t border-primary/30 bg-black overflow-hidden">
+          <div className="flex anime-marquee whitespace-nowrap py-2.5">
+            {[...Array(2)].map((_, dupe) => (
+              <div key={dupe} className="flex shrink-0 items-center gap-8 px-4">
+                {[
+                  "Pok\u00e9mon",
+                  "Magic: The Gathering",
+                  "One Piece",
+                  "Dragon Ball",
+                  "Union Arena",
+                  "Yu-Gi-Oh!",
+                  "Live pulls on TikTok",
+                  "Graded singles",
+                  "Sealed product",
+                ].map((text, i) => (
+                  <span
+                    key={`${dupe}-${i}`}
+                    className="font-anime text-sm uppercase tracking-[0.25em] text-white/70 inline-flex items-center gap-3"
+                  >
+                    {text}
+                    <span className="h-1 w-1 rounded-full bg-primary" />
+                  </span>
+                ))}
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -585,9 +636,9 @@ function ListingCard({
   return (
     <div
       data-testid={`card-listing-${listing.id}`}
-      className="group relative rounded-lg border border-border bg-card overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-lg hover:border-primary/30"
+      className="card-tilt group relative rounded-lg border-2 border-border bg-card overflow-hidden hover:border-primary/60"
     >
-      <div className="aspect-[3/4] bg-muted/40 relative">
+      <div className="holo-sheen aspect-[3/4] bg-black relative">
         <CardThumb
           imageUrl={listing.imageUrl}
           franchise={listing.franchise}
@@ -628,7 +679,7 @@ function ListingCard({
           </div>
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="text-lg font-bold tabular-nums text-primary">
+          <span className="font-anime text-2xl tabular-nums text-primary glow-red-sm leading-none">
             {formatCurrency(listing.askingPrice)}
           </span>
           {listing.marketValue && listing.marketValue !== listing.askingPrice && (
