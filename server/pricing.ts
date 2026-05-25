@@ -237,28 +237,141 @@ export async function refreshItem(item: Inventory): Promise<PriceResult> {
   return result;
 }
 
-// Fetch only an image URL for an item (no pricing). Tries Scryfall (MTG) or
-// TCGdex (Pokémon) directly, then falls back to asking Claude for a public
-// product image URL (TCGplayer / eBay / official set page) for other
-// franchises.
+// Clean a messy Pokemon card name from spreadsheet imports.
+// Input examples:
+//   "Kirlia - 212/198 - SV01: Scarlet & Violet Base Set (SVI)"
+//   "N's Zoroark ex - 185/159 - SV09: Journey Together (JTG)"
+//   "Umbreon VMAX - SWSH07: Evolving Skies (SWSH07)"
+// Returns: { cleanName, collectorNumber, setCode }
+function parsePokemonName(raw: string): {
+  cleanName: string;
+  collectorNumber: string | null;
+  setCode: string | null;
+} {
+  let cleanName = raw;
+  let collectorNumber: string | null = null;
+  let setCode: string | null = null;
+
+  // Pull out collector number like "212/198"
+  const numMatch = raw.match(/\b(\d{1,4})\s*\/\s*\d{1,4}\b/);
+  if (numMatch) collectorNumber = numMatch[1];
+
+  // Pull out trailing set code in parens like "(SVI)" or "(SWSH07)"
+  const codeMatch = raw.match(/\(([A-Z0-9]{2,8})\)\s*$/);
+  if (codeMatch) setCode = codeMatch[1];
+
+  // Trim everything after the first ' - ' if it contains a collector number or set code
+  const dashIdx = raw.indexOf(" - ");
+  if (dashIdx > 0) {
+    const tail = raw.slice(dashIdx);
+    if (/\d+\s*\/\s*\d+/.test(tail) || /\([A-Z0-9]{2,8}\)/.test(tail)) {
+      cleanName = raw.slice(0, dashIdx).trim();
+    }
+  }
+  // Drop any parenthetical (Alternate Full Art) tags as well
+  cleanName = cleanName.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  return { cleanName, collectorNumber, setCode };
+}
+
+// Pokemon TCG API (pokemontcg.io) lookup. Free, no key required.
+// Has both cards (with high-res images) AND set logos.
+async function getPokemonTcgImage(
+  cleanName: string,
+  setHint: string | null,
+  number: string | null
+): Promise<string | null> {
+  try {
+    // Build a Lucene-style query against the v2 cards endpoint
+    const parts: string[] = [];
+    if (cleanName) parts.push(`name:"${cleanName.replace(/"/g, "\\\"")}"`);
+    if (number) parts.push(`number:${number}`);
+    if (setHint) parts.push(`set.name:"${setHint.replace(/"/g, "\\\"")}"`);
+    const q = parts.join(" ");
+    const url = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=5`;
+    const res = await fetch(url, { headers: COMMON_HEADERS });
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    const card = data?.data?.[0];
+    return card?.images?.large || card?.images?.small || null;
+  } catch {
+    return null;
+  }
+}
+
+// Get the set logo image (used as fallback for sealed Pokemon products)
+async function getPokemonSetLogo(setHint: string | null): Promise<string | null> {
+  if (!setHint) return null;
+  try {
+    // Strip parenthetical and "SV01:" style prefix
+    const cleanSet = setHint
+      .replace(/^[A-Z]{1,4}\d{0,3}:\s*/i, "")
+      .replace(/\s*\([^)]*\)\s*$/, "")
+      .trim();
+    const url = `https://api.pokemontcg.io/v2/sets?q=${encodeURIComponent(`name:"${cleanSet}"`)}&pageSize=3`;
+    const res = await fetch(url, { headers: COMMON_HEADERS });
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    const set = data?.data?.[0];
+    return set?.images?.logo || set?.images?.symbol || null;
+  } catch {
+    return null;
+  }
+}
+
+// Detect if an item is sealed product (Booster Box, ETB, etc.)
+function isSealedProduct(item: Inventory): boolean {
+  if (item.category && /sealed/i.test(item.category)) return true;
+  const n = (item.name || "").toLowerCase();
+  return /\b(booster|etb|elite trainer|bundle|display|tin|collection box|premium|sealed|pack|deck box|battle box|theme deck)\b/.test(
+    n
+  );
+}
+
+// Fetch only an image URL for an item (no pricing).
+// Strategy (in order):
+//   1. MTG -> Scryfall  /  Pokemon -> TCGdex (existing)
+//   2. Pokemon -> pokemontcg.io with cleaned name + collector number
+//   3. Sealed Pokemon products -> set logo from pokemontcg.io
+//   4. Other franchises -> ask Claude for a public image URL
 export async function fetchImageOnly(item: Inventory): Promise<string | null> {
-  const name = item.name;
+  const rawName = item.name;
   const set = item.setName ?? null;
   const franchise = item.franchise;
 
-  // 1. Use the same dedicated APIs the pricing module uses
+  // ---- MTG ----
   if (franchise === "Magic The Gathering") {
-    const r = await getScryfallPrice(name, set);
-    if (r?.imageUrl) return r.imageUrl;
-  } else if (franchise === "Pok\u00e9mon") {
-    const r = await getTcgdexPrice(name, set);
+    const r = await getScryfallPrice(rawName, set);
     if (r?.imageUrl) return r.imageUrl;
   }
 
-  // 2. Ask Claude for a likely public product image URL.
-  // Constrained to common TCG image hosts to avoid hallucination of random URLs.
+  // ---- Pokemon ----
+  if (franchise === "Pok\u00e9mon") {
+    const { cleanName, collectorNumber, setCode } = parsePokemonName(rawName);
+
+    // Try TCGdex with the cleaned name first
+    const tcgdex = await getTcgdexPrice(cleanName, set);
+    if (tcgdex?.imageUrl) return tcgdex.imageUrl;
+
+    // Try pokemontcg.io with cleaned name + number + set hint
+    const ptcg = await getPokemonTcgImage(cleanName, set, collectorNumber);
+    if (ptcg) return ptcg;
+
+    // Try pokemontcg.io with the set code only (last resort name match)
+    if (setCode) {
+      const ptcg2 = await getPokemonTcgImage(cleanName, setCode, collectorNumber);
+      if (ptcg2) return ptcg2;
+    }
+
+    // Sealed products: fall back to set logo (better than blank)
+    if (isSealedProduct(item)) {
+      const logo = await getPokemonSetLogo(set);
+      if (logo) return logo;
+    }
+  }
+
+  // ---- Anything else: ask Claude for a public image URL ----
   try {
-    const prompt = `Provide a single direct public image URL (ends in .jpg, .jpeg, .png, or .webp) for this trading card / collectible product. Prefer images hosted on tcgplayer.com (product-images.tcgplayer.com), TCGdex, Scryfall, the official manufacturer site, or a well-known card database. Return ONLY valid JSON:\n{ "imageUrl": string | null }\nProduct:\n- Name: ${name}\n- Set: ${set ?? ""}\n- Franchise: ${franchise}\n- Rarity: ${item.rarity ?? ""}\nIf you cannot find a high-confidence direct image URL, return null. Do not fabricate URLs.`;
+    const prompt = `Provide a single direct public image URL (ends in .jpg, .jpeg, .png, or .webp) for this trading card / collectible product. Prefer images hosted on tcgplayer.com (product-images.tcgplayer.com), TCGdex, Scryfall, the official manufacturer site, or a well-known card database. Return ONLY valid JSON:\n{ "imageUrl": string | null }\nProduct:\n- Name: ${rawName}\n- Set: ${set ?? ""}\n- Franchise: ${franchise}\n- Rarity: ${item.rarity ?? ""}\nIf you cannot find a high-confidence direct image URL, return null. Do not fabricate URLs.`;
     const msg = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 200,
@@ -270,11 +383,9 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
     const parsed = JSON.parse(jsonMatch[0]);
     const url = typeof parsed.imageUrl === "string" ? parsed.imageUrl.trim() : null;
     if (!url) return null;
-    // Basic sanity check: must be http(s) and look like an image
     if (!/^https?:\/\//i.test(url)) return null;
     if (!/\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(url)) {
-      // Some hosts (TCGdex/Scryfall) omit extensions \u2014 still accept those
-      if (!/(scryfall|tcgdex|tcgplayer)/i.test(url)) return null;
+      if (!/(scryfall|tcgdex|tcgplayer|pokemontcg)/i.test(url)) return null;
     }
     return url;
   } catch {
