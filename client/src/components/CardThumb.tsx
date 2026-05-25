@@ -44,13 +44,17 @@ export function CardThumb({
       ? "w-10 h-14"
       : "w-full aspect-[5/7] max-w-[280px]";
   const resolved = resolveUploadUrl(imageUrl);
+  // sm thumbs (lists/tables) use cover so they look uniform.
+  // lg (detail dialog) uses contain so booster boxes, sealed product, etc.
+  // are fully visible without aggressive cropping.
+  const fit = size === "lg" ? "object-contain" : "object-cover";
   if (resolved) {
     return (
       <img
         src={resolved}
         alt={alt ?? "Card"}
         loading="lazy"
-        className={`${dims} object-cover rounded-md border border-border bg-muted ${className}`}
+        className={`${dims} ${fit} rounded-md border border-border bg-muted ${className}`}
       />
     );
   }
