@@ -66,9 +66,24 @@ function extractText(msg: Anthropic.Messages.Message): string {
 
 async function identifyCardFromImage(
   imageBase64: string,
-  mediaType: string
+  mediaType: string,
+  mode: "card" | "sealed" = "card"
 ): Promise<any> {
-  const prompt = `You are identifying a trading card from a photo. Return ONLY valid JSON (no prose, no code fences) matching this exact schema:
+  const prompt =
+    mode === "sealed"
+      ? `You are identifying SEALED trading card product from a photo — booster boxes, booster bundles, ETBs (elite trainer boxes), collection boxes, tins, blisters, theme decks, starter decks, etc. Return ONLY valid JSON (no prose, no code fences) matching this exact schema:
+{
+  "name": string (full product name, e.g. "Vivid Voltage Booster Box"),
+  "set": string (set / expansion name, e.g. "Vivid Voltage"),
+  "number": string (set number / SKU printed on box if visible, else ""),
+  "rarity": string (always "" for sealed product),
+  "category": one of ["Booster Box","Booster Bundle","ETB","Collection Box","Tin","Blister","Theme Deck","Starter Deck","Booster Pack","Other Sealed"],
+  "franchise": one of ["Pokémon","One Piece","Magic The Gathering","DBZ","League of Legends","Union Arena","Other"],
+  "confidence": number from 0 to 1,
+  "suggestedCondition": "Sealed"
+}
+If you cannot identify the product, return {"confidence":0,"name":"","set":"","number":"","rarity":"","category":"Other Sealed","franchise":"Other","suggestedCondition":"Sealed"}.`
+      : `You are identifying a trading card from a photo. Return ONLY valid JSON (no prose, no code fences) matching this exact schema:
 {
   "name": string,
   "set": string,
@@ -127,13 +142,15 @@ export function registerScanRoutes(app: Express) {
   // --- IDENTIFY single image ---
   app.post("/api/scan/identify", async (req, res) => {
     try {
-      const { imageBase64, mediaType } = req.body ?? {};
+      const { imageBase64, mediaType, mode } = req.body ?? {};
       if (!imageBase64) {
         return res.status(400).json({ message: "imageBase64 required" });
       }
+      const cleanMode: "card" | "sealed" = mode === "sealed" ? "sealed" : "card";
       const result = await identifyCardFromImage(
         imageBase64,
-        mediaType || "image/jpeg"
+        mediaType || "image/jpeg",
+        cleanMode
       );
       res.json(result);
     } catch (err: any) {

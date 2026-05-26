@@ -32,6 +32,9 @@ import {
   ScanLine,
   RefreshCcw,
   Plus,
+  Package,
+  CreditCard as CardIcon,
+  Barcode,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/format";
@@ -58,7 +61,10 @@ type Identified = {
   franchise?: string;
   confidence?: number;
   suggestedCondition?: string;
+  category?: string; // sealed mode: "Booster Box", "ETB", etc.
 };
+
+type ScanMode = "card" | "sealed";
 
 type PendingScan = {
   uid: string; // local id (random)
@@ -91,12 +97,29 @@ const CATEGORIES = ["Sealed", "Raw", "Slab"] as const;
 
 async function callIdentify(
   imageBase64: string,
-  mediaType: string
+  mediaType: string,
+  mode: ScanMode = "card"
 ): Promise<Identified> {
   const res = await apiRequest("POST", "/api/scan/identify", {
     imageBase64,
     mediaType,
+    mode,
   });
+  return res.json();
+}
+
+async function callBarcode(code: string): Promise<{
+  kind?: string;
+  productName?: string;
+  setName?: string;
+  franchise?: string;
+  category?: string;
+  confidence?: number;
+}> {
+  const res = await apiRequest(
+    "GET",
+    `/api/scan/barcode?code=${encodeURIComponent(code)}&type=upc`
+  );
   return res.json();
 }
 
@@ -671,11 +694,20 @@ function IntakeScanner({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const barcodeIntervalRef = useRef<number | null>(null);
+  const lastDetectedCodeRef = useRef<string>("");
   const [cameraState, setCameraState] = useState<
     "idle" | "starting" | "ready" | "denied" | "unavailable"
   >("idle");
   const [cameraError, setCameraError] = useState<string>("");
   const [identifying, setIdentifying] = useState(false);
+  const [mode, setMode] = useState<ScanMode>("card");
+  // BarcodeDetector availability (Chrome desktop+Android, iOS Safari 17+)
+  const barcodeSupported =
+    typeof window !== "undefined" && "BarcodeDetector" in window;
+  const [barcodeStatus, setBarcodeStatus] = useState<
+    "idle" | "watching" | "detected"
+  >("idle");
   const { toast } = useToast();
 
   const startCamera = useCallback(async () => {
@@ -718,7 +750,16 @@ function IntakeScanner({
     }
   }, []);
 
+  const stopBarcodeWatch = useCallback(() => {
+    if (barcodeIntervalRef.current != null) {
+      window.clearInterval(barcodeIntervalRef.current);
+      barcodeIntervalRef.current = null;
+    }
+    setBarcodeStatus("idle");
+  }, []);
+
   const stopCamera = useCallback(() => {
+    stopBarcodeWatch();
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -726,45 +767,56 @@ function IntakeScanner({
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-  }, []);
+    setCameraState("idle");
+  }, [stopBarcodeWatch]);
 
   useEffect(() => {
     return () => stopCamera();
-  }, [stopCamera]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function priceAndEmit(
+    ided: Identified,
+    dataUrl: string,
+    forcedCondition?: string
+  ) {
+    let marketValue: number | null = null;
+    try {
+      const priceInfo = await callPriceEstimate({
+        name: ided?.name || "",
+        set: ided?.set || "",
+        franchise: ided?.franchise || "",
+        rarity: ided?.rarity || "",
+        condition: forcedCondition || ided?.suggestedCondition || "NM",
+      });
+      marketValue = priceInfo?.marketValue ?? null;
+    } catch {}
+    const cond =
+      forcedCondition ||
+      (ided.suggestedCondition === "Sealed"
+        ? "Sealed"
+        : ided.suggestedCondition === "Graded"
+          ? "Graded"
+          : ided.suggestedCondition || "NM");
+    const cat: PendingScan["category"] =
+      cond === "Sealed" ? "Sealed" : cond === "Graded" ? "Slab" : "Raw";
+    onScanned({
+      thumbnail: dataUrl,
+      ided,
+      marketValue,
+      category: cat,
+      condition: cond,
+      costPerUnit:
+        marketValue != null ? Math.round(marketValue * 0.6 * 100) / 100 : null,
+    });
+  }
 
   async function identifyDataUrl(dataUrl: string) {
     const base64 = dataUrl.split(",")[1];
     setIdentifying(true);
     try {
-      const ided = await callIdentify(base64, "image/jpeg");
-      let marketValue: number | null = null;
-      try {
-        const priceInfo = await callPriceEstimate({
-          name: ided?.name || "",
-          set: ided?.set || "",
-          franchise: ided?.franchise || "",
-          rarity: ided?.rarity || "",
-          condition: ided?.suggestedCondition || "NM",
-        });
-        marketValue = priceInfo?.marketValue ?? null;
-      } catch {}
-      const cond =
-        ided.suggestedCondition === "Sealed"
-          ? "Sealed"
-          : ided.suggestedCondition === "Graded"
-            ? "Graded"
-            : ided.suggestedCondition || "NM";
-      const cat: PendingScan["category"] =
-        cond === "Sealed" ? "Sealed" : cond === "Graded" ? "Slab" : "Raw";
-      onScanned({
-        thumbnail: dataUrl,
-        ided,
-        marketValue,
-        category: cat,
-        condition: cond,
-        costPerUnit:
-          marketValue != null ? Math.round(marketValue * 0.6 * 100) / 100 : null,
-      });
+      const ided = await callIdentify(base64, "image/jpeg", mode);
+      await priceAndEmit(ided, dataUrl);
     } catch (err: any) {
       toast({
         title: "Identify failed",
@@ -775,6 +827,109 @@ function IntakeScanner({
       setIdentifying(false);
     }
   }
+
+  // Take a snapshot of the live video for use as thumbnail when a barcode hits.
+  function snapshotDataUrl(): string | null {
+    const v = videoRef.current;
+    if (!v || v.videoWidth === 0) return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = v.videoWidth;
+    canvas.height = v.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(v, 0, 0);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  }
+
+  async function handleBarcode(code: string) {
+    if (!code || code === lastDetectedCodeRef.current) return;
+    lastDetectedCodeRef.current = code;
+    setBarcodeStatus("detected");
+    setIdentifying(true);
+    try {
+      const lookup = await callBarcode(code);
+      const conf = lookup?.confidence ?? 0;
+      const thumbnail =
+        snapshotDataUrl() ||
+        // 1x1 transparent png placeholder if camera frame unavailable
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+      // If barcode lookup is high-confidence, use it directly.
+      if (conf >= 0.5 && lookup.productName) {
+        const ided: Identified = {
+          name: lookup.productName,
+          set: lookup.setName || "",
+          franchise: lookup.franchise || "Other",
+          rarity: "",
+          number: code,
+          suggestedCondition: "Sealed",
+          confidence: conf,
+          category: lookup.category || "Sealed",
+        };
+        toast({
+          title: "Barcode matched",
+          description: `${lookup.productName} (${lookup.setName || "—"})`,
+        });
+        await priceAndEmit(ided, thumbnail, "Sealed");
+      } else {
+        // Fallback: capture the frame and run image identify on it.
+        toast({
+          title: "Barcode found, falling back to image",
+          description: `Barcode ${code} didn't resolve. Trying photo identify…`,
+        });
+        await identifyDataUrl(thumbnail);
+      }
+    } catch (err: any) {
+      toast({
+        title: "Barcode lookup failed",
+        description: err?.message || String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIdentifying(false);
+      // Allow the same barcode to be scanned again after a short cooldown.
+      window.setTimeout(() => {
+        lastDetectedCodeRef.current = "";
+        setBarcodeStatus((s) => (s === "detected" ? "watching" : s));
+      }, 2500);
+    }
+  }
+
+  // Start / stop barcode polling whenever camera ready + sealed mode + supported.
+  useEffect(() => {
+    stopBarcodeWatch();
+    if (
+      mode !== "sealed" ||
+      cameraState !== "ready" ||
+      !barcodeSupported ||
+      !videoRef.current
+    ) {
+      return;
+    }
+    let detector: any = null;
+    try {
+      // @ts-ignore - BarcodeDetector is not in TS lib by default
+      detector = new window.BarcodeDetector({
+        formats: ["upc_a", "upc_e", "ean_13", "ean_8", "code_128", "qr_code"],
+      });
+    } catch (e) {
+      return;
+    }
+    setBarcodeStatus("watching");
+    barcodeIntervalRef.current = window.setInterval(async () => {
+      const v = videoRef.current;
+      if (!v || v.readyState < 2) return;
+      if (identifying) return;
+      try {
+        const codes = await detector.detect(v);
+        if (codes && codes.length > 0) {
+          const raw = String(codes[0].rawValue || "").trim();
+          if (raw) handleBarcode(raw);
+        }
+      } catch {}
+    }, 600);
+    return () => stopBarcodeWatch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, cameraState, barcodeSupported]);
 
   const capture = async () => {
     const v = videoRef.current;
@@ -802,6 +957,50 @@ function IntakeScanner({
   return (
     <Card className="manga-panel">
       <CardContent className="p-4 md:p-5 space-y-4">
+        {/* Card / Sealed mode toggle */}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="inline-flex rounded-md border border-border p-1">
+            <Button
+              variant={mode === "card" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setMode("card")}
+              data-testid="button-mode-card"
+              className={
+                mode === "card"
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : ""
+              }
+            >
+              <CardIcon className="h-4 w-4 mr-1.5" /> Card
+            </Button>
+            <Button
+              variant={mode === "sealed" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setMode("sealed")}
+              data-testid="button-mode-sealed"
+              className={
+                mode === "sealed"
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : ""
+              }
+            >
+              <Package className="h-4 w-4 mr-1.5" /> Sealed / Box
+            </Button>
+          </div>
+          {mode === "sealed" && (
+            <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+              <Barcode className="h-3.5 w-3.5" />
+              {barcodeSupported
+                ? barcodeStatus === "watching"
+                  ? "Watching for barcode…"
+                  : barcodeStatus === "detected"
+                    ? "Barcode detected"
+                    : "Barcode + AI fallback ready"
+                : "Barcode not supported — AI image only"}
+            </div>
+          )}
+        </div>
+
         <div className="relative aspect-[3/4] md:aspect-video w-full max-w-[640px] mx-auto bg-muted/50 rounded-lg overflow-hidden border border-border">
           <video
             ref={videoRef}
@@ -829,7 +1028,8 @@ function IntakeScanner({
                   </>
                 ) : (
                   <>
-                    <ScanLine className="h-5 w-5 mr-2" /> Scan card
+                    <ScanLine className="h-5 w-5 mr-2" />
+                    {mode === "sealed" ? " Snap box photo" : " Scan card"}
                   </>
                 )}
               </Button>
@@ -841,8 +1041,9 @@ function IntakeScanner({
                 <>
                   <Camera className="h-10 w-10 text-muted-foreground mb-3" />
                   <p className="text-sm text-muted-foreground mb-4 max-w-xs">
-                    Point your camera at the card the customer is selling or
-                    trading. Tap below to start.
+                    {mode === "sealed"
+                      ? "Point your camera at the box. We'll try the barcode first, then identify by photo."
+                      : "Point your camera at the card the customer is selling or trading. Tap below to start."}
                   </p>
                   <Button
                     onClick={startCamera}
@@ -913,8 +1114,9 @@ function IntakeScanner({
         </div>
 
         <p className="text-[11px] text-muted-foreground text-center">
-          Each scan auto-identifies the card and fetches a market value. Review
-          before saving.
+          {mode === "sealed"
+            ? "Sealed mode: barcode is read automatically when possible; otherwise we identify the box from the photo."
+            : "Each scan auto-identifies the card and fetches a market value. Review before saving."}
         </p>
       </CardContent>
     </Card>
