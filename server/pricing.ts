@@ -165,7 +165,8 @@ function firstPriceFrom(obj: any, key: string): number | null {
 
 // --- Claude fallback (same signature as /api/scan/price) ---------------------
 const anthropic = new Anthropic();
-const MODEL = "claude_sonnet_4_6";
+// Anthropic real model id (the underscored aliases only work via Perplexity's gateway).
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
 
 export async function getClaudeEstimate(opts: {
   name: string;

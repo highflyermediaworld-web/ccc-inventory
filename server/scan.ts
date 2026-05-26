@@ -3,7 +3,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { tryRealSourcesOnly } from "./pricing";
 
 const anthropic = new Anthropic();
-const MODEL = "claude_sonnet_4_6";
+// Anthropic real model id (the underscored aliases only work via Perplexity's gateway).
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
 
 /**
  * Robustly extract the first JSON object/array from model output.
