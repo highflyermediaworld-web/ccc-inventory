@@ -319,6 +319,74 @@ async function getPokemonSetLogo(setHint: string | null): Promise<string | null>
   }
 }
 
+// TCGplayer public search API. Returns the productId of the top hit, which
+// lets us build a direct image URL: https://product-images.tcgplayer.com/fit-in/437x437/<id>.jpg
+// Works for ALL franchises (Pokemon, MTG, Yu-Gi-Oh, One Piece, DBZ, Union Arena, etc.) and ALL
+// product types (singles, booster boxes, ETBs, tins, decks).
+const TCGPLAYER_PRODUCT_LINE_MAP: Record<string, string> = {
+  "Pok\u00e9mon": "Pokemon",
+  "Magic The Gathering": "Magic: The Gathering",
+  "One Piece": "One Piece Card Game",
+  "DBZ": "Dragon Ball Super CCG",
+  "Yu-Gi-Oh": "YuGiOh",
+  "Union Arena": "Union Arena",
+  "League of Legends": "Riftbound",
+};
+
+async function getTcgplayerImage(
+  rawName: string,
+  setHint: string | null,
+  franchise: string
+): Promise<string | null> {
+  if (!rawName) return null;
+  try {
+    const productLine = TCGPLAYER_PRODUCT_LINE_MAP[franchise];
+    // Build query: name + set (if known) for better top-hit accuracy.
+    const queryParts = [rawName];
+    if (setHint) queryParts.push(setHint);
+    const query = queryParts.join(" ");
+    const url = `https://mp-search-api.tcgplayer.com/v1/search/request?q=${encodeURIComponent(query)}&isList=false`;
+    const body = {
+      algorithm: "",
+      from: 0,
+      size: 10,
+      filters: { term: {}, range: {}, match: {} },
+      sort: {},
+    };
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": UA,
+        Accept: "application/json",
+        Origin: "https://www.tcgplayer.com",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    const items: any[] = data?.results?.[0]?.results ?? [];
+    if (!items.length) return null;
+    // Prefer the first item matching the franchise's TCGplayer productLineName,
+    // otherwise fall back to the absolute top result.
+    let pick = productLine
+      ? items.find(
+          (i: any) =>
+            String(i?.productLineName || "").toLowerCase() ===
+            productLine.toLowerCase()
+        )
+      : null;
+    if (!pick) pick = items[0];
+    const id = pick?.productId;
+    if (!id) return null;
+    return `https://product-images.tcgplayer.com/fit-in/437x437/${Math.trunc(
+      Number(id)
+    )}.jpg`;
+  } catch {
+    return null;
+  }
+}
+
 // Detect if an item is sealed product (Booster Box, ETB, etc.)
 function isSealedProduct(item: Inventory): boolean {
   if (item.category && /sealed/i.test(item.category)) return true;
@@ -349,6 +417,13 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
   if (franchise === "Pok\u00e9mon") {
     const { cleanName, collectorNumber, setCode } = parsePokemonName(rawName);
 
+    // For sealed Pokemon product, prefer TCGplayer (real product photo) before
+    // falling back to card-database queries (which only know about singles).
+    if (isSealedProduct(item)) {
+      const tcgp = await getTcgplayerImage(rawName, set, franchise);
+      if (tcgp) return tcgp;
+    }
+
     // Try TCGdex with the cleaned name first
     const tcgdex = await getTcgdexPrice(cleanName, set);
     if (tcgdex?.imageUrl) return tcgdex.imageUrl;
@@ -370,7 +445,17 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
     }
   }
 
-  // ---- Anything else: ask Claude for a public image URL ----
+  // ---- MTG sealed product: Scryfall doesn't have sealed images. Try TCGplayer. ----
+  if (franchise === "Magic The Gathering" && isSealedProduct(item)) {
+    const tcgp = await getTcgplayerImage(rawName, set, franchise);
+    if (tcgp) return tcgp;
+  }
+
+  // ---- TCGplayer search (works for ALL franchises + sealed product) ----
+  const tcgpAll = await getTcgplayerImage(rawName, set, franchise);
+  if (tcgpAll) return tcgpAll;
+
+  // ---- Last resort: ask Claude for a public image URL ----
   try {
     const prompt = `Provide a single direct public image URL (ends in .jpg, .jpeg, .png, or .webp) for this trading card / collectible product. Prefer images hosted on tcgplayer.com (product-images.tcgplayer.com), TCGdex, Scryfall, the official manufacturer site, or a well-known card database. Return ONLY valid JSON:\n{ "imageUrl": string | null }\nProduct:\n- Name: ${rawName}\n- Set: ${set ?? ""}\n- Franchise: ${franchise}\n- Rarity: ${item.rarity ?? ""}\nIf you cannot find a high-confidence direct image URL, return null. Do not fabricate URLs.`;
     const msg = await anthropic.messages.create({
