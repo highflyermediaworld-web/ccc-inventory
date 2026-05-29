@@ -501,26 +501,32 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
 }
 
 // Bulk image fetch with throttling. Only touches items where imageUrl is null.
-export async function fetchMissingImages(
-  onProgress?: (p: {
-    total: number;
-    processed: number;
-    updated: number;
-    skipped: number;
-    failed: number;
-  }) => void
-): Promise<{ updated: number; failed: number; skipped: number }> {
+// Process a SMALL batch of items that need images. Returns counts for THIS
+// batch plus the remaining work, so the client can loop. Each successful
+// lookup is persisted to the DB before the next iteration, so progress
+// survives server restarts.
+export async function fetchMissingImagesBatch(
+  batchSize: number = 15
+): Promise<{
+  updated: number;
+  skipped: number;
+  failed: number;
+  processed: number;
+  remaining: number;
+  total: number;
+  withImage: number;
+}> {
   const items = await storage.listInventory();
-  const candidates = items.filter(
+  const allCandidates = items.filter(
     (i) => !i.imageUrl && (i.status === "In Inventory" || i.status === "Listed")
   );
+  const batch = allCandidates.slice(0, batchSize);
   let updated = 0;
   let failed = 0;
   let skipped = 0;
   let processed = 0;
-  const total = candidates.length;
 
-  for (const item of candidates) {
+  for (const item of batch) {
     try {
       const url = await fetchImageOnly(item);
       if (url) {
@@ -534,14 +540,23 @@ export async function fetchMissingImages(
       failed++;
     }
     processed++;
-    onProgress?.({ total, processed, updated, skipped, failed });
     // Lower sleeps now that TCGplayer is the primary source (single fast API).
     if (item.franchise === "Magic The Gathering") await sleep(100);
-    else if (item.franchise === "Pok\u00e9mon") await sleep(200);
+    else if (item.franchise === "Pok\u00e9mon") await sleep(150);
     else await sleep(100);
   }
 
-  return { updated, failed, skipped };
+  const withImage =
+    items.filter((i) => i.imageUrl).length + updated;
+  return {
+    updated,
+    skipped,
+    failed,
+    processed,
+    remaining: allCandidates.length - processed,
+    total: items.length,
+    withImage,
+  };
 }
 
 // Attempts only the real sources; returns null if nothing found. Used by the

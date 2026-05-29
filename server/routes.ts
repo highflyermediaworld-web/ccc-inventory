@@ -21,7 +21,7 @@ import {
   runAutoImport,
   setAutoImportConfig,
 } from "./autoImport";
-import { refreshItem, refreshAll, persistRefreshResult, fetchImageOnly, fetchMissingImages } from "./pricing";
+import { refreshItem, refreshAll, persistRefreshResult, fetchImageOnly, fetchMissingImagesBatch } from "./pricing";
 import { broadcast } from "./realtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -364,74 +364,41 @@ export async function registerRoutes(
     }
   });
 
-  // Bulk-fetch images for every in-stock item that's missing one.
-  // Runs in the background so the HTTP request returns immediately and the
-  // server keeps processing past any client/proxy timeout.
-  // NOTE: mutate the same object (no reassignment) so the GET handler always
-  // sees the latest values via its captured reference.
-  const imageBackfillState: {
-    running: boolean;
-    total: number;
-    updated: number;
-    skipped: number;
-    failed: number;
-    processed: number;
-    startedAt: number | null;
-    finishedAt: number | null;
-    error: string | null;
-  } = {
-    running: false,
-    total: 0,
-    updated: 0,
-    skipped: 0,
-    failed: 0,
-    processed: 0,
-    startedAt: null,
-    finishedAt: null,
-    error: null,
-  };
-
-  app.post("/api/inventory/fetch-missing-images", async (_req, res) => {
-    if (imageBackfillState.running) {
-      return res.json({ status: "already-running", ...imageBackfillState });
+  // Backfill is now SYNCHRONOUS but small-batch: each POST processes one
+  // chunk and returns. The client calls it repeatedly until remaining=0.
+  // This survives Render restarts because progress is persisted in the DB
+  // (each successful lookup is saved before the next call).
+  app.post("/api/inventory/fetch-missing-images", async (req, res) => {
+    try {
+      const batchSize = Math.min(
+        Math.max(parseInt(String((req.query.batch as string) ?? "15"), 10) || 15, 1),
+        50
+      );
+      const result = await fetchMissingImagesBatch(batchSize);
+      // Broadcast once per batch so the UI refreshes
+      broadcast({ type: "inventory:bulk", payload: {} });
+      res.json(result);
+    } catch (err: any) {
+      console.error("inventory/fetch-missing-images error:", err);
+      res.status(500).json({ message: err?.message || "Bulk image fetch failed" });
     }
-    // Reset counters in place
-    imageBackfillState.running = true;
-    imageBackfillState.total = 0;
-    imageBackfillState.updated = 0;
-    imageBackfillState.skipped = 0;
-    imageBackfillState.failed = 0;
-    imageBackfillState.processed = 0;
-    imageBackfillState.startedAt = Date.now();
-    imageBackfillState.finishedAt = null;
-    imageBackfillState.error = null;
-    // Kick off in the background; don't await.
-    (async () => {
-      try {
-        const result = await fetchMissingImages((progress) => {
-          imageBackfillState.total = progress.total;
-          imageBackfillState.updated = progress.updated;
-          imageBackfillState.skipped = progress.skipped;
-          imageBackfillState.failed = progress.failed;
-          imageBackfillState.processed = progress.processed;
-        });
-        imageBackfillState.updated = result.updated;
-        imageBackfillState.skipped = result.skipped;
-        imageBackfillState.failed = result.failed;
-        broadcast({ type: "inventory:bulk", payload: {} });
-      } catch (err: any) {
-        console.error("inventory/fetch-missing-images error:", err);
-        imageBackfillState.error = err?.message || String(err);
-      } finally {
-        imageBackfillState.running = false;
-        imageBackfillState.finishedAt = Date.now();
-      }
-    })();
-    res.json({ status: "started", ...imageBackfillState });
   });
 
-  app.get("/api/inventory/fetch-missing-images/status", (_req, res) => {
-    res.json(imageBackfillState);
+  app.get("/api/inventory/fetch-missing-images/status", async (_req, res) => {
+    try {
+      const items = await storage.listInventory();
+      const candidates = items.filter(
+        (i) => !i.imageUrl && (i.status === "In Inventory" || i.status === "Listed")
+      );
+      const withImage = items.filter((i) => i.imageUrl).length;
+      res.json({
+        total: items.length,
+        withImage,
+        remaining: candidates.length,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Status check failed" });
+    }
   });
 
   // Price history for a single item (sorted ascending)

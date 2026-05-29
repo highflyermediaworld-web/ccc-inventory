@@ -213,39 +213,39 @@ export default function InventoryPage() {
 
   const fetchImagesMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/inventory/fetch-missing-images");
-      const initial = await res.json();
       setImageBackfillRunning(true);
-      // Poll status endpoint every 4 seconds until done
-      return new Promise<any>((resolve, reject) => {
-        const poll = async () => {
-          try {
-            const sres = await apiRequest(
-              "GET",
-              "/api/inventory/fetch-missing-images/status"
-            );
-            const s = await sres.json();
-            setImageBackfillProgress({
-              updated: s.updated || 0,
-              total: s.total || 0,
-            });
-            // Refresh inventory list periodically so new photos appear live
-            queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
-            if (!s.running) {
-              setImageBackfillRunning(false);
-              if (s.error) reject(new Error(s.error));
-              else resolve(s);
-              return;
-            }
-            setTimeout(poll, 4000);
-          } catch (err) {
-            setImageBackfillRunning(false);
-            reject(err);
-          }
-        };
-        setTimeout(poll, 2000);
-        void initial;
-      });
+      let totalUpdated = 0;
+      let totalSkipped = 0;
+      let totalFailed = 0;
+      let totalCount = 0;
+      let safety = 200; // hard cap on batches (200 × 15 = 3000 items)
+      try {
+        while (safety-- > 0) {
+          const res = await apiRequest(
+            "POST",
+            "/api/inventory/fetch-missing-images?batch=15"
+          );
+          const b = await res.json();
+          totalUpdated += b.updated || 0;
+          totalSkipped += b.skipped || 0;
+          totalFailed += b.failed || 0;
+          totalCount = b.total || totalCount;
+          setImageBackfillProgress({
+            updated: b.withImage ?? totalUpdated,
+            total: totalCount,
+          });
+          // Refresh inventory list each batch so new photos appear live
+          queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+          if (!b.remaining || b.processed === 0) break;
+        }
+      } finally {
+        setImageBackfillRunning(false);
+      }
+      return {
+        updated: totalUpdated,
+        skipped: totalSkipped,
+        failed: totalFailed,
+      };
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
