@@ -200,6 +200,58 @@ export async function getClaudeEstimate(opts: {
   }
 }
 
+// --- Graded slab detection + AI-based graded price estimate ------------------
+// TCGplayer's public search/pricepoints API does not surface graded slabs as
+// separate products — those listings live on eBay-style channels. For graded
+// items we still fetch the raw TCGplayer points (useful as a floor / reference)
+// and additionally run an AI estimate anchored on the raw price + the grade,
+// then write that into marketValue.
+export function isGraded(condition: string | null | undefined): boolean {
+  if (!condition) return false;
+  const c = String(condition).trim().toUpperCase();
+  return /^(PSA|CGC|BGS|SGC|HGA|GMA|ACE)\b/.test(c);
+}
+
+// Estimate graded-slab market value in USD using Claude. We pass the raw
+// TCGplayer market price (if known) as an anchor so the model produces a
+// sensible grade premium instead of a blind guess.
+export async function getGradedEstimate(opts: {
+  name: string;
+  set: string;
+  franchise: string;
+  rarity: string;
+  condition: string;
+  rawMarketPrice: number | null;
+}): Promise<PriceResult | null> {
+  const { name, set, franchise, rarity, condition, rawMarketPrice } = opts;
+  if (!name && !set) return null;
+  const anchor =
+    rawMarketPrice != null && isFinite(rawMarketPrice)
+      ? `\n- Raw (ungraded NM) TCGplayer market price reference: $${rawMarketPrice.toFixed(2)}`
+      : "";
+  const prompt = `Estimate the current secondary-market value in USD for this GRADED slab. Use eBay sold comps, PWCC, TCGplayer graded listings, and general grading premium knowledge. The condition string already encodes the grading company and grade. Return ONLY valid JSON:\n{ "marketValue": number (USD), "disclaimer": string }\nDetails:\n- Name: ${name}\n- Set: ${set}\n- Franchise: ${franchise}\n- Rarity: ${rarity}\n- Grade: ${condition}${anchor}\n\nApply a realistic grade premium over the raw price (PSA 10 is typically 2x-6x raw for modern cards, higher for chase cards; PSA 9 ~1.2x-2x; CGC/BGS slightly less than equivalent PSA). If uncertain, return a best-guess number and clearly call out the uncertainty in the disclaimer. Always include the disclaimer string. Never return null for marketValue — use 0 if completely unknown.`;
+  try {
+    const msg = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 300,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const text = msg.content.find((b: any) => b.type === "text")?.text ?? "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]);
+    const v = typeof parsed.marketValue === "number" ? parsed.marketValue : 0;
+    return {
+      marketValue: v,
+      imageUrl: null,
+      source: "AI est (graded)",
+      note: parsed.disclaimer,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // --- Per-item refresh ---------------------------------------------------------
 export async function refreshItem(item: Inventory): Promise<PriceResult> {
   const name = item.name;

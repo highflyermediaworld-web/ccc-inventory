@@ -32,6 +32,8 @@ import {
   pricePointsToPatch,
   debugTcgplayerCalls,
   correctSpelling,
+  isGraded,
+  getGradedEstimate,
 } from "./pricing";
 import { broadcast } from "./realtime";
 import * as fs from "node:fs";
@@ -383,8 +385,24 @@ export async function registerRoutes(
       if (!points) return res.json({ found: false, productId });
 
       const patch = pricePointsToPatch(points);
-      // Also mirror market price into the legacy marketValue field if empty.
-      if (points.marketPrice != null && item.marketValue == null) {
+      // Graded slabs: TCGplayer returns the RAW price for the product, which is
+      // not the slab value. Keep tcgp* columns as the raw reference and write a
+      // graded AI estimate into marketValue instead. Always refresh marketValue
+      // for graded items on manual refresh (overwrites stale value).
+      if (isGraded(item.condition)) {
+        const graded = await getGradedEstimate({
+          name: item.name,
+          set: item.setName ?? "",
+          franchise: item.franchise,
+          rarity: item.rarity ?? "",
+          condition: item.condition ?? "",
+          rawMarketPrice: points.marketPrice,
+        });
+        if (graded && graded.marketValue != null && graded.marketValue > 0) {
+          (patch as any).marketValue = graded.marketValue;
+        }
+      } else if (points.marketPrice != null && item.marketValue == null) {
+        // Ungraded: only auto-populate marketValue if it was empty.
         (patch as any).marketValue = points.marketPrice;
       }
       await storage.updateInventory(item.id, patch as any);
@@ -447,7 +465,28 @@ export async function registerRoutes(
           ]);
           if (points) {
             const patch = pricePointsToPatch(points);
-            if (points.marketPrice != null && item.marketValue == null) {
+            if (isGraded(item.condition)) {
+              // Graded slab: run AI graded estimate anchored on the raw price.
+              // Only refresh marketValue if it's empty OR force=1 (so nightly
+              // refresh doesn't churn user-entered marketValues).
+              if (item.marketValue == null || force) {
+                const graded = await Promise.race<any>([
+                  getGradedEstimate({
+                    name: item.name,
+                    set: item.setName ?? "",
+                    franchise: item.franchise,
+                    rarity: item.rarity ?? "",
+                    condition: item.condition ?? "",
+                    rawMarketPrice: points.marketPrice,
+                  }),
+                  new Promise((resolve) => setTimeout(() => resolve(null), 12000)),
+                ]);
+                if (graded && graded.marketValue != null && graded.marketValue > 0) {
+                  (patch as any).marketValue = graded.marketValue;
+                }
+              }
+            } else if (points.marketPrice != null && item.marketValue == null) {
+              // Ungraded: auto-populate marketValue only if previously empty.
               (patch as any).marketValue = points.marketPrice;
             }
             await storage.updateInventory(item.id, patch as any);
