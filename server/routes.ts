@@ -409,9 +409,14 @@ export async function registerRoutes(
         0
       );
       // Items eligible for a price-points refresh: must be In Inventory or Listed.
+      // For bulk backfill we exclude already-priced items so the candidate window shrinks each batch.
+      // (Manual single-item refresh uses /api/pricing/points/:itemId which has no exclusion.)
       const items = await storage.listInventory();
+      const force = String(req.query.force ?? "").toLowerCase() === "1";
       const candidates = items.filter(
-        (i) => i.status === "In Inventory" || i.status === "Listed"
+        (i) =>
+          (i.status === "In Inventory" || i.status === "Listed") &&
+          (force || !i.tcgpPricedAt)
       );
       const startIdx = Math.max(0, Math.min(offset, candidates.length));
       const batch = candidates.slice(startIdx, startIdx + batchSize);
@@ -455,8 +460,10 @@ export async function registerRoutes(
       }
 
       const processed = batch.length;
+      // Updated items drop out of the candidate set next call (filter excludes those with tcgpPricedAt),
+      // so the candidate list naturally shrinks. Only advance past skipped/failed so we eventually retry them.
       const nextOffset = startIdx + skipped + failed;
-      const remaining = Math.max(0, candidates.length - updated - nextOffset);
+      const remaining = Math.max(0, candidates.length - processed);
       broadcast({ type: "inventory:bulk", payload: {} });
       res.json({
         updated,
