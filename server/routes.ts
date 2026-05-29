@@ -30,6 +30,7 @@ import {
   findTcgplayerProductId,
   fetchTcgplayerPricePoints,
   pricePointsToPatch,
+  debugTcgplayerCalls,
 } from "./pricing";
 import { broadcast } from "./realtime";
 import * as fs from "node:fs";
@@ -477,6 +478,18 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("pricing/points-batch error:", err);
       res.status(500).json({ message: err?.message || "Bulk price points failed" });
+    }
+  });
+
+  // Debug-only probe: hit each TCGplayer endpoint directly and return raw statuses.
+  app.get("/api/pricing/debug-tcgp/:productId", async (req, res) => {
+    const pid = parseInt(req.params.productId, 10);
+    if (!pid) return res.status(400).json({ error: "productId must be a positive integer" });
+    try {
+      const out = await debugTcgplayerCalls(pid);
+      res.json(out);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "debug failed" });
     }
   });
 

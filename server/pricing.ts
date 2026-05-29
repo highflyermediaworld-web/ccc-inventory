@@ -447,11 +447,55 @@ async function tcgpFetch(url: string, init?: RequestInit): Promise<any | null> {
       ...(init || {}),
       headers: { ...TCGP_HEADERS, ...((init as any)?.headers || {}) },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[tcgp] non-ok ${res.status} for ${url.replace(/\?.*/, "")}`);
+      return null;
+    }
     return await res.json();
-  } catch {
+  } catch (err: any) {
+    console.warn(`[tcgp] fetch error for ${url.replace(/\?.*/, "")}: ${err?.message || err}`);
     return null;
   }
+}
+
+// Exposed for the debug endpoint so we can confirm exactly which calls TCGplayer rejects in prod.
+export async function debugTcgplayerCalls(productId: number) {
+  if (!productId) return { error: "productId required" };
+  const probe = async (label: string, url: string, init?: RequestInit) => {
+    try {
+      const res = await fetch(url, {
+        ...(init || {}),
+        headers: { ...TCGP_HEADERS, ...((init as any)?.headers || {}) },
+      });
+      const text = await res.text();
+      return {
+        label,
+        url,
+        status: res.status,
+        ok: res.ok,
+        contentType: res.headers.get("content-type"),
+        bodyPreview: text.slice(0, 400),
+      };
+    } catch (err: any) {
+      return { label, url, error: String(err?.message || err) };
+    }
+  };
+  return await Promise.all([
+    probe("pricepoints", `https://mpapi.tcgplayer.com/v2/product/${productId}/pricepoints`),
+    probe("latestsales", `https://mpapi.tcgplayer.com/v2/product/${productId}/latestsales`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limit: 1 }),
+    }),
+    probe(
+      "history",
+      `https://infinite-api.tcgplayer.com/price/history/${productId}/detailed?range=quarter`
+    ),
+    probe(
+      "details",
+      `https://mp-search-api.tcgplayer.com/v1/product/${productId}/details`
+    ),
+  ]);
 }
 
 export async function fetchTcgplayerPricePoints(
