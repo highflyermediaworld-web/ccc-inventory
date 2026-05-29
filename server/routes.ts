@@ -31,6 +31,7 @@ import {
   fetchTcgplayerPricePoints,
   pricePointsToPatch,
   debugTcgplayerCalls,
+  correctSpelling,
 } from "./pricing";
 import { broadcast } from "./realtime";
 import * as fs from "node:fs";
@@ -489,6 +490,42 @@ export async function registerRoutes(
     }
   });
 
+  // One-time pass: rewrite every existing inventory name through the spelling
+  // autocorrect dictionary. Returns the list of changes. Pass ?apply=1 to
+  // actually persist; otherwise it's a dry-run preview.
+  app.post("/api/inventory/autocorrect-names", async (req, res) => {
+    try {
+      const apply = String(req.query.apply ?? "").toLowerCase() === "1";
+      const items = await storage.listInventory();
+      const changes: Array<{ id: string; before: string; after: string }> = [];
+      for (const item of items) {
+        if (!item.name) continue;
+        const corrected = correctSpelling(item.name);
+        if (corrected !== item.name) {
+          changes.push({ id: item.id, before: item.name, after: corrected });
+          if (apply) {
+            // Also clear the stale tcgpProductId so the next pricing refresh
+            // re-matches with the corrected spelling.
+            await storage.updateInventory(item.id, {
+              name: corrected,
+              tcgpProductId: null,
+            } as any);
+          }
+        }
+      }
+      if (apply) broadcast({ type: "inventory:bulk", payload: {} });
+      res.json({
+        applied: apply,
+        total: items.length,
+        changedCount: changes.length,
+        changes: changes.slice(0, 200),
+      });
+    } catch (err: any) {
+      console.error("autocorrect-names error:", err);
+      res.status(500).json({ message: err?.message || "Autocorrect failed" });
+    }
+  });
+
   // Clear all TCGplayer matches (productId + cached price points) so a fresh
   // bulk run can re-match with the current matcher. Use ?onlySuspect=1 to only
   // clear matches where the inventory marketValue differs from the matched
@@ -643,6 +680,7 @@ export async function registerRoutes(
   app.post("/api/inventory", async (req, res) => {
     try {
       const parsed = insertInventorySchema.parse(req.body);
+      // Note: spelling autocorrect happens inside storage.createInventory.
       const item = await storage.createInventory(parsed);
       // If the user set a market value on creation, record it as the first history row.
       if (item.marketValue != null) {
@@ -662,6 +700,7 @@ export async function registerRoutes(
   app.patch("/api/inventory/:id", async (req, res) => {
     try {
       const patch = insertInventorySchema.partial().parse(req.body);
+      // Note: spelling autocorrect happens inside storage.updateInventory.
       const existing = await storage.getInventoryItem(req.params.id);
       if (!existing) return res.status(404).json({ message: "Not found" });
       // Auto-recompute totalCost when qty or costPerUnit is edited.

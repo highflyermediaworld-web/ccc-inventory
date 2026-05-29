@@ -29,6 +29,18 @@ import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
 import { eq, desc, asc, or, sql } from "drizzle-orm";
 import crypto from "node:crypto";
+import { correctSpelling } from "./pricing";
+
+// Storage-level autocorrect. Applied to every create/update so any code path
+// (manual entry, CSV upload, intake form, trade, scan) gets the same cleanup.
+function applyNameAutocorrect<T extends { name?: string | null }>(input: T): T {
+  if (!input || typeof input !== "object" || !("name" in input)) return input;
+  const name = (input as any).name;
+  if (typeof name !== "string" || !name) return input;
+  const corrected = correctSpelling(name);
+  if (corrected === name) return input;
+  return { ...(input as any), name: corrected };
+}
 
 const client = createClient({
   url: process.env.TURSO_DATABASE_URL || "file:./data.db",
@@ -263,7 +275,8 @@ export class DatabaseStorage implements IStorage {
     return rows[0] as Inventory | undefined;
   }
   async createInventory(item: InsertInventory): Promise<Inventory> {
-    const result = await db.insert(inventory).values(item).returning();
+    const normalized = applyNameAutocorrect(item);
+    const result = await db.insert(inventory).values(normalized).returning();
     return result[0] as Inventory;
   }
   async updateInventory(
@@ -272,9 +285,10 @@ export class DatabaseStorage implements IStorage {
   ): Promise<Inventory | undefined> {
     const existing = await this.getInventoryItem(id);
     if (!existing) return undefined;
+    const normalized = applyNameAutocorrect(patch);
     const result = await db
       .update(inventory)
-      .set(patch)
+      .set(normalized)
       .where(eq(inventory.id, id))
       .returning();
     return result[0] as Inventory | undefined;
@@ -283,6 +297,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(inventory).where(eq(inventory.id, id));
   }
   async replaceInventory(items: InsertInventory[]): Promise<void> {
+    items = items.map((it) => applyNameAutocorrect(it));
     await db.delete(inventory);
     const now = Math.floor(Date.now() / 1000);
     // libsql has no sync transaction API like better-sqlite3; insert in

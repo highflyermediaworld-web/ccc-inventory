@@ -333,6 +333,56 @@ const TCGPLAYER_PRODUCT_LINE_MAP: Record<string, string> = {
   "League of Legends": "Riftbound",
 };
 
+// Common Pokemon / TCG spelling corrections seen in spreadsheet imports.
+// We split these from expandProductName so callers can ALSO get a clean
+// corrected name to persist back to the inventory row (not just a search query).
+const SPELLING_CORRECTIONS: [RegExp, string][] = [
+  [/\bCharzard\b/gi, "Charizard"],
+  [/\bCharizad\b/gi, "Charizard"],
+  [/\bCharzaird\b/gi, "Charizard"],
+  [/\bShinning\b/gi, "Shining"],
+  [/\bShinnying\b/gi, "Shining"],
+  [/\bPikatchu\b/gi, "Pikachu"],
+  [/\bPickachu\b/gi, "Pikachu"],
+  [/\bPickachoo\b/gi, "Pikachu"],
+  [/\bMewto\b/gi, "Mewtwo"],
+  [/\bMeuwto\b/gi, "Mewtwo"],
+  [/\bLuigia\b/gi, "Lugia"],
+  [/\bLughia\b/gi, "Lugia"],
+  [/\bUmbeon\b/gi, "Umbreon"],
+  [/\bSylvon\b/gi, "Sylveon"],
+  [/\bRayqaza\b/gi, "Rayquaza"],
+  [/\bRayquza\b/gi, "Rayquaza"],
+  [/\bGyrados\b/gi, "Gyarados"],
+  [/\bGiratena\b/gi, "Giratina"],
+  [/\bArceaus\b/gi, "Arceus"],
+  [/\bDailga\b/gi, "Dialga"],
+  [/\bPalika\b/gi, "Palkia"],
+  [/\bSnorlex\b/gi, "Snorlax"],
+  [/\bGardvor\b/gi, "Gardevoir"],
+  [/\bGardivoir\b/gi, "Gardevoir"],
+  [/\bGarchompe\b/gi, "Garchomp"],
+  [/\bGreninga\b/gi, "Greninja"],
+  [/\bLucareo\b/gi, "Lucario"],
+  [/\bZorark\b/gi, "Zoroark"],
+  // Yu-Gi-Oh
+  [/\bExodea\b/gi, "Exodia"],
+  [/\bDarkmagicain\b/gi, "Dark Magician"],
+  // MTG
+  [/\bMagic the gathering\b/gi, "Magic: The Gathering"],
+];
+
+// Apply spelling corrections to a name string and return the corrected version.
+// Pure function over SPELLING_CORRECTIONS so import/upload routes can call this
+// without going through TCGplayer matching.
+export function correctSpelling(rawName: string): string {
+  if (!rawName) return rawName;
+  let n = rawName;
+  for (const [re, to] of SPELLING_CORRECTIONS) n = n.replace(re, to);
+  // Collapse extra whitespace but PRESERVE original punctuation / structure.
+  return n.replace(/[ \t]+/g, " ").trim();
+}
+
 // Expand common short-hand product names ("ETB", "BB") to what TCGplayer indexes.
 function expandProductName(rawName: string): string {
   if (!rawName) return "";
@@ -346,21 +396,13 @@ function expandProductName(rawName: string): string {
     [/\bBB\b/gi, "Booster Box"],
     [/\bUPC\b/gi, "Ultra Premium Collection"],
     [/\bPC\b/gi, "Premium Collection"],
-    // Common Pokemon spelling corrections seen in spreadsheet imports.
-    // Without these, fuzzy search returns wildly wrong VMAX/V cards.
-    [/\bCharzard\b/gi, "Charizard"],
-    [/\bShinning\b/gi, "Shining"],
-    [/\bPikatchu\b/gi, "Pikachu"],
-    [/\bMewto\b/gi, "Mewtwo"],
-    [/\bLuigia\b/gi, "Lugia"],
-    [/\bUmbeon\b/gi, "Umbreon"],
-    [/\bSylvon\b/gi, "Sylveon"],
-    [/\bRayqaza\b/gi, "Rayquaza"],
     // "SWSH FA/ Charizard VMAX" -> drop "FA/" since FA = Full Art which TCGplayer doesn't index that way.
     [/\bFA\s*\/\s*/gi, ""],
     [/\bFA\b/gi, ""],
   ];
   for (const [re, to] of replacements) n = n.replace(re, to);
+  // Also apply the global spelling corrections so search queries benefit too.
+  n = correctSpelling(n);
   // Collapse any extra whitespace introduced by the substitutions.
   n = n.replace(/\s+/g, " ").trim();
   return n;
