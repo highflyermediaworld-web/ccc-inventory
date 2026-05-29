@@ -475,12 +475,23 @@ export async function debugTcgplayerCalls(productId: number) {
         ok: res.ok,
         contentType: res.headers.get("content-type"),
         bodyPreview: text.slice(0, 400),
+        _fullBody: text,
       };
     } catch (err: any) {
       return { label, url, error: String(err?.message || err) };
     }
   };
-  return await Promise.all([
+  // First get skuId from details so we can probe sku-keyed endpoints too.
+  const details = await probe(
+    "details",
+    `https://mp-search-api.tcgplayer.com/v1/product/${productId}/details`
+  );
+  let skuId: number | null = null;
+  try {
+    const detailsJson = JSON.parse((details as any)._fullBody || "");
+    skuId = detailsJson?.skus?.[0]?.skuId ?? null;
+  } catch {}
+  const probes: any[] = [
     probe("pricepoints", `https://mpapi.tcgplayer.com/v2/product/${productId}/pricepoints`),
     probe("latestsales", `https://mpapi.tcgplayer.com/v2/product/${productId}/latestsales`, {
       method: "POST",
@@ -491,11 +502,46 @@ export async function debugTcgplayerCalls(productId: number) {
       "history",
       `https://infinite-api.tcgplayer.com/price/history/${productId}/detailed?range=quarter`
     ),
-    probe(
-      "details",
-      `https://mp-search-api.tcgplayer.com/v1/product/${productId}/details`
-    ),
-  ]);
+    Promise.resolve(details),
+  ];
+  if (skuId) {
+    probes.push(
+      probe(
+        "volatility",
+        `https://mpgateway.tcgplayer.com/v1/pricepoints/marketprice/skus/${skuId}/volatility`
+      ),
+      probe(
+        "listings",
+        `https://mp-search-api.tcgplayer.com/v1/product/${productId}/listings`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filters: {
+              term: { sellerStatus: "Live", channelId: 0 },
+              range: { quantity: { gte: 1 } },
+              exclude: { channelExclusion: 0 },
+            },
+            context: { shippingCountry: "US", cart: {} },
+            aggregations: ["listingType", "seller-key"],
+            size: 0,
+          }),
+        }
+      )
+    );
+  }
+  const allResults = await Promise.all(probes);
+  // Strip the heavy _fullBody from output
+  return {
+    skuId,
+    results: allResults.map((r: any) => {
+      if (r && "_fullBody" in r) {
+        const { _fullBody, ...rest } = r;
+        return rest;
+      }
+      return r;
+    }),
+  };
 }
 
 export async function fetchTcgplayerPricePoints(
