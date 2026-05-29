@@ -377,12 +377,56 @@ export async function registerRoutes(
           item.franchise
         );
       }
+      // Graded slabs: if there's no TCGplayer match (or no price points), still
+      // produce a graded AI estimate so the user gets a number. We do this
+      // BEFORE the early returns below.
+      const handleGradedNoPoints = async () => {
+        if (!isGraded(item.condition)) return null;
+        const graded = await getGradedEstimate({
+          name: item.name,
+          set: item.setName ?? "",
+          franchise: item.franchise,
+          rarity: item.rarity ?? "",
+          condition: item.condition ?? "",
+          rawMarketPrice: null,
+        });
+        if (graded && graded.marketValue != null && graded.marketValue > 0) {
+          await storage.updateInventory(item.id, {
+            marketValue: graded.marketValue,
+          } as any);
+          const upd = await storage.getInventoryItem(item.id);
+          if (upd) broadcast({ type: "inventory:update", payload: upd });
+          return upd;
+        }
+        return null;
+      };
+
       if (!productId) {
+        const gradedItem = await handleGradedNoPoints();
+        if (gradedItem) {
+          return res.json({
+            found: false,
+            productId: null,
+            gradedEstimate: true,
+            item: gradedItem,
+          });
+        }
         return res.json({ found: false, productId: null });
       }
 
       const points = await fetchTcgplayerPricePoints(productId);
-      if (!points) return res.json({ found: false, productId });
+      if (!points) {
+        const gradedItem = await handleGradedNoPoints();
+        if (gradedItem) {
+          return res.json({
+            found: false,
+            productId,
+            gradedEstimate: true,
+            item: gradedItem,
+          });
+        }
+        return res.json({ found: false, productId });
+      }
 
       const patch = pricePointsToPatch(points);
       // Graded slabs: TCGplayer returns the RAW price for the product, which is
@@ -491,6 +535,28 @@ export async function registerRoutes(
             }
             await storage.updateInventory(item.id, patch as any);
             updated++;
+          } else if (isGraded(item.condition) && (item.marketValue == null || force)) {
+            // No TCGplayer match for this graded slab — fall back to a pure AI
+            // graded estimate so the item still gets a value.
+            const graded = await Promise.race<any>([
+              getGradedEstimate({
+                name: item.name,
+                set: item.setName ?? "",
+                franchise: item.franchise,
+                rarity: item.rarity ?? "",
+                condition: item.condition ?? "",
+                rawMarketPrice: null,
+              }),
+              new Promise((resolve) => setTimeout(() => resolve(null), 12000)),
+            ]);
+            if (graded && graded.marketValue != null && graded.marketValue > 0) {
+              await storage.updateInventory(item.id, {
+                marketValue: graded.marketValue,
+              } as any);
+              updated++;
+            } else {
+              skipped++;
+            }
           } else {
             skipped++;
           }
