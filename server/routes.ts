@@ -364,16 +364,70 @@ export async function registerRoutes(
     }
   });
 
-  // Bulk-fetch images for every in-stock item that's missing one
+  // Bulk-fetch images for every in-stock item that's missing one.
+  // Runs in the background so the HTTP request returns immediately and the
+  // server keeps processing past any client/proxy timeout.
+  let imageBackfillState: {
+    running: boolean;
+    total: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+    startedAt: number | null;
+    finishedAt: number | null;
+    error?: string;
+  } = {
+    running: false,
+    total: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    startedAt: null,
+    finishedAt: null,
+  };
+
   app.post("/api/inventory/fetch-missing-images", async (_req, res) => {
-    try {
-      const result = await fetchMissingImages();
-      broadcast({ type: "inventory:bulk", payload: {} });
-      res.json(result);
-    } catch (err: any) {
-      console.error("inventory/fetch-missing-images error:", err);
-      res.status(500).json({ message: err?.message || "Bulk image fetch failed" });
+    if (imageBackfillState.running) {
+      return res.json({
+        status: "already-running",
+        ...imageBackfillState,
+      });
     }
+    imageBackfillState = {
+      running: true,
+      total: 0,
+      updated: 0,
+      skipped: 0,
+      failed: 0,
+      startedAt: Date.now(),
+      finishedAt: null,
+    };
+    // Kick off in the background; don't await.
+    (async () => {
+      try {
+        const result = await fetchMissingImages((progress) => {
+          imageBackfillState.total = progress.total;
+          imageBackfillState.updated = progress.updated;
+          imageBackfillState.skipped = progress.skipped;
+          imageBackfillState.failed = progress.failed;
+        });
+        imageBackfillState.updated = result.updated;
+        imageBackfillState.skipped = result.skipped;
+        imageBackfillState.failed = result.failed;
+        broadcast({ type: "inventory:bulk", payload: {} });
+      } catch (err: any) {
+        console.error("inventory/fetch-missing-images error:", err);
+        imageBackfillState.error = err?.message || String(err);
+      } finally {
+        imageBackfillState.running = false;
+        imageBackfillState.finishedAt = Date.now();
+      }
+    })();
+    res.json({ status: "started", ...imageBackfillState });
+  });
+
+  app.get("/api/inventory/fetch-missing-images/status", (_req, res) => {
+    res.json(imageBackfillState);
   });
 
   // Price history for a single item (sorted ascending)

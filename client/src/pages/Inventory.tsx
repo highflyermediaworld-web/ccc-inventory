@@ -205,10 +205,47 @@ export default function InventoryPage() {
     },
   });
 
+  const [imageBackfillRunning, setImageBackfillRunning] = useState(false);
+  const [imageBackfillProgress, setImageBackfillProgress] = useState<{
+    updated: number;
+    total: number;
+  } | null>(null);
+
   const fetchImagesMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/inventory/fetch-missing-images");
-      return res.json();
+      const initial = await res.json();
+      setImageBackfillRunning(true);
+      // Poll status endpoint every 4 seconds until done
+      return new Promise<any>((resolve, reject) => {
+        const poll = async () => {
+          try {
+            const sres = await apiRequest(
+              "GET",
+              "/api/inventory/fetch-missing-images/status"
+            );
+            const s = await sres.json();
+            setImageBackfillProgress({
+              updated: s.updated || 0,
+              total: s.total || 0,
+            });
+            // Refresh inventory list periodically so new photos appear live
+            queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+            if (!s.running) {
+              setImageBackfillRunning(false);
+              if (s.error) reject(new Error(s.error));
+              else resolve(s);
+              return;
+            }
+            setTimeout(poll, 4000);
+          } catch (err) {
+            setImageBackfillRunning(false);
+            reject(err);
+          }
+        };
+        setTimeout(poll, 2000);
+        void initial;
+      });
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
@@ -217,6 +254,7 @@ export default function InventoryPage() {
         title: "Photos fetched",
         description: `${data.updated} added · ${data.skipped} not found · ${data.failed} failed`,
       });
+      setImageBackfillProgress(null);
     },
     onError: (err: any) => {
       toast({
@@ -224,6 +262,7 @@ export default function InventoryPage() {
         description: err?.message,
         variant: "destructive",
       });
+      setImageBackfillProgress(null);
     },
   });
 
@@ -440,7 +479,11 @@ export default function InventoryPage() {
                   fetchImagesMutation.isPending ? "animate-pulse" : ""
                 }`}
               />
-              {fetchImagesMutation.isPending ? "Fetching photos…" : "Fetch photos"}
+              {fetchImagesMutation.isPending
+                ? imageBackfillProgress
+                  ? `Fetching… ${imageBackfillProgress.updated}/${imageBackfillProgress.total}`
+                  : "Fetching photos…"
+                : "Fetch photos"}
             </Button>
             <Button
               variant="outline"

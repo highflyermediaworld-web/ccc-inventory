@@ -480,11 +480,15 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
 }
 
 // Bulk image fetch with throttling. Only touches items where imageUrl is null.
-export async function fetchMissingImages(): Promise<{
-  updated: number;
-  failed: number;
-  skipped: number;
-}> {
+export async function fetchMissingImages(
+  onProgress?: (p: {
+    total: number;
+    processed: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+  }) => void
+): Promise<{ updated: number; failed: number; skipped: number }> {
   const items = await storage.listInventory();
   const candidates = items.filter(
     (i) => !i.imageUrl && (i.status === "In Inventory" || i.status === "Listed")
@@ -492,6 +496,8 @@ export async function fetchMissingImages(): Promise<{
   let updated = 0;
   let failed = 0;
   let skipped = 0;
+  let processed = 0;
+  const total = candidates.length;
 
   for (const item of candidates) {
     try {
@@ -506,8 +512,11 @@ export async function fetchMissingImages(): Promise<{
       console.error("[pricing] image fetch failed for", item.id, err);
       failed++;
     }
-    if (item.franchise === "Magic The Gathering") await sleep(150);
-    else if (item.franchise === "Pok\u00e9mon") await sleep(500);
+    processed++;
+    onProgress?.({ total, processed, updated, skipped, failed });
+    // Lower sleeps now that TCGplayer is the primary source (single fast API).
+    if (item.franchise === "Magic The Gathering") await sleep(100);
+    else if (item.franchise === "Pok\u00e9mon") await sleep(200);
     else await sleep(100);
   }
 
