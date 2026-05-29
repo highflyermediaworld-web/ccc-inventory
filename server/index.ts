@@ -72,7 +72,7 @@ app.use((req, res, next) => {
   await initDatabase();
   attachRealtime(httpServer);
   await registerRoutes(httpServer, app);
-  startAutoImport();
+  await startAutoImport();
   startAutoPricing();
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

@@ -47,6 +47,60 @@ const status: AutoImportStatus = {
 let timer: NodeJS.Timeout | null = null;
 let runningPromise: Promise<AutoImportStatus> | null = null;
 
+// Persistence keys for the app_settings KV table. Storing config in the DB
+// instead of process env means the URL survives Render redeploys.
+const KEY_URL = "autoImport.url";
+const KEY_ENABLED = "autoImport.enabled";
+const KEY_INTERVAL = "autoImport.intervalMin";
+
+async function loadPersistedConfig(): Promise<{
+  url: string | null;
+  enabled: boolean | null;
+  intervalMin: number | null;
+}> {
+  try {
+    const [url, enabled, interval] = await Promise.all([
+      storage.getSetting(KEY_URL),
+      storage.getSetting(KEY_ENABLED),
+      storage.getSetting(KEY_INTERVAL),
+    ]);
+    const intervalNum = interval != null ? parseInt(interval, 10) : NaN;
+    return {
+      url: url && url.trim() ? url.trim() : null,
+      enabled:
+        enabled == null
+          ? null
+          : enabled.toLowerCase() === "true" || enabled === "1",
+      intervalMin: Number.isFinite(intervalNum) ? intervalNum : null,
+    };
+  } catch (err) {
+    console.error("[autoImport] failed to load persisted config", err);
+    return { url: null, enabled: null, intervalMin: null };
+  }
+}
+
+async function persistConfig(opts: {
+  url?: string | null;
+  enabled?: boolean;
+  intervalMin?: number;
+}) {
+  try {
+    const writes: Promise<unknown>[] = [];
+    if (opts.url !== undefined) {
+      writes.push(storage.setSetting(KEY_URL, opts.url ?? ""));
+    }
+    if (opts.enabled !== undefined) {
+      writes.push(storage.setSetting(KEY_ENABLED, opts.enabled ? "true" : "false"));
+    }
+    if (opts.intervalMin !== undefined) {
+      writes.push(storage.setSetting(KEY_INTERVAL, String(opts.intervalMin)));
+    }
+    await Promise.all(writes);
+  } catch (err) {
+    console.error("[autoImport] failed to persist config", err);
+  }
+}
+
 /**
  * Convert a Google Drive share URL into a direct download URL. Accepts:
  *   https://drive.google.com/file/d/{ID}/view
@@ -334,18 +388,33 @@ export async function runAutoImport(opts: { wipe?: boolean } = {}): Promise<Auto
   return runningPromise;
 }
 
-export function startAutoImport() {
-  status.url = (process.env.AUTO_IMPORT_URL || "").trim() || null;
-  const intervalEnv = parseInt(process.env.AUTO_IMPORT_INTERVAL_MIN || "", 10);
-  status.intervalMin = Number.isFinite(intervalEnv) && intervalEnv >= 5
-    ? intervalEnv
-    : DEFAULT_INTERVAL_MIN;
+export async function startAutoImport() {
+  // Load persisted config first — it overrides env vars so the UI setting
+  // survives Render redeploys.
+  const persisted = await loadPersistedConfig();
 
-  const enabledEnv = (process.env.AUTO_IMPORT_ENABLED || "").trim().toLowerCase();
-  if (enabledEnv === "false" || enabledEnv === "0") {
-    status.enabled = false;
+  const envUrl = (process.env.AUTO_IMPORT_URL || "").trim() || null;
+  status.url = persisted.url ?? envUrl;
+
+  const envInterval = parseInt(process.env.AUTO_IMPORT_INTERVAL_MIN || "", 10);
+  const fallbackInterval =
+    Number.isFinite(envInterval) && envInterval >= 5
+      ? envInterval
+      : DEFAULT_INTERVAL_MIN;
+  status.intervalMin =
+    persisted.intervalMin && persisted.intervalMin >= 5
+      ? persisted.intervalMin
+      : fallbackInterval;
+
+  if (persisted.enabled !== null) {
+    status.enabled = persisted.enabled && Boolean(status.url);
   } else {
-    status.enabled = Boolean(status.url);
+    const enabledEnv = (process.env.AUTO_IMPORT_ENABLED || "").trim().toLowerCase();
+    if (enabledEnv === "false" || enabledEnv === "0") {
+      status.enabled = false;
+    } else {
+      status.enabled = Boolean(status.url);
+    }
   }
 
   if (timer) {
@@ -354,7 +423,7 @@ export function startAutoImport() {
   }
 
   if (!status.enabled || !status.url) {
-    console.log("[autoImport] disabled (set AUTO_IMPORT_URL to enable)");
+    console.log("[autoImport] disabled (no URL configured)");
     status.nextRunAt = null;
     return;
   }
@@ -385,6 +454,13 @@ export function setAutoImportConfig(opts: { url?: string | null; enabled?: boole
   if (opts.intervalMin !== undefined && opts.intervalMin >= 5) {
     status.intervalMin = opts.intervalMin;
   }
+
+  // Persist to DB so config survives server restarts / Render redeploys.
+  void persistConfig({
+    url: opts.url,
+    enabled: opts.enabled,
+    intervalMin: opts.intervalMin,
+  });
 
   if (timer) {
     clearInterval(timer);
