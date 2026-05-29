@@ -35,6 +35,10 @@ import {
   isGraded,
   getGradedEstimate,
 } from "./pricing";
+import {
+  getAutoPricingStatus,
+  triggerAutoPricingNow,
+} from "./autoPricing";
 import { broadcast } from "./realtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -700,6 +704,16 @@ export async function registerRoutes(
     } catch (err: any) {
       res.status(500).json({ message: err?.message || "Status check failed" });
     }
+  });
+
+  // In-process auto-refresh status + manual trigger. The server runs a
+  // built-in 30-min loop that refreshes prices AND backfills missing photos.
+  app.get("/api/pricing/auto/status", (_req, res) => {
+    res.json(getAutoPricingStatus());
+  });
+  app.post("/api/pricing/auto/run", async (_req, res) => {
+    const status = await triggerAutoPricingNow();
+    res.json({ triggered: true, status });
   });
 
   // Fetch image for a single item (no price change)
