@@ -22,7 +22,7 @@ import {
   getGradedEstimate,
   fetchMissingImagesBatch,
 } from "./pricing";
-import * as storage from "./storage";
+import { storage } from "./storage";
 import { broadcast } from "./realtime";
 
 type AutoPricingStatus = {
