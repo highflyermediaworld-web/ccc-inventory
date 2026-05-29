@@ -459,6 +459,7 @@ async function tcgpFetch(url: string, init?: RequestInit): Promise<any | null> {
 }
 
 // Exposed for the debug endpoint so we can confirm exactly which calls TCGplayer rejects in prod.
+// Kept around for diagnostics if we ever want to verify what works from new hosting.
 export async function debugTcgplayerCalls(productId: number) {
   if (!productId) return { error: "productId required" };
   const probe = async (label: string, url: string, init?: RequestInit) => {
@@ -563,20 +564,13 @@ export async function fetchTcgplayerPricePoints(
     history: [],
   };
 
-  // Run the three core calls in parallel.
-  const [pricePts, latestSales, history, productDetails] = await Promise.all([
+  // NOTE: TCGplayer's mpapi/latestsales and infinite-api/history endpoints return
+  // 403 to Render's egress IPs, so we don't call them. We instead use the two
+  // endpoints that DO work from server hosting: /pricepoints and /details.
+  // The unsupported fields (mostRecentSale, history, 3mo low/high/totals, volatility)
+  // stay null. If we later move behind a proxy/Worker, the disabled blocks can be re-enabled.
+  const [pricePts, productDetails] = await Promise.all([
     tcgpFetch(`https://mpapi.tcgplayer.com/v2/product/${productId}/pricepoints`),
-    tcgpFetch(
-      `https://mpapi.tcgplayer.com/v2/product/${productId}/latestsales`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit: 1 }),
-      }
-    ),
-    tcgpFetch(
-      `https://infinite-api.tcgplayer.com/price/history/${productId}/detailed?range=quarter`
-    ),
     tcgpFetch(
       `https://mp-search-api.tcgplayer.com/v1/product/${productId}/details`
     ),
@@ -596,83 +590,20 @@ export async function fetchTcgplayerPricePoints(
     }
   }
 
-  // 2. latestsales → mostRecentSale
-  const sale = latestSales?.data?.[0];
-  if (sale && typeof sale.purchasePrice === "number") {
-    result.mostRecentSale = sale.purchasePrice;
-  }
-
-  // 3. history/detailed → 3-month snapshot + chart series
-  const hRoot = history?.result?.[0];
-  if (hRoot) {
-    const buckets: any[] = Array.isArray(hRoot.buckets) ? hRoot.buckets : [];
-    let lo = Infinity;
-    let hi = -Infinity;
-    const series: TcgplayerPricePoints["history"] = [];
-    for (const b of buckets) {
-      const market = Number(b.marketPrice);
-      const low = Number(b.lowSalePrice);
-      const high = Number(b.highSalePrice);
-      const qty = Number(b.quantitySold);
-      if (low > 0 && low < lo) lo = low;
-      if (high > 0 && high > hi) hi = high;
-      series.push({
-        date: String(b.bucketStartDate || ""),
-        marketPrice: isFinite(market) ? market : 0,
-        low: isFinite(low) ? low : 0,
-        high: isFinite(high) ? high : 0,
-        qty: isFinite(qty) ? qty : 0,
-      });
+  // 2. details → sellers, currentQty, fallback marketPrice/medianPrice
+  if (productDetails && typeof productDetails === "object") {
+    const sellers = Number(productDetails.sellers);
+    if (isFinite(sellers)) result.currentSellers = Math.round(sellers);
+    const listings = Number(productDetails.listings);
+    if (isFinite(listings)) result.currentQty = Math.round(listings);
+    // Fallbacks if pricepoints didn't populate.
+    if (result.marketPrice == null) {
+      const mp = Number(productDetails.marketPrice);
+      if (isFinite(mp)) result.marketPrice = mp;
     }
-    // Sort chronologically ascending for the chart.
-    series.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-    result.history = series;
-    if (isFinite(lo)) result.lowSale3mo = lo;
-    if (isFinite(hi)) result.highSale3mo = hi;
-    const total = Number(hRoot.totalQuantitySold);
-    if (isFinite(total)) result.totalSold3mo = total;
-    const avg = Number(hRoot.averageDailyQuantitySold);
-    if (isFinite(avg)) result.avgDailySold = avg;
-  }
-
-  // 4. Optional: skuId-based current qty/sellers + volatility.
-  // Find skuId from product details. Use the first SKU (Normal/English) if available.
-  const skus: any[] = productDetails?.skus || [];
-  let skuId: number | null = null;
-  if (skus.length) {
-    // Prefer Normal printing + English + Unopened/Near Mint (varies). Take first.
-    const pick = skus[0];
-    if (pick?.skuId) skuId = Math.trunc(Number(pick.skuId));
-  }
-  if (skuId) {
-    const [vol, listingAgg] = await Promise.all([
-      tcgpFetch(
-        `https://mpgateway.tcgplayer.com/v1/pricepoints/marketprice/skus/${skuId}/volatility`
-      ),
-      tcgpFetch(
-        `https://mp-search-api.tcgplayer.com/v1/product/${productId}/listings`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filters: {
-              term: { sellerStatus: "Live", channelId: 0 },
-              range: { quantity: { gte: 1 } },
-              exclude: { channelExclusion: 0 },
-            },
-            context: { shippingCountry: "US", cart: {} },
-            aggregations: ["listingType", "seller-key"],
-            size: 0,
-          }),
-        }
-      ),
-    ]);
-    if (vol?.volatility) result.volatility = String(vol.volatility);
-    const agg = listingAgg?.results?.[0];
-    if (agg) {
-      if (typeof agg.totalResults === "number") result.currentQty = agg.totalResults;
-      const sellerKey = agg.aggregations?.["seller-key"];
-      if (Array.isArray(sellerKey)) result.currentSellers = sellerKey.length;
+    if (result.listedMedian == null) {
+      const med = Number(productDetails.medianPrice);
+      if (isFinite(med)) result.listedMedian = med;
     }
   }
 

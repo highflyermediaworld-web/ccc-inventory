@@ -329,9 +329,6 @@ export function ItemDetailDialog({
                   </Button>
                 </div>
 
-                {/* TCGplayer Market Price History chart (preferred over our internal series) */}
-                <TcgplayerHistoryChart item={item} />
-
                 {/* Price history chart (our internal refresh log) */}
                 <div>
                   <div className="flex items-end justify-between mb-2">
@@ -478,29 +475,6 @@ function PointStat({
   );
 }
 
-function VolatilityBar({ level }: { level: string | null }) {
-  const norm = (level || "").toUpperCase();
-  const positions: Record<string, number> = { LOW: 0.2, MED: 0.5, HIGH: 0.85 };
-  const pos = positions[norm] ?? 0.5;
-  const label = norm === "LOW" ? "Low" : norm === "HIGH" ? "High" : norm === "MED" ? "Med" : "\u2014";
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          Volatility
-        </span>
-        <span className="text-[10px] font-semibold">{label}</span>
-      </div>
-      <div className="relative h-1.5 rounded-full bg-muted overflow-visible">
-        <div
-          className="absolute top-1/2 -translate-y-1/2 h-2 w-2 rounded-full bg-primary shadow"
-          style={{ left: `calc(${pos * 100}% - 4px)` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 function TcgplayerPanel({ item }: { item: Inventory }) {
   const hasPoints =
     item.tcgpPricedAt != null ||
@@ -509,8 +483,8 @@ function TcgplayerPanel({ item }: { item: Inventory }) {
   if (!hasPoints) {
     return (
       <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
-        Refresh price to pull TCGplayer Price Points (Market, Most Recent Sale,
-        Listed Median, Sellers, Volatility, 3-month snapshot).
+        Refresh price to pull TCGplayer Price Points (Market, Listed Median,
+        Current Qty, Sellers).
       </div>
     );
   }
@@ -542,16 +516,11 @@ function TcgplayerPanel({ item }: { item: Inventory }) {
             value={formatCurrency(item.tcgpMarketPrice)}
           />
           <PointStat
-            label="Most Recent Sale"
-            value={formatCurrency(item.tcgpMostRecentSale)}
-          />
-        </div>
-        <VolatilityBar level={item.tcgpVolatility ?? null} />
-        <div className="grid grid-cols-3 gap-3">
-          <PointStat
             label="Listed Median"
             value={formatCurrency(item.tcgpListedMedian)}
           />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <PointStat
             label="Current Qty"
             value={item.tcgpCurrentQty != null ? String(item.tcgpCurrentQty) : "\u2014"}
@@ -565,37 +534,6 @@ function TcgplayerPanel({ item }: { item: Inventory }) {
             }
           />
         </div>
-        <div className="pt-2 border-t border-border">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
-            3 Month Snapshot
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <PointStat
-              label="Low Sale"
-              value={formatCurrency(item.tcgpLowSale3mo)}
-            />
-            <PointStat
-              label="High Sale"
-              value={formatCurrency(item.tcgpHighSale3mo)}
-            />
-            <PointStat
-              label="Total Sold"
-              value={
-                item.tcgpTotalSold3mo != null
-                  ? String(item.tcgpTotalSold3mo)
-                  : "\u2014"
-              }
-            />
-            <PointStat
-              label="Avg Daily Sold"
-              value={
-                item.tcgpAvgDailySold != null
-                  ? Number(item.tcgpAvgDailySold).toFixed(1)
-                  : "\u2014"
-              }
-            />
-          </div>
-        </div>
         {pricedAt && (
           <div className="text-[10px] text-muted-foreground text-right">
             Last refreshed {pricedAt}
@@ -606,7 +544,10 @@ function TcgplayerPanel({ item }: { item: Inventory }) {
   );
 }
 
-function TcgplayerHistoryChart({ item }: { item: Inventory }) {
+// Reserved for future: TCGplayer 3-month price history chart. Disabled while
+// the infinite-api endpoint is blocked from our hosting provider.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _TcgplayerHistoryChart({ item }: { item: Inventory }) {
   const series = useMemo(() => {
     if (!item.tcgpHistoryJson) return [] as Array<any>;
     try {
