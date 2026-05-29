@@ -461,10 +461,18 @@ export async function registerRoutes(
       }
 
       const processed = batch.length;
-      // Updated items drop out of the candidate set next call (filter excludes those with tcgpPricedAt),
-      // so the candidate list naturally shrinks. Only advance past skipped/failed so we eventually retry them.
-      const nextOffset = startIdx + skipped + failed;
-      const remaining = Math.max(0, candidates.length - processed);
+      // With force=0: updated items drop out of the candidate set (filter excludes
+      //   those with tcgpPricedAt), so candidates shrinks each call. Only advance
+      //   past skipped/failed; updated items vacate their slot naturally.
+      // With force=1: candidates DOESN'T shrink (we re-price everything), so we
+      //   must advance offset by processed to make forward progress; otherwise
+      //   we'd loop on the same 8 items forever.
+      const nextOffset = force
+        ? startIdx + processed
+        : startIdx + skipped + failed;
+      const remaining = force
+        ? Math.max(0, candidates.length - nextOffset)
+        : Math.max(0, candidates.length - updated - nextOffset);
       broadcast({ type: "inventory:bulk", payload: {} });
       res.json({
         updated,
@@ -478,6 +486,48 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("pricing/points-batch error:", err);
       res.status(500).json({ message: err?.message || "Bulk price points failed" });
+    }
+  });
+
+  // Clear all TCGplayer matches (productId + cached price points) so a fresh
+  // bulk run can re-match with the current matcher. Use ?onlySuspect=1 to only
+  // clear matches where the inventory marketValue differs from the matched
+  // tcgpMarketPrice by more than a 5x ratio (likely a wrong-product match).
+  app.post("/api/pricing/clear-matches", async (req, res) => {
+    try {
+      const onlySuspect = String(req.query.onlySuspect ?? "").toLowerCase() === "1";
+      const items = await storage.listInventory();
+      let cleared = 0;
+      for (const item of items) {
+        if (!item.tcgpProductId && !item.tcgpPricedAt) continue;
+        if (onlySuspect) {
+          const mv = Number(item.marketValue);
+          const tp = Number(item.tcgpMarketPrice);
+          if (!isFinite(mv) || mv <= 0 || !isFinite(tp) || tp <= 0) continue;
+          const ratio = Math.max(mv, tp) / Math.min(mv, tp);
+          if (ratio < 5) continue; // close enough, leave alone
+        }
+        await storage.updateInventory(item.id, {
+          tcgpProductId: null,
+          tcgpMarketPrice: null,
+          tcgpMostRecentSale: null,
+          tcgpListedMedian: null,
+          tcgpCurrentQty: null,
+          tcgpCurrentSellers: null,
+          tcgpVolatility: null,
+          tcgpLowSale3mo: null,
+          tcgpHighSale3mo: null,
+          tcgpTotalSold3mo: null,
+          tcgpAvgDailySold: null,
+          tcgpHistoryJson: null,
+          tcgpPricedAt: null,
+        } as any);
+        cleared++;
+      }
+      res.json({ cleared, total: items.length });
+    } catch (err: any) {
+      console.error("clear-matches error:", err);
+      res.status(500).json({ message: err?.message || "Clear failed" });
     }
   });
 

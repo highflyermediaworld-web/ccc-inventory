@@ -346,9 +346,64 @@ function expandProductName(rawName: string): string {
     [/\bBB\b/gi, "Booster Box"],
     [/\bUPC\b/gi, "Ultra Premium Collection"],
     [/\bPC\b/gi, "Premium Collection"],
+    // Common Pokemon spelling corrections seen in spreadsheet imports.
+    // Without these, fuzzy search returns wildly wrong VMAX/V cards.
+    [/\bCharzard\b/gi, "Charizard"],
+    [/\bShinning\b/gi, "Shining"],
+    [/\bPikatchu\b/gi, "Pikachu"],
+    [/\bMewto\b/gi, "Mewtwo"],
+    [/\bLuigia\b/gi, "Lugia"],
+    [/\bUmbeon\b/gi, "Umbreon"],
+    [/\bSylvon\b/gi, "Sylveon"],
+    [/\bRayqaza\b/gi, "Rayquaza"],
+    // "SWSH FA/ Charizard VMAX" -> drop "FA/" since FA = Full Art which TCGplayer doesn't index that way.
+    [/\bFA\s*\/\s*/gi, ""],
+    [/\bFA\b/gi, ""],
   ];
   for (const [re, to] of replacements) n = n.replace(re, to);
+  // Collapse any extra whitespace introduced by the substitutions.
+  n = n.replace(/\s+/g, " ").trim();
   return n;
+}
+
+// Build a tokenized set of the meaningful words in a name (lowercase, length >= 3).
+// Strips common years and product-line filler so matching focuses on the card name.
+function nameTokens(s: string): Set<string> {
+  const STOPWORDS = new Set([
+    "the",
+    "and",
+    "for",
+    "with",
+    "new",
+    "pokemon",
+    "swsh",
+    "sword",
+    "shield",
+    "set",
+  ]);
+  return new Set(
+    (s || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .split(/\s+/)
+      .filter(
+        (t) =>
+          t.length >= 3 &&
+          !STOPWORDS.has(t) &&
+          !/^\d{4}$/.test(t) // drop bare years like 2025
+      )
+  );
+}
+
+// Score a candidate by how well its productName overlaps with the query name.
+// Returns 0..1.
+function matchScore(queryName: string, candidateName: string): number {
+  const q = nameTokens(queryName);
+  const c = nameTokens(candidateName);
+  if (q.size === 0 || c.size === 0) return 0;
+  let hits = 0;
+  for (const tok of q) if (c.has(tok)) hits++;
+  return hits / q.size;
 }
 
 // Find the best matching TCGplayer productId for an item. Returns null on no match.
@@ -387,15 +442,39 @@ export async function findTcgplayerProductId(
     const data: any = await res.json();
     const items: any[] = data?.results?.[0]?.results ?? [];
     if (!items.length) return null;
-    let pick = productLine
-      ? items.find(
+
+    // Filter by product line if known.
+    const lineFiltered = productLine
+      ? items.filter(
           (i: any) =>
             String(i?.productLineName || "").toLowerCase() ===
             productLine.toLowerCase()
         )
-      : null;
-    if (!pick) pick = items[0];
-    const id = pick?.productId;
+      : items;
+    const pool = lineFiltered.length ? lineFiltered : items;
+
+    // Score every candidate by token overlap with the (expanded) name.
+    // This prevents "Charizard VMAX" picking up Eternatus VMAX just because
+    // it shares the same set + product type.
+    const scored = pool.map((it: any) => ({
+      item: it,
+      score: matchScore(expandedName, String(it?.productName || "")),
+    }));
+    scored.sort((a, b) => b.score - a.score);
+    const best = scored[0];
+    if (!best) return null;
+
+    // Require at least 0.5 token overlap. Below that, we're guessing and the
+    // user is better off seeing no match than a confidently wrong one.
+    const THRESHOLD = 0.5;
+    if (best.score < THRESHOLD) {
+      console.warn(
+        `[tcgp] low-confidence match for ${JSON.stringify(rawName)}: best ${JSON.stringify(best.item?.productName)} score=${best.score.toFixed(2)} — skipping`
+      );
+      return null;
+    }
+
+    const id = best.item?.productId;
     if (!id) return null;
     return Math.trunc(Number(id));
   } catch {
