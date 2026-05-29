@@ -476,28 +476,9 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
   const tcgpAll = await getTcgplayerImage(rawName, set, franchise);
   if (tcgpAll) return tcgpAll;
 
-  // ---- Last resort: ask Claude for a public image URL ----
-  try {
-    const prompt = `Provide a single direct public image URL (ends in .jpg, .jpeg, .png, or .webp) for this trading card / collectible product. Prefer images hosted on tcgplayer.com (product-images.tcgplayer.com), TCGdex, Scryfall, the official manufacturer site, or a well-known card database. Return ONLY valid JSON:\n{ "imageUrl": string | null }\nProduct:\n- Name: ${rawName}\n- Set: ${set ?? ""}\n- Franchise: ${franchise}\n- Rarity: ${item.rarity ?? ""}\nIf you cannot find a high-confidence direct image URL, return null. Do not fabricate URLs.`;
-    const msg = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 200,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const text = msg.content.find((b: any) => b.type === "text")?.text ?? "";
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
-    const parsed = JSON.parse(jsonMatch[0]);
-    const url = typeof parsed.imageUrl === "string" ? parsed.imageUrl.trim() : null;
-    if (!url) return null;
-    if (!/^https?:\/\//i.test(url)) return null;
-    if (!/\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(url)) {
-      if (!/(scryfall|tcgdex|tcgplayer|pokemontcg)/i.test(url)) return null;
-    }
-    return url;
-  } catch {
-    return null;
-  }
+  // Claude fallback removed from bulk path — it hallucinates URLs and is slow.
+  // Real sources above cover the vast majority of items.
+  return null;
 }
 
 // Bulk image fetch with throttling. Only touches items where imageUrl is null.
@@ -528,7 +509,11 @@ export async function fetchMissingImagesBatch(
 
   for (const item of batch) {
     try {
-      const url = await fetchImageOnly(item);
+      // Hard per-item timeout (6s) so one slow source can't stall the batch.
+      const url = await Promise.race<string | null>([
+        fetchImageOnly(item),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000)),
+      ]);
       if (url) {
         await storage.updateInventory(item.id, { imageUrl: url } as any);
         updated++;
@@ -541,9 +526,9 @@ export async function fetchMissingImagesBatch(
     }
     processed++;
     // Lower sleeps now that TCGplayer is the primary source (single fast API).
-    if (item.franchise === "Magic The Gathering") await sleep(100);
-    else if (item.franchise === "Pok\u00e9mon") await sleep(150);
-    else await sleep(100);
+    if (item.franchise === "Magic The Gathering") await sleep(80);
+    else if (item.franchise === "Pok\u00e9mon") await sleep(120);
+    else await sleep(80);
   }
 
   const withImage =
