@@ -435,31 +435,22 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
   }
 
   // ---- Pokemon ----
+  // TCGplayer is the fastest, most reliable image source for Pokemon (sealed
+  // AND singles). Try it FIRST and use cleaned name (strip number suffixes).
   if (franchise === "Pok\u00e9mon") {
     const { cleanName, collectorNumber, setCode } = parsePokemonName(rawName);
 
-    // For sealed Pokemon product, prefer TCGplayer (real product photo) before
-    // falling back to card-database queries (which only know about singles).
-    if (isSealedProduct(item)) {
-      const tcgp = await getTcgplayerImage(rawName, set, franchise);
-      if (tcgp) return tcgp;
+    // Try TCGplayer with cleaned name + set (fast, ~300ms)
+    const tcgpClean = await getTcgplayerImage(cleanName, set, franchise);
+    if (tcgpClean) return tcgpClean;
+
+    // Try TCGplayer with raw name as fallback
+    if (cleanName !== rawName) {
+      const tcgpRaw = await getTcgplayerImage(rawName, set, franchise);
+      if (tcgpRaw) return tcgpRaw;
     }
 
-    // Try TCGdex with the cleaned name first
-    const tcgdex = await getTcgdexPrice(cleanName, set);
-    if (tcgdex?.imageUrl) return tcgdex.imageUrl;
-
-    // Try pokemontcg.io with cleaned name + number + set hint
-    const ptcg = await getPokemonTcgImage(cleanName, set, collectorNumber);
-    if (ptcg) return ptcg;
-
-    // Try pokemontcg.io with the set code only (last resort name match)
-    if (setCode) {
-      const ptcg2 = await getPokemonTcgImage(cleanName, setCode, collectorNumber);
-      if (ptcg2) return ptcg2;
-    }
-
-    // Sealed products: fall back to set logo (better than blank)
+    // Last resort for sealed: set logo from pokemontcg.io
     if (isSealedProduct(item)) {
       const logo = await getPokemonSetLogo(set);
       if (logo) return logo;
@@ -512,10 +503,10 @@ export async function fetchMissingImagesBatch(
 
   for (const item of batch) {
     try {
-      // Hard per-item timeout (6s) so one slow source can't stall the batch.
+      // Hard per-item timeout (8s) so one slow source can't stall the batch.
       const url = await Promise.race<string | null>([
         fetchImageOnly(item),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000)),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
       ]);
       if (url) {
         await storage.updateInventory(item.id, { imageUrl: url } as any);
