@@ -218,18 +218,20 @@ export default function InventoryPage() {
       let totalSkipped = 0;
       let totalFailed = 0;
       let totalCount = 0;
-      let safety = 200; // hard cap on batches (200 × 15 = 3000 items)
+      let offset = 0;
+      let safety = 300; // hard cap on batches
       try {
         while (safety-- > 0) {
           const res = await apiRequest(
             "POST",
-            "/api/inventory/fetch-missing-images?batch=15"
+            `/api/inventory/fetch-missing-images?batch=10&offset=${offset}`
           );
           const b = await res.json();
           totalUpdated += b.updated || 0;
           totalSkipped += b.skipped || 0;
           totalFailed += b.failed || 0;
           totalCount = b.total || totalCount;
+          offset = b.nextOffset ?? offset;
           setImageBackfillProgress({
             updated: b.withImage ?? totalUpdated,
             total: totalCount,

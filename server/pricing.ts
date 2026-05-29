@@ -487,7 +487,8 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
 // lookup is persisted to the DB before the next iteration, so progress
 // survives server restarts.
 export async function fetchMissingImagesBatch(
-  batchSize: number = 15
+  batchSize: number = 15,
+  offset: number = 0
 ): Promise<{
   updated: number;
   skipped: number;
@@ -496,12 +497,14 @@ export async function fetchMissingImagesBatch(
   remaining: number;
   total: number;
   withImage: number;
+  nextOffset: number;
 }> {
   const items = await storage.listInventory();
   const allCandidates = items.filter(
     (i) => !i.imageUrl && (i.status === "In Inventory" || i.status === "Listed")
   );
-  const batch = allCandidates.slice(0, batchSize);
+  const startIdx = Math.max(0, Math.min(offset, allCandidates.length));
+  const batch = allCandidates.slice(startIdx, startIdx + batchSize);
   let updated = 0;
   let failed = 0;
   let skipped = 0;
@@ -533,14 +536,21 @@ export async function fetchMissingImagesBatch(
 
   const withImage =
     items.filter((i) => i.imageUrl).length + updated;
+  // nextOffset advances past skipped items so the client doesn't re-process
+  // them on the next batch. Updated items dropped out of the candidate list,
+  // so their slots shrink — we advance by (processed - updated) = skipped+failed.
+  const nextOffset = startIdx + skipped + failed;
+  // remaining: items still without an image that we haven't tried yet.
+  const remaining = Math.max(0, allCandidates.length - updated - nextOffset);
   return {
     updated,
     skipped,
     failed,
     processed,
-    remaining: allCandidates.length - processed,
+    remaining,
     total: items.length,
     withImage,
+    nextOffset,
   };
 }
 

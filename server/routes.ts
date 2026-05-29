@@ -374,7 +374,11 @@ export async function registerRoutes(
         Math.max(parseInt(String((req.query.batch as string) ?? "15"), 10) || 15, 1),
         50
       );
-      const result = await fetchMissingImagesBatch(batchSize);
+      const offset = Math.max(
+        parseInt(String((req.query.offset as string) ?? "0"), 10) || 0,
+        0
+      );
+      const result = await fetchMissingImagesBatch(batchSize, offset);
       // Broadcast once per batch so the UI refreshes
       broadcast({ type: "inventory:bulk", payload: {} });
       res.json(result);
