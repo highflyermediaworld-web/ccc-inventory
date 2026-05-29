@@ -152,6 +152,34 @@ export async function runMigrations() {
         updated_at INTEGER NOT NULL DEFAULT (unixepoch())
       );
     `);
+
+    // ---- Idempotent column additions for richer TCGplayer price points ----
+    // SQLite has no ADD COLUMN IF NOT EXISTS, so wrap each in a try.
+    const tcgpColumns = [
+      ["tcgp_product_id", "INTEGER"],
+      ["tcgp_market_price", "REAL"],
+      ["tcgp_most_recent_sale", "REAL"],
+      ["tcgp_listed_median", "REAL"],
+      ["tcgp_current_qty", "INTEGER"],
+      ["tcgp_current_sellers", "INTEGER"],
+      ["tcgp_volatility", "TEXT"],
+      ["tcgp_low_sale_3mo", "REAL"],
+      ["tcgp_high_sale_3mo", "REAL"],
+      ["tcgp_total_sold_3mo", "INTEGER"],
+      ["tcgp_avg_daily_sold", "REAL"],
+      ["tcgp_history_json", "TEXT"],
+      ["tcgp_priced_at", "INTEGER"],
+    ];
+    for (const [col, type] of tcgpColumns) {
+      try {
+        await client.execute(
+          `ALTER TABLE inventory ADD COLUMN ${col} ${type}`
+        );
+      } catch {
+        // column already exists — ignore
+      }
+    }
+
     console.log("[db] Migrations complete");
   } catch (err) {
     console.error("[db] Migration error:", err);

@@ -15,7 +15,7 @@ import { CategoryBadge, FranchiseBadge, StatusBadge } from "@/components/Badges"
 import { CardThumb } from "@/components/CardThumb";
 import { SourceBadge } from "@/components/SourceBadge";
 import { formatCurrency, formatDate, pnlClass } from "@/lib/format";
-import { RefreshCw, Camera, X as XIcon, ImageIcon } from "lucide-react";
+import { RefreshCw, Camera, X as XIcon, ImageIcon, ExternalLink, TrendingUp } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -134,23 +134,27 @@ export function ItemDetailDialog({
   const refreshMutation = useMutation({
     mutationFn: async () => {
       if (!itemId) return null;
-      const res = await apiRequest("POST", `/api/pricing/refresh/${itemId}`);
-      return res.json();
+      // Refresh BOTH the legacy price feed AND the rich TCGplayer price points.
+      const [pointsRes] = await Promise.all([
+        apiRequest("POST", `/api/pricing/points/${itemId}`),
+        apiRequest("POST", `/api/pricing/refresh/${itemId}`).catch(() => null),
+      ]);
+      return pointsRes ? await pointsRes.json() : null;
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
       queryClient.invalidateQueries({
         queryKey: ["/api/inventory", itemId, "history"],
       });
-      if (data?.marketValue != null) {
+      if (data?.found && data?.points?.marketPrice != null) {
         toast({
-          title: "Price updated",
-          description: `${formatCurrency(data.marketValue)} · ${data.source}`,
+          title: "Price points updated",
+          description: `Market ${formatCurrency(data.points.marketPrice)} · TCGplayer`,
         });
       } else {
         toast({
-          title: "No price found",
-          description: "No live price available for this item right now.",
+          title: "No TCGplayer match",
+          description: "Could not find this product on TCGplayer.",
           variant: "destructive",
         });
       }
@@ -305,6 +309,9 @@ export function ItemDetailDialog({
                   </div>
                 </div>
 
+                {/* TCGplayer Price Points panel */}
+                <TcgplayerPanel item={item} />
+
                 <div className="flex justify-end">
                   <Button
                     size="sm"
@@ -322,11 +329,14 @@ export function ItemDetailDialog({
                   </Button>
                 </div>
 
-                {/* Price history chart */}
+                {/* TCGplayer Market Price History chart (preferred over our internal series) */}
+                <TcgplayerHistoryChart item={item} />
+
+                {/* Price history chart (our internal refresh log) */}
                 <div>
                   <div className="flex items-end justify-between mb-2">
                     <div>
-                      <h3 className="text-sm font-semibold">Price history</h3>
+                      <h3 className="text-sm font-semibold">Refresh log</h3>
                       <p className="text-[11px] text-muted-foreground">
                         {history.length} data point{history.length === 1 ? "" : "s"}
                       </p>
@@ -442,6 +452,259 @@ function Stat({
         {label}
       </div>
       <div className={`tnum text-base font-bold ${valueClass}`}>{value}</div>
+    </div>
+  );
+}
+
+function PointStat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </div>
+      <div className="tnum text-sm font-semibold">{value}</div>
+      {hint && (
+        <div className="text-[10px] text-muted-foreground tnum">{hint}</div>
+      )}
+    </div>
+  );
+}
+
+function VolatilityBar({ level }: { level: string | null }) {
+  const norm = (level || "").toUpperCase();
+  const positions: Record<string, number> = { LOW: 0.2, MED: 0.5, HIGH: 0.85 };
+  const pos = positions[norm] ?? 0.5;
+  const label = norm === "LOW" ? "Low" : norm === "HIGH" ? "High" : norm === "MED" ? "Med" : "\u2014";
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          Volatility
+        </span>
+        <span className="text-[10px] font-semibold">{label}</span>
+      </div>
+      <div className="relative h-1.5 rounded-full bg-muted overflow-visible">
+        <div
+          className="absolute top-1/2 -translate-y-1/2 h-2 w-2 rounded-full bg-primary shadow"
+          style={{ left: `calc(${pos * 100}% - 4px)` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TcgplayerPanel({ item }: { item: Inventory }) {
+  const hasPoints =
+    item.tcgpPricedAt != null ||
+    item.tcgpMarketPrice != null ||
+    item.tcgpListedMedian != null;
+  if (!hasPoints) {
+    return (
+      <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+        Refresh price to pull TCGplayer Price Points (Market, Most Recent Sale,
+        Listed Median, Sellers, Volatility, 3-month snapshot).
+      </div>
+    );
+  }
+  const pricedAt = item.tcgpPricedAt
+    ? new Date(item.tcgpPricedAt * 1000).toLocaleString()
+    : null;
+  return (
+    <div className="rounded-md border border-border bg-muted/20">
+      <div className="px-3 pt-3 pb-2 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <TrendingUp className="h-3.5 w-3.5 text-primary" />
+          <h3 className="text-sm font-semibold">TCGplayer Price Points</h3>
+        </div>
+        {item.tcgpProductId && (
+          <a
+            href={`https://www.tcgplayer.com/product/${item.tcgpProductId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
+          >
+            View on TCGplayer <ExternalLink className="h-2.5 w-2.5" />
+          </a>
+        )}
+      </div>
+      <div className="px-3 pb-3 space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <PointStat
+            label="Market Price"
+            value={formatCurrency(item.tcgpMarketPrice)}
+          />
+          <PointStat
+            label="Most Recent Sale"
+            value={formatCurrency(item.tcgpMostRecentSale)}
+          />
+        </div>
+        <VolatilityBar level={item.tcgpVolatility ?? null} />
+        <div className="grid grid-cols-3 gap-3">
+          <PointStat
+            label="Listed Median"
+            value={formatCurrency(item.tcgpListedMedian)}
+          />
+          <PointStat
+            label="Current Qty"
+            value={item.tcgpCurrentQty != null ? String(item.tcgpCurrentQty) : "\u2014"}
+          />
+          <PointStat
+            label="Sellers"
+            value={
+              item.tcgpCurrentSellers != null
+                ? String(item.tcgpCurrentSellers)
+                : "\u2014"
+            }
+          />
+        </div>
+        <div className="pt-2 border-t border-border">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
+            3 Month Snapshot
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <PointStat
+              label="Low Sale"
+              value={formatCurrency(item.tcgpLowSale3mo)}
+            />
+            <PointStat
+              label="High Sale"
+              value={formatCurrency(item.tcgpHighSale3mo)}
+            />
+            <PointStat
+              label="Total Sold"
+              value={
+                item.tcgpTotalSold3mo != null
+                  ? String(item.tcgpTotalSold3mo)
+                  : "\u2014"
+              }
+            />
+            <PointStat
+              label="Avg Daily Sold"
+              value={
+                item.tcgpAvgDailySold != null
+                  ? Number(item.tcgpAvgDailySold).toFixed(1)
+                  : "\u2014"
+              }
+            />
+          </div>
+        </div>
+        {pricedAt && (
+          <div className="text-[10px] text-muted-foreground text-right">
+            Last refreshed {pricedAt}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TcgplayerHistoryChart({ item }: { item: Inventory }) {
+  const series = useMemo(() => {
+    if (!item.tcgpHistoryJson) return [] as Array<any>;
+    try {
+      const arr = JSON.parse(item.tcgpHistoryJson);
+      if (!Array.isArray(arr)) return [];
+      return arr
+        .filter((b: any) => b && b.date && Number(b.marketPrice) > 0)
+        .map((b: any) => ({
+          t: new Date(b.date).getTime(),
+          date: b.date,
+          price: Number(b.marketPrice),
+          low: Number(b.low),
+          high: Number(b.high),
+          qty: Number(b.qty),
+        }));
+    } catch {
+      return [];
+    }
+  }, [item.tcgpHistoryJson]);
+
+  if (series.length < 2) return null;
+  const first = series[0].price;
+  const last = series[series.length - 1].price;
+  const pct = first > 0 ? ((last - first) / first) * 100 : 0;
+  const pctClass = pct >= 0 ? "text-emerald-500" : "text-rose-500";
+  return (
+    <div>
+      <div className="flex items-end justify-between mb-2">
+        <div>
+          <h3 className="text-sm font-semibold">Market Price History</h3>
+          <p className="text-[11px] text-muted-foreground">
+            TCGplayer · 3 months ({series.length} points)
+          </p>
+        </div>
+        <div className="text-right">
+          <div className="text-base font-bold tnum">{formatCurrency(last)}</div>
+          <div className={`text-[11px] tnum font-semibold ${pctClass}`}>
+            {pct >= 0 ? "+" : ""}
+            {pct.toFixed(2)}%
+          </div>
+        </div>
+      </div>
+      <div className="h-48">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            data={series}
+            margin={{ top: 8, right: 8, bottom: 4, left: 0 }}
+          >
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="hsl(var(--border))"
+              vertical={false}
+            />
+            <XAxis
+              dataKey="t"
+              type="number"
+              domain={["dataMin", "dataMax"]}
+              scale="time"
+              tickFormatter={(v) =>
+                new Date(v).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                })
+              }
+              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+            />
+            <YAxis
+              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+              tickFormatter={(v) => "$" + v}
+              width={44}
+            />
+            <Tooltip
+              contentStyle={{
+                background: "hsl(var(--popover))",
+                border: "1px solid hsl(var(--border))",
+                borderRadius: 8,
+                fontSize: 12,
+              }}
+              formatter={(v: any) => [formatCurrency(Number(v)), "Market"]}
+              labelFormatter={(v) =>
+                new Date(Number(v)).toLocaleDateString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                })
+              }
+            />
+            <Line
+              type="monotone"
+              dataKey="price"
+              stroke="hsl(var(--primary))"
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

@@ -21,7 +21,16 @@ import {
   runAutoImport,
   setAutoImportConfig,
 } from "./autoImport";
-import { refreshItem, refreshAll, persistRefreshResult, fetchImageOnly, fetchMissingImagesBatch } from "./pricing";
+import {
+  refreshItem,
+  refreshAll,
+  persistRefreshResult,
+  fetchImageOnly,
+  fetchMissingImagesBatch,
+  findTcgplayerProductId,
+  fetchTcgplayerPricePoints,
+  pricePointsToPatch,
+} from "./pricing";
 import { broadcast } from "./realtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -344,6 +353,140 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("pricing/refresh-all error:", err);
       res.status(500).json({ message: err?.message || "Refresh failed" });
+    }
+  });
+
+  // ===== TCGplayer rich Price Points =====
+  // Pull the full Price Points panel (Market, Most Recent Sale, Listed Median,
+  // Current Qty/Sellers, Volatility, 3-month Low/High/Total Sold/Avg Daily,
+  // plus full price history chart series) for a single inventory item.
+  app.post("/api/pricing/points/:itemId", async (req, res) => {
+    try {
+      const item = await storage.getInventoryItem(req.params.itemId);
+      if (!item) return res.status(404).json({ message: "Item not found" });
+
+      let productId = item.tcgpProductId ?? null;
+      if (!productId) {
+        productId = await findTcgplayerProductId(
+          item.name,
+          item.setName ?? null,
+          item.franchise
+        );
+      }
+      if (!productId) {
+        return res.json({ found: false, productId: null });
+      }
+
+      const points = await fetchTcgplayerPricePoints(productId);
+      if (!points) return res.json({ found: false, productId });
+
+      const patch = pricePointsToPatch(points);
+      // Also mirror market price into the legacy marketValue field if empty.
+      if (points.marketPrice != null && item.marketValue == null) {
+        (patch as any).marketValue = points.marketPrice;
+      }
+      await storage.updateInventory(item.id, patch as any);
+      const updated = await storage.getInventoryItem(item.id);
+      if (updated) broadcast({ type: "inventory:update", payload: updated });
+      res.json({ found: true, productId, points, item: updated });
+    } catch (err: any) {
+      console.error("pricing/points error:", err);
+      res.status(500).json({ message: err?.message || "Price points fetch failed" });
+    }
+  });
+
+  // Batched bulk refresh of price points across the whole inventory — same
+  // restart-resilient pattern as the image backfill. Client loops until
+  // remaining = 0.
+  app.post("/api/pricing/points-batch", async (req, res) => {
+    try {
+      const batchSize = Math.min(
+        Math.max(parseInt(String((req.query.batch as string) ?? "8"), 10) || 8, 1),
+        20
+      );
+      const offset = Math.max(
+        parseInt(String((req.query.offset as string) ?? "0"), 10) || 0,
+        0
+      );
+      // Items eligible for a price-points refresh: must be In Inventory or Listed.
+      const items = await storage.listInventory();
+      const candidates = items.filter(
+        (i) => i.status === "In Inventory" || i.status === "Listed"
+      );
+      const startIdx = Math.max(0, Math.min(offset, candidates.length));
+      const batch = candidates.slice(startIdx, startIdx + batchSize);
+
+      let updated = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      for (const item of batch) {
+        try {
+          // 8s timeout per item so one slow source can't stall the batch.
+          const points = await Promise.race<any>([
+            (async () => {
+              let pid = item.tcgpProductId ?? null;
+              if (!pid) {
+                pid = await findTcgplayerProductId(
+                  item.name,
+                  item.setName ?? null,
+                  item.franchise
+                );
+              }
+              if (!pid) return null;
+              return await fetchTcgplayerPricePoints(pid);
+            })(),
+            new Promise((resolve) => setTimeout(() => resolve(null), 8000)),
+          ]);
+          if (points) {
+            const patch = pricePointsToPatch(points);
+            if (points.marketPrice != null && item.marketValue == null) {
+              (patch as any).marketValue = points.marketPrice;
+            }
+            await storage.updateInventory(item.id, patch as any);
+            updated++;
+          } else {
+            skipped++;
+          }
+        } catch (err) {
+          console.error("[pricing] points refresh failed for", item.id, err);
+          failed++;
+        }
+      }
+
+      const processed = batch.length;
+      const nextOffset = startIdx + skipped + failed;
+      const remaining = Math.max(0, candidates.length - updated - nextOffset);
+      broadcast({ type: "inventory:bulk", payload: {} });
+      res.json({
+        updated,
+        skipped,
+        failed,
+        processed,
+        remaining,
+        total: items.length,
+        nextOffset,
+      });
+    } catch (err: any) {
+      console.error("pricing/points-batch error:", err);
+      res.status(500).json({ message: err?.message || "Bulk price points failed" });
+    }
+  });
+
+  app.get("/api/pricing/points-batch/status", async (_req, res) => {
+    try {
+      const items = await storage.listInventory();
+      const candidates = items.filter(
+        (i) => i.status === "In Inventory" || i.status === "Listed"
+      );
+      const withPoints = candidates.filter((i) => i.tcgpPricedAt).length;
+      res.json({
+        total: candidates.length,
+        withPoints,
+        remaining: candidates.length - withPoints,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Status check failed" });
     }
   });
 

@@ -22,6 +22,20 @@ export const inventory = sqliteTable("inventory", {
   status: text("status").notNull().default("In Inventory"), // In Inventory | Sold | Listed | Traded
   notes: text("notes"),
   imageUrl: text("image_url"),
+  // TCGplayer price points (filled by /api/pricing/refresh)
+  tcgpProductId: integer("tcgp_product_id"),
+  tcgpMarketPrice: real("tcgp_market_price"),
+  tcgpMostRecentSale: real("tcgp_most_recent_sale"),
+  tcgpListedMedian: real("tcgp_listed_median"),
+  tcgpCurrentQty: integer("tcgp_current_qty"),
+  tcgpCurrentSellers: integer("tcgp_current_sellers"),
+  tcgpVolatility: text("tcgp_volatility"), // "LOW" | "MED" | "HIGH"
+  tcgpLowSale3mo: real("tcgp_low_sale_3mo"),
+  tcgpHighSale3mo: real("tcgp_high_sale_3mo"),
+  tcgpTotalSold3mo: integer("tcgp_total_sold_3mo"),
+  tcgpAvgDailySold: real("tcgp_avg_daily_sold"),
+  tcgpHistoryJson: text("tcgp_history_json"), // JSON array of {date,marketPrice,low,high,qty}
+  tcgpPricedAt: integer("tcgp_priced_at"), // unix seconds of last price refresh
   createdAt: integer("created_at")
     .notNull()
     .$defaultFn(() => Math.floor(Date.now() / 1000)),

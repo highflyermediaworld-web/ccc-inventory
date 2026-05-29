@@ -351,17 +351,16 @@ function expandProductName(rawName: string): string {
   return n;
 }
 
-async function getTcgplayerImage(
+// Find the best matching TCGplayer productId for an item. Returns null on no match.
+export async function findTcgplayerProductId(
   rawName: string,
   setHint: string | null,
   franchise: string
-): Promise<string | null> {
+): Promise<number | null> {
   if (!rawName) return null;
   try {
     const productLine = TCGPLAYER_PRODUCT_LINE_MAP[franchise];
     const expandedName = expandProductName(rawName);
-    // Build query: set + expanded name (set first because TCGplayer product
-    // names always start with the set, e.g. "Surging Sparks Elite Trainer Box").
     const queryParts: string[] = [];
     if (setHint) queryParts.push(setHint);
     queryParts.push(expandedName);
@@ -388,8 +387,6 @@ async function getTcgplayerImage(
     const data: any = await res.json();
     const items: any[] = data?.results?.[0]?.results ?? [];
     if (!items.length) return null;
-    // Prefer the first item matching the franchise's TCGplayer productLineName,
-    // otherwise fall back to the absolute top result.
     let pick = productLine
       ? items.find(
           (i: any) =>
@@ -400,12 +397,217 @@ async function getTcgplayerImage(
     if (!pick) pick = items[0];
     const id = pick?.productId;
     if (!id) return null;
-    return `https://product-images.tcgplayer.com/fit-in/437x437/${Math.trunc(
-      Number(id)
-    )}.jpg`;
+    return Math.trunc(Number(id));
   } catch {
     return null;
   }
+}
+
+async function getTcgplayerImage(
+  rawName: string,
+  setHint: string | null,
+  franchise: string
+): Promise<string | null> {
+  const id = await findTcgplayerProductId(rawName, setHint, franchise);
+  if (!id) return null;
+  return `https://product-images.tcgplayer.com/fit-in/437x437/${id}.jpg`;
+}
+
+// --- TCGplayer rich Price Points ---------------------------------------------
+// Fetches the full Price Points panel data for a productId:
+// - Market Price, Listed Median (from /v2/product/{id}/pricepoints)
+// - Most Recent Sale (from /v2/product/{id}/latestsales)
+// - 3-month snapshot + price history (from /price/history/{id}/detailed)
+// Optional: skuId-based volatility and current sellers/qty.
+export interface TcgplayerPricePoints {
+  productId: number;
+  marketPrice: number | null;
+  listedMedian: number | null;
+  mostRecentSale: number | null;
+  currentQty: number | null;
+  currentSellers: number | null;
+  volatility: string | null; // "LOW" | "MED" | "HIGH"
+  lowSale3mo: number | null;
+  highSale3mo: number | null;
+  totalSold3mo: number | null;
+  avgDailySold: number | null;
+  history: Array<{ date: string; marketPrice: number; low: number; high: number; qty: number }>;
+}
+
+const TCGP_HEADERS = {
+  "User-Agent": UA,
+  Accept: "application/json",
+  Origin: "https://www.tcgplayer.com",
+  Referer: "https://www.tcgplayer.com/",
+};
+
+async function tcgpFetch(url: string, init?: RequestInit): Promise<any | null> {
+  try {
+    const res = await fetch(url, {
+      ...(init || {}),
+      headers: { ...TCGP_HEADERS, ...((init as any)?.headers || {}) },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchTcgplayerPricePoints(
+  productId: number
+): Promise<TcgplayerPricePoints | null> {
+  if (!productId) return null;
+  const result: TcgplayerPricePoints = {
+    productId,
+    marketPrice: null,
+    listedMedian: null,
+    mostRecentSale: null,
+    currentQty: null,
+    currentSellers: null,
+    volatility: null,
+    lowSale3mo: null,
+    highSale3mo: null,
+    totalSold3mo: null,
+    avgDailySold: null,
+    history: [],
+  };
+
+  // Run the three core calls in parallel.
+  const [pricePts, latestSales, history, productDetails] = await Promise.all([
+    tcgpFetch(`https://mpapi.tcgplayer.com/v2/product/${productId}/pricepoints`),
+    tcgpFetch(
+      `https://mpapi.tcgplayer.com/v2/product/${productId}/latestsales`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 1 }),
+      }
+    ),
+    tcgpFetch(
+      `https://infinite-api.tcgplayer.com/price/history/${productId}/detailed?range=quarter`
+    ),
+    tcgpFetch(
+      `https://mp-search-api.tcgplayer.com/v1/product/${productId}/details`
+    ),
+  ]);
+
+  // 1. pricepoints → marketPrice + listedMedian (pick the Normal printing first,
+  //    fall back to any printing that has a marketPrice).
+  if (Array.isArray(pricePts)) {
+    const normal =
+      pricePts.find((p: any) => p.printingType === "Normal" && p.marketPrice != null) ||
+      pricePts.find((p: any) => p.marketPrice != null) ||
+      pricePts[0];
+    if (normal) {
+      if (typeof normal.marketPrice === "number") result.marketPrice = normal.marketPrice;
+      if (typeof normal.listedMedianPrice === "number")
+        result.listedMedian = normal.listedMedianPrice;
+    }
+  }
+
+  // 2. latestsales → mostRecentSale
+  const sale = latestSales?.data?.[0];
+  if (sale && typeof sale.purchasePrice === "number") {
+    result.mostRecentSale = sale.purchasePrice;
+  }
+
+  // 3. history/detailed → 3-month snapshot + chart series
+  const hRoot = history?.result?.[0];
+  if (hRoot) {
+    const buckets: any[] = Array.isArray(hRoot.buckets) ? hRoot.buckets : [];
+    let lo = Infinity;
+    let hi = -Infinity;
+    const series: TcgplayerPricePoints["history"] = [];
+    for (const b of buckets) {
+      const market = Number(b.marketPrice);
+      const low = Number(b.lowSalePrice);
+      const high = Number(b.highSalePrice);
+      const qty = Number(b.quantitySold);
+      if (low > 0 && low < lo) lo = low;
+      if (high > 0 && high > hi) hi = high;
+      series.push({
+        date: String(b.bucketStartDate || ""),
+        marketPrice: isFinite(market) ? market : 0,
+        low: isFinite(low) ? low : 0,
+        high: isFinite(high) ? high : 0,
+        qty: isFinite(qty) ? qty : 0,
+      });
+    }
+    // Sort chronologically ascending for the chart.
+    series.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    result.history = series;
+    if (isFinite(lo)) result.lowSale3mo = lo;
+    if (isFinite(hi)) result.highSale3mo = hi;
+    const total = Number(hRoot.totalQuantitySold);
+    if (isFinite(total)) result.totalSold3mo = total;
+    const avg = Number(hRoot.averageDailyQuantitySold);
+    if (isFinite(avg)) result.avgDailySold = avg;
+  }
+
+  // 4. Optional: skuId-based current qty/sellers + volatility.
+  // Find skuId from product details. Use the first SKU (Normal/English) if available.
+  const skus: any[] = productDetails?.skus || [];
+  let skuId: number | null = null;
+  if (skus.length) {
+    // Prefer Normal printing + English + Unopened/Near Mint (varies). Take first.
+    const pick = skus[0];
+    if (pick?.skuId) skuId = Math.trunc(Number(pick.skuId));
+  }
+  if (skuId) {
+    const [vol, listingAgg] = await Promise.all([
+      tcgpFetch(
+        `https://mpgateway.tcgplayer.com/v1/pricepoints/marketprice/skus/${skuId}/volatility`
+      ),
+      tcgpFetch(
+        `https://mp-search-api.tcgplayer.com/v1/product/${productId}/listings`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filters: {
+              term: { sellerStatus: "Live", channelId: 0 },
+              range: { quantity: { gte: 1 } },
+              exclude: { channelExclusion: 0 },
+            },
+            context: { shippingCountry: "US", cart: {} },
+            aggregations: ["listingType", "seller-key"],
+            size: 0,
+          }),
+        }
+      ),
+    ]);
+    if (vol?.volatility) result.volatility = String(vol.volatility);
+    const agg = listingAgg?.results?.[0];
+    if (agg) {
+      if (typeof agg.totalResults === "number") result.currentQty = agg.totalResults;
+      const sellerKey = agg.aggregations?.["seller-key"];
+      if (Array.isArray(sellerKey)) result.currentSellers = sellerKey.length;
+    }
+  }
+
+  return result;
+}
+
+// Convert TcgplayerPricePoints into the DB column patch shape.
+export function pricePointsToPatch(
+  pts: TcgplayerPricePoints
+): Record<string, any> {
+  return {
+    tcgpProductId: pts.productId,
+    tcgpMarketPrice: pts.marketPrice,
+    tcgpMostRecentSale: pts.mostRecentSale,
+    tcgpListedMedian: pts.listedMedian,
+    tcgpCurrentQty: pts.currentQty,
+    tcgpCurrentSellers: pts.currentSellers,
+    tcgpVolatility: pts.volatility,
+    tcgpLowSale3mo: pts.lowSale3mo,
+    tcgpHighSale3mo: pts.highSale3mo,
+    tcgpTotalSold3mo: pts.totalSold3mo,
+    tcgpAvgDailySold: pts.avgDailySold,
+    tcgpHistoryJson: pts.history.length ? JSON.stringify(pts.history) : null,
+    tcgpPricedAt: Math.floor(Date.now() / 1000),
+  };
 }
 
 // Detect if an item is sealed product (Booster Box, ETB, etc.)

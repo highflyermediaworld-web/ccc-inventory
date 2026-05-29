@@ -210,6 +210,58 @@ export default function InventoryPage() {
     updated: number;
     total: number;
   } | null>(null);
+  const [pointsBackfillProgress, setPointsBackfillProgress] = useState<{
+    updated: number;
+    total: number;
+  } | null>(null);
+
+  const fetchPricePointsMutation = useMutation({
+    mutationFn: async () => {
+      let totalUpdated = 0;
+      let totalSkipped = 0;
+      let totalFailed = 0;
+      let totalCount = 0;
+      let offset = 0;
+      let safety = 300;
+      try {
+        while (safety-- > 0) {
+          const res = await apiRequest(
+            "POST",
+            `/api/pricing/points-batch?batch=8&offset=${offset}`
+          );
+          const b = await res.json();
+          totalUpdated += b.updated || 0;
+          totalSkipped += b.skipped || 0;
+          totalFailed += b.failed || 0;
+          totalCount = b.total || totalCount;
+          offset = b.nextOffset ?? offset;
+          setPointsBackfillProgress({
+            updated: b.priced ?? totalUpdated,
+            total: totalCount,
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+          if (!b.remaining || b.processed === 0) break;
+        }
+      } finally {
+        setPointsBackfillProgress(null);
+      }
+      return { updated: totalUpdated, skipped: totalSkipped, failed: totalFailed };
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      toast({
+        title: "Price points refreshed",
+        description: `${data.updated} updated · ${data.skipped} skipped · ${data.failed} failed`,
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Price points refresh failed",
+        description: err?.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const fetchImagesMutation = useMutation({
     mutationFn: async () => {
@@ -490,6 +542,25 @@ export default function InventoryPage() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => fetchPricePointsMutation.mutate()}
+              disabled={fetchPricePointsMutation.isPending}
+              data-testid="button-fetch-price-points"
+              title="Pull TCGplayer Market, Median, Volatility, 3mo history for every item"
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-1.5 ${
+                  fetchPricePointsMutation.isPending ? "animate-spin" : ""
+                }`}
+              />
+              {fetchPricePointsMutation.isPending
+                ? pointsBackfillProgress
+                  ? `Pricing… ${pointsBackfillProgress.updated}/${pointsBackfillProgress.total}`
+                  : "Pricing…"
+                : "Refresh price points"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => fileInputRef.current?.click()}
               data-testid="button-import"
             >
@@ -660,6 +731,9 @@ export default function InventoryPage() {
                 <SortableHeader label="Qty" k="qty" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortableHeader label="Cost" k="totalCost" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <SortableHeader label="Market" k="marketValue" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <th className="text-right font-semibold px-3 py-2.5" title="TCGplayer Listed Median (sellers' median asking price)">Median</th>
+                <th className="text-right font-semibold px-3 py-2.5" title="Sellers / Listings on TCGplayer">Sellers</th>
+                <th className="text-center font-semibold px-3 py-2.5" title="TCGplayer market price volatility">Vol</th>
                 <SortableHeader label="G/L" k="gl" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 <th className="text-left font-semibold px-3 py-2.5">Status</th>
                 <th className="px-3 py-2.5 w-8"></th>
@@ -668,12 +742,12 @@ export default function InventoryPage() {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={14} className="p-6 text-center text-muted-foreground">Loading…</td>
+                  <td colSpan={17} className="p-6 text-center text-muted-foreground">Loading…</td>
                 </tr>
               )}
               {!isLoading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={14} className="p-10 text-center text-muted-foreground">
+                  <td colSpan={17} className="p-10 text-center text-muted-foreground">
                     No items match these filters.
                   </td>
                 </tr>
@@ -768,6 +842,29 @@ export default function InventoryPage() {
                         />
                         {sourceLabel && <SourceBadge source={sourceLabel} />}
                       </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tnum text-xs text-muted-foreground" title="TCGplayer Listed Median">
+                      {i.tcgpListedMedian != null ? formatCurrency(i.tcgpListedMedian) : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tnum text-xs text-muted-foreground">
+                      {i.tcgpCurrentSellers != null ? i.tcgpCurrentSellers : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-center text-[10px] font-semibold">
+                      {i.tcgpVolatility ? (
+                        <span
+                          className={`px-1.5 py-0.5 rounded ${
+                            i.tcgpVolatility === "HIGH"
+                              ? "bg-red-500/15 text-red-500"
+                              : i.tcgpVolatility === "MED"
+                              ? "bg-amber-500/15 text-amber-500"
+                              : "bg-emerald-500/15 text-emerald-500"
+                          }`}
+                        >
+                          {i.tcgpVolatility}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className={`px-3 py-2.5 text-right tnum font-semibold ${pnlClass(gl)}`}>
                       {i.marketValue != null && i.totalCost != null ? (gl >= 0 ? "+" : "") + formatCurrency(gl) : "—"}
