@@ -333,6 +333,24 @@ const TCGPLAYER_PRODUCT_LINE_MAP: Record<string, string> = {
   "League of Legends": "Riftbound",
 };
 
+// Expand common short-hand product names ("ETB", "BB") to what TCGplayer indexes.
+function expandProductName(rawName: string): string {
+  if (!rawName) return "";
+  let n = rawName.trim();
+  // Whole-word substitutions, longest first
+  const replacements: [RegExp, string][] = [
+    [/\bElite Trainer Box\b/gi, "Elite Trainer Box"],
+    [/\bETB\b/gi, "Elite Trainer Box"],
+    [/\bBooster Bundle Display\b/gi, "Booster Bundle"],
+    [/\bBooster Display\b/gi, "Booster Box"],
+    [/\bBB\b/gi, "Booster Box"],
+    [/\bUPC\b/gi, "Ultra Premium Collection"],
+    [/\bPC\b/gi, "Premium Collection"],
+  ];
+  for (const [re, to] of replacements) n = n.replace(re, to);
+  return n;
+}
+
 async function getTcgplayerImage(
   rawName: string,
   setHint: string | null,
@@ -341,9 +359,12 @@ async function getTcgplayerImage(
   if (!rawName) return null;
   try {
     const productLine = TCGPLAYER_PRODUCT_LINE_MAP[franchise];
-    // Build query: name + set (if known) for better top-hit accuracy.
-    const queryParts = [rawName];
+    const expandedName = expandProductName(rawName);
+    // Build query: set + expanded name (set first because TCGplayer product
+    // names always start with the set, e.g. "Surging Sparks Elite Trainer Box").
+    const queryParts: string[] = [];
     if (setHint) queryParts.push(setHint);
+    queryParts.push(expandedName);
     const query = queryParts.join(" ");
     const url = `https://mp-search-api.tcgplayer.com/v1/search/request?q=${encodeURIComponent(query)}&isList=false`;
     const body = {

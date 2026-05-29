@@ -367,41 +367,44 @@ export async function registerRoutes(
   // Bulk-fetch images for every in-stock item that's missing one.
   // Runs in the background so the HTTP request returns immediately and the
   // server keeps processing past any client/proxy timeout.
-  let imageBackfillState: {
+  // NOTE: mutate the same object (no reassignment) so the GET handler always
+  // sees the latest values via its captured reference.
+  const imageBackfillState: {
     running: boolean;
     total: number;
     updated: number;
     skipped: number;
     failed: number;
+    processed: number;
     startedAt: number | null;
     finishedAt: number | null;
-    error?: string;
+    error: string | null;
   } = {
     running: false,
     total: 0,
     updated: 0,
     skipped: 0,
     failed: 0,
+    processed: 0,
     startedAt: null,
     finishedAt: null,
+    error: null,
   };
 
   app.post("/api/inventory/fetch-missing-images", async (_req, res) => {
     if (imageBackfillState.running) {
-      return res.json({
-        status: "already-running",
-        ...imageBackfillState,
-      });
+      return res.json({ status: "already-running", ...imageBackfillState });
     }
-    imageBackfillState = {
-      running: true,
-      total: 0,
-      updated: 0,
-      skipped: 0,
-      failed: 0,
-      startedAt: Date.now(),
-      finishedAt: null,
-    };
+    // Reset counters in place
+    imageBackfillState.running = true;
+    imageBackfillState.total = 0;
+    imageBackfillState.updated = 0;
+    imageBackfillState.skipped = 0;
+    imageBackfillState.failed = 0;
+    imageBackfillState.processed = 0;
+    imageBackfillState.startedAt = Date.now();
+    imageBackfillState.finishedAt = null;
+    imageBackfillState.error = null;
     // Kick off in the background; don't await.
     (async () => {
       try {
@@ -410,6 +413,7 @@ export async function registerRoutes(
           imageBackfillState.updated = progress.updated;
           imageBackfillState.skipped = progress.skipped;
           imageBackfillState.failed = progress.failed;
+          imageBackfillState.processed = progress.processed;
         });
         imageBackfillState.updated = result.updated;
         imageBackfillState.skipped = result.skipped;
