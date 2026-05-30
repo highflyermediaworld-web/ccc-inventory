@@ -319,9 +319,12 @@ export function RegisterScanner({
         if (!o) onClose();
       }}
     >
-      <DialogContent className="max-w-md p-0 overflow-hidden">
+      <DialogContent
+        className="max-w-md p-0 overflow-hidden flex flex-col gap-0"
+        style={{ maxHeight: "100dvh", height: "min(100dvh, 720px)" }}
+      >
         <DialogTitle className="sr-only">Scan card to register</DialogTitle>
-        <div className="p-4 border-b border-border flex items-center justify-between">
+        <div className="shrink-0 p-3 border-b border-border flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Camera className="h-5 w-5 text-primary" />
             <h3 className="font-anime-alt text-base font-bold">
@@ -340,7 +343,7 @@ export function RegisterScanner({
         </div>
 
         {/* Card / Sealed toggle */}
-        <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+        <div className="shrink-0 px-4 pt-2 pb-2 flex items-center gap-2">
           <Button
             size="sm"
             variant={mode === "card" ? "default" : "outline"}
@@ -363,7 +366,7 @@ export function RegisterScanner({
           </Button>
         </div>
 
-        <div className="relative bg-black aspect-[3/4] flex items-center justify-center">
+        <div className="relative bg-black flex-1 min-h-0 flex items-center justify-center">
           {/* Video is always mounted so ref is valid; hidden until ready. */}
           <video
             ref={videoRef}
@@ -414,7 +417,7 @@ export function RegisterScanner({
         </div>
 
         {lastResult && (
-          <Card className="m-3 border-primary/40">
+          <Card className="shrink-0 m-3 border-primary/40">
             <CardContent className="p-3 flex items-center gap-3">
               <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
                 <Check className="h-5 w-5 text-primary" />
@@ -439,7 +442,10 @@ export function RegisterScanner({
           </Card>
         )}
 
-        <div className="p-3 border-t border-border flex items-center gap-2">
+        <div
+          className="shrink-0 p-3 border-t border-border flex items-center gap-2"
+          style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+        >
           <Button
             className="flex-1"
             disabled={cameraState !== "ready" || working}
