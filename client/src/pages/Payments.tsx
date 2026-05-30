@@ -24,7 +24,9 @@ import {
   Banknote,
   Loader2,
   Check,
+  Camera,
 } from "lucide-react";
+import { RegisterScanner } from "@/components/RegisterScanner";
 import type { Inventory } from "@shared/schema";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -105,6 +107,7 @@ function SellTab() {
   const [taxStr, setTaxStr] = useState("");
   const [notes, setNotes] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return available.slice(0, 25);
@@ -190,15 +193,32 @@ function SellTab() {
               <h3 className="font-anime-alt text-base font-bold">
                 Cart ({cart.length})
               </h3>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowSearch((x) => !x)}
-                data-testid="button-add-to-cart"
-              >
-                <Plus className="h-4 w-4 mr-1.5" /> Add item
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() => setShowScanner(true)}
+                  data-testid="button-scan-to-cart"
+                >
+                  <Camera className="h-4 w-4 mr-1.5" /> Scan
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowSearch((x) => !x)}
+                  data-testid="button-add-to-cart"
+                >
+                  <Plus className="h-4 w-4 mr-1.5" /> Add item
+                </Button>
+              </div>
             </div>
+
+            <RegisterScanner
+              open={showScanner}
+              onClose={() => setShowScanner(false)}
+              onItemReady={(item) => addToCart(item)}
+              inventory={inventory}
+            />
 
             {showSearch && (
               <div className="mb-3 border border-border rounded-md">
