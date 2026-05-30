@@ -29,17 +29,32 @@ import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
 import { eq, desc, asc, or, sql } from "drizzle-orm";
 import crypto from "node:crypto";
-import { correctSpelling } from "./pricing";
+import { correctSpelling, correctSetName } from "./pricing";
 
 // Storage-level autocorrect. Applied to every create/update so any code path
-// (manual entry, CSV upload, intake form, trade, scan) gets the same cleanup.
-function applyNameAutocorrect<T extends { name?: string | null }>(input: T): T {
-  if (!input || typeof input !== "object" || !("name" in input)) return input;
-  const name = (input as any).name;
-  if (typeof name !== "string" || !name) return input;
-  const corrected = correctSpelling(name);
-  if (corrected === name) return input;
-  return { ...(input as any), name: corrected };
+// (manual entry, CSV upload, intake form, trade, scan, auto-import) gets the
+// same cleanup. Corrects both card name and set name.
+function applyNameAutocorrect<
+  T extends { name?: string | null; setName?: string | null },
+>(input: T): T {
+  if (!input || typeof input !== "object") return input;
+  const out: any = { ...input };
+  let changed = false;
+  if (typeof out.name === "string" && out.name) {
+    const c = correctSpelling(out.name);
+    if (c !== out.name) {
+      out.name = c;
+      changed = true;
+    }
+  }
+  if (typeof out.setName === "string" && out.setName) {
+    const c = correctSetName(out.setName);
+    if (c && c !== out.setName) {
+      out.setName = c;
+      changed = true;
+    }
+  }
+  return changed ? out : input;
 }
 
 const client = createClient({
