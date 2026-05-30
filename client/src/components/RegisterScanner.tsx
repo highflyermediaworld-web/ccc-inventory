@@ -21,13 +21,30 @@ type Identified = {
 
 type ScanMode = "card" | "sealed";
 
+export type ScanDraft = {
+  franchise: string;
+  category: string; // "Raw" | "Sealed" | "Slab"
+  setName: string;
+  name: string;
+  rarity: string;
+  condition: string;
+  marketValue: number;
+  imageDataUrl: string;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
-  /** Called once an inventory item is identified/created and ready to add. */
-  onItemReady: (item: Inventory) => void;
-  /** Existing inventory used to match without creating duplicates. */
+  /** Sell mode: called once an inventory item is identified/created and ready to add to cart. */
+  onItemReady?: (item: Inventory) => void;
+  /** Trade mode: called with identified+priced data; caller decides what to do (no inventory row created). */
+  onDraftReady?: (draft: ScanDraft) => void;
+  /** Existing inventory used to match without creating duplicates (sell mode only). */
   inventory: Inventory[];
+  /** When true, scanner skips inventory match/create and returns a ScanDraft via onDraftReady. */
+  draftOnly?: boolean;
+  /** Optional title override (e.g. "Scan trade-in card"). */
+  title?: string;
 };
 
 // Normalize names for fuzzy matching against existing inventory.
@@ -87,7 +104,10 @@ export function RegisterScanner({
   open,
   onClose,
   onItemReady,
+  onDraftReady,
   inventory,
+  draftOnly = false,
+  title,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -231,33 +251,15 @@ export function RegisterScanner({
         return;
       }
 
-      // Try to match against existing inventory first.
-      setPhase("matching");
-      const existing = findExistingMatch(ided, inventory, mode);
-      if (existing) {
-        setLastResult({ item: existing, isNew: false });
-        setPhase("done");
-        onItemReady(existing);
-        toast({
-          title: "Added to cart",
-          description: `${existing.name} · ${formatCurrency(
-            existing.asking ?? existing.marketValue ?? 0
-          )}`,
-        });
-        setWorking(false);
-        return;
-      }
-
-      // Not in inventory — create a new row via the intake endpoint, then add.
-      setPhase("creating");
-
+      // Compute shared fields (used by both draft and inventory paths).
       const isSealed = mode === "sealed";
       const condition = isSealed ? "Sealed" : (ided.suggestedCondition || "NM");
       const category = isSealed ? "Sealed" : "Raw";
       const rarity = isSealed ? (ided.category || "") : (ided.rarity || "");
 
-      // Get a price estimate so the new row has a usable marketValue.
-      let marketValue: number | null = null;
+      // Always price the item so the caller has a number to work with.
+      setPhase("creating");
+      let marketValue = 0;
       try {
         const priceRes = await apiRequest("POST", "/api/scan/price", {
           name: ided.name,
@@ -271,9 +273,50 @@ export function RegisterScanner({
           marketValue = priceData.marketValue;
         }
       } catch {
-        // non-fatal — item will be created without a price
+        // non-fatal
       }
 
+      const imageDataUrl = `data:${frame.mediaType};base64,${frame.base64}`;
+
+      // DRAFT-ONLY MODE (e.g. trade-in side): return identified+priced data; do not touch inventory.
+      if (draftOnly) {
+        setPhase("done");
+        onDraftReady?.({
+          franchise: ided.franchise || "Other",
+          category,
+          setName: ided.set || "",
+          name: ided.name,
+          rarity,
+          condition,
+          marketValue,
+          imageDataUrl,
+        });
+        toast({
+          title: "Card identified",
+          description: `${ided.name}${marketValue ? ` · ${formatCurrency(marketValue)}` : ""}`,
+        });
+        setWorking(false);
+        return;
+      }
+
+      // SELL MODE: match existing inventory first.
+      setPhase("matching");
+      const existing = findExistingMatch(ided, inventory, mode);
+      if (existing) {
+        setLastResult({ item: existing, isNew: false });
+        setPhase("done");
+        onItemReady?.(existing);
+        toast({
+          title: "Added to cart",
+          description: `${existing.name} · ${formatCurrency(
+            existing.asking ?? existing.marketValue ?? 0
+          )}`,
+        });
+        setWorking(false);
+        return;
+      }
+
+      // Not in inventory — create a new row via the intake endpoint, then add.
       const createRes = await apiRequest("POST", "/api/intake/scan-add", {
         franchise: ided.franchise || "Other",
         category,
@@ -283,8 +326,8 @@ export function RegisterScanner({
         condition,
         qty: 1,
         costPerUnit: null,
-        marketValue,
-        imageUrl: `data:${frame.mediaType};base64,${frame.base64}`,
+        marketValue: marketValue || null,
+        imageUrl: imageDataUrl,
         counterparty: null,
         intakeType: "Buy",
         attachTo: null,
@@ -295,7 +338,7 @@ export function RegisterScanner({
       }
       setLastResult({ item: createData.item, isNew: true });
       setPhase("done");
-      onItemReady(createData.item);
+      onItemReady?.(createData.item);
       toast({
         title: "New item added",
         description: `${createData.item.id} · ${createData.item.name}`,
@@ -328,7 +371,7 @@ export function RegisterScanner({
           <div className="flex items-center gap-2">
             <Camera className="h-5 w-5 text-primary" />
             <h3 className="font-anime-alt text-base font-bold">
-              Scan to register
+              {title || "Scan to register"}
             </h3>
           </div>
           <Button

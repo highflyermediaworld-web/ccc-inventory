@@ -26,7 +26,7 @@ import {
   Check,
   Camera,
 } from "lucide-react";
-import { RegisterScanner } from "@/components/RegisterScanner";
+import { RegisterScanner, type ScanDraft } from "@/components/RegisterScanner";
 import type { Inventory } from "@shared/schema";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -508,6 +508,24 @@ function TradeTab() {
   const [query, setQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [notes, setNotes] = useState("");
+  const [showScanner, setShowScanner] = useState(false);
+
+  // Trade-in scan handler: append identified card to their side as a populated row.
+  const handleScanDraft = (d: ScanDraft) => {
+    setTheirItems((arr) => [
+      ...arr,
+      {
+        uid: makeUid(),
+        franchise: d.franchise || "Pokémon",
+        category: d.category || "Raw",
+        setName: d.setName,
+        name: d.name,
+        rarity: d.rarity,
+        condition: d.condition || "NM",
+        marketValue: d.marketValue || 0,
+      },
+    ]);
+  };
 
   const ourItems = useMemo(
     () =>
@@ -680,14 +698,24 @@ function TradeTab() {
                   Trade-in side
                 </h3>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={addBlankTheirItem}
-                data-testid="button-add-their-item"
-              >
-                <Plus className="h-4 w-4 mr-1.5" /> Add item
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowScanner(true)}
+                  data-testid="button-scan-their-item"
+                >
+                  <Camera className="h-4 w-4 mr-1.5" /> Scan
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={addBlankTheirItem}
+                  data-testid="button-add-their-item"
+                >
+                  <Plus className="h-4 w-4 mr-1.5" /> Add item
+                </Button>
+              </div>
             </div>
 
             {theirItems.length === 0 ? (
@@ -1013,6 +1041,15 @@ function TradeTab() {
           </div>
         </CardContent>
       </Card>
+
+      <RegisterScanner
+        open={showScanner}
+        onClose={() => setShowScanner(false)}
+        onDraftReady={handleScanDraft}
+        inventory={inventory}
+        draftOnly
+        title="Scan trade-in card"
+      />
     </div>
   );
 }
