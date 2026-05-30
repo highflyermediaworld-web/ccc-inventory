@@ -1445,7 +1445,7 @@ export async function registerRoutes(
         imageUrl: z.string().optional().nullable(),
         notes: z.string().optional(),
         // Intake-specific
-        counterparty: z.string().optional(), // who you're buying/trading from
+        counterparty: z.string().nullable().optional(), // who you're buying/trading from
         intakeType: z.enum(["Buy", "Trade"]).default("Buy"),
         attachTo: z
           .object({ kind: z.enum(["trade", "request"]), id: z.number() })
