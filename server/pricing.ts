@@ -474,7 +474,22 @@ function nameTokens(s: string): Set<string> {
     "sword",
     "shield",
     "set",
+    "base",
+    "japanese",
+    "english",
+    "korean",
+    "holo",
+    "reverse",
+    "foil",
+    "misc",
+    "cards",
+    "products",
+    "vending",
+    "booster",
+    "pack",
   ]);
+  // Set-code regex: things like sv01, sv09, swsh07, me01, me02, tw01, pal, evo.
+  const SET_CODE = /^(sv|swsh|me|tw|pal|sm|xy|bw|hgss|dp|ex|sf|cel|cre|cpa|cnc|cyl|cra|crz|chr|stb|spe|sve|sit|sit|paf)\d{0,2}$/;
   return new Set(
     (s || "")
       .toLowerCase()
@@ -484,20 +499,48 @@ function nameTokens(s: string): Set<string> {
         (t) =>
           t.length >= 3 &&
           !STOPWORDS.has(t) &&
-          !/^\d{4}$/.test(t) // drop bare years like 2025
+          !/^\d{4}$/.test(t) && // drop bare years like 2025
+          !SET_CODE.test(t)
       )
   );
 }
 
+// Extract card number tokens like "185/159", "098/159", "sv05-068". Strong
+// signal when both sides match.
+function cardNumbers(s: string): Set<string> {
+  const out = new Set<string>();
+  if (!s) return out;
+  const re = /\b\d{1,3}\s*\/\s*\d{1,3}\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) != null) {
+    out.add(m[0].replace(/\s+/g, ""));
+  }
+  return out;
+}
+
 // Score a candidate by how well its productName overlaps with the query name.
-// Returns 0..1.
+// Returns 0..1. Score = max(query coverage, candidate coverage) so a clean
+// query against a noisy candidate (or vice versa) both score well, but two
+// totally different Pokemon names won't accidentally cross-match.
 function matchScore(queryName: string, candidateName: string): number {
   const q = nameTokens(queryName);
   const c = nameTokens(candidateName);
   if (q.size === 0 || c.size === 0) return 0;
   let hits = 0;
   for (const tok of q) if (c.has(tok)) hits++;
-  return hits / q.size;
+  const queryCoverage = hits / q.size;
+  const candidateCoverage = hits / c.size;
+  return Math.max(queryCoverage, candidateCoverage);
+}
+
+// Returns true if the query and candidate share an exact card number like
+// "185/159". Card numbers uniquely identify a card within a set, so an exact
+// match is a strong signal that overrides low token overlap.
+function sharesCardNumber(query: string, candidate: string): boolean {
+  const a = cardNumbers(query);
+  const b = cardNumbers(candidate);
+  for (const num of a) if (b.has(num)) return true;
+  return false;
 }
 
 // Find the best matching TCGplayer productId for an item. Returns null on no match.
@@ -549,17 +592,22 @@ export async function findTcgplayerProductId(
 
     // Score every candidate by token overlap with the (expanded) name.
     // This prevents "Charizard VMAX" picking up Eternatus VMAX just because
-    // it shares the same set + product type.
-    const scored = pool.map((it: any) => ({
-      item: it,
-      score: matchScore(expandedName, String(it?.productName || "")),
-    }));
+    // it shares the same set + product type. Card-number match boosts score.
+    const scored = pool.map((it: any) => {
+      const candName = String(it?.productName || "");
+      let score = matchScore(expandedName, candName);
+      // Boost when the card number matches exactly (e.g. 185/159 == 185/159).
+      if (sharesCardNumber(rawName, candName)) {
+        score = Math.max(score, 0.9);
+      }
+      return { item: it, score, candName };
+    });
     scored.sort((a, b) => b.score - a.score);
     const best = scored[0];
     if (!best) return null;
 
-    // Require at least 0.5 token overlap. Below that, we're guessing and the
-    // user is better off seeing no match than a confidently wrong one.
+    // Require at least 0.5 overlap (smaller-set denominator). Card-number
+    // matches are auto-boosted to 0.9 above so they always pass.
     const THRESHOLD = 0.5;
     if (best.score < THRESHOLD) {
       console.warn(
