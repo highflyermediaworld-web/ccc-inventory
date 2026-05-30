@@ -417,12 +417,49 @@ const SPELLING_CORRECTIONS: [RegExp, string][] = [
   [/\bGreninga\b/gi, "Greninja"],
   [/\bLucareo\b/gi, "Lucario"],
   [/\bZorark\b/gi, "Zoroark"],
+  // Common Gen-9 / SV-era typos seen in the inventory
+  [/\bQuaquavval\b/gi, "Quaquaval"],
+  [/\bVenusuar\b/gi, "Venusaur"],
+  [/\bEtahn\b/gi, "Ethan"],
+  [/\bEtahn's\b/gi, "Ethan's"],
+  [/\bFezanddipiti\b/gi, "Fezandipiti"],
+  [/\bFezandidpiti\b/gi, "Fezandipiti"],
+  [/\bTogekiff\b/gi, "Togekiss"],
+  [/\bTrafalagar\b/gi, "Trafalgar"],
+  [/\bGrap\b/gi, "Garp"],
   // Yu-Gi-Oh
   [/\bExodea\b/gi, "Exodia"],
   [/\bDarkmagicain\b/gi, "Dark Magician"],
   // MTG
   [/\bMagic the gathering\b/gi, "Magic: The Gathering"],
 ];
+
+// Set-name corrections. Used during TCGplayer search and exposed via the
+// autocorrect-names endpoint so the inventory's setName column gets cleaned
+// up too. Matching is anchored on whole words so "Shinning Fates" -> "Shining
+// Fates" while a set called "Shining Legends" stays untouched.
+export const SET_NAME_CORRECTIONS: [RegExp, string][] = [
+  [/\bShinning\s+Fates\b/gi, "Shining Fates"],
+  [/\bShinnying\s+Fates\b/gi, "Shining Fates"],
+  [/\bPalden\s+Fates\b/gi, "Paldean Fates"],
+  [/\bPaldea\s+Fates\b/gi, "Paldean Fates"],
+  [/\bPhantsmal\s+Flames\b/gi, "Phantasmal Flames"],
+  [/\bPhantasmal\s+Falmes\b/gi, "Phantasmal Flames"],
+  [/\bTransformation\s+Masdk\b/gi, "Twilight Masquerade"],
+  [/\bTwilight\s+Masqurade\b/gi, "Twilight Masquerade"],
+  [/\bCelebration\b/gi, "Celebrations"],
+  [/\bScarlet\s*&?\s*Violet\s*-\s*151\s*\(JP\)/gi, "Pokemon 151"],
+  [/\bScarlet\s+Violet\s*-\s*151\b/gi, "Pokemon 151"],
+  [/\bSv9\s*\(Korean\)/gi, "Journey Together"],
+  [/\bSv09\b/gi, "Journey Together"],
+];
+
+export function correctSetName(raw: string | null | undefined): string | null {
+  if (!raw) return raw ?? null;
+  let n = raw;
+  for (const [re, to] of SET_NAME_CORRECTIONS) n = n.replace(re, to);
+  return n;
+}
 
 // Apply spelling corrections to a name string and return the corrected version.
 // Pure function over SPELLING_CORRECTIONS so import/upload routes can call this
@@ -553,8 +590,9 @@ export async function findTcgplayerProductId(
   try {
     const productLine = TCGPLAYER_PRODUCT_LINE_MAP[franchise];
     const expandedName = expandProductName(rawName);
+    const cleanSet = correctSetName(setHint);
     const queryParts: string[] = [];
-    if (setHint) queryParts.push(setHint);
+    if (cleanSet) queryParts.push(cleanSet);
     queryParts.push(expandedName);
     const query = queryParts.join(" ");
     const url = `https://mp-search-api.tcgplayer.com/v1/search/request?q=${encodeURIComponent(query)}&isList=false`;

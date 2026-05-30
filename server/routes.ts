@@ -32,6 +32,7 @@ import {
   pricePointsToPatch,
   debugTcgplayerCalls,
   correctSpelling,
+  correctSetName,
   isGraded,
   getGradedEstimate,
 } from "./pricing";
@@ -606,20 +607,38 @@ export async function registerRoutes(
     try {
       const apply = String(req.query.apply ?? "").toLowerCase() === "1";
       const items = await storage.listInventory();
-      const changes: Array<{ id: string; before: string; after: string }> = [];
+      const changes: Array<{
+        id: string;
+        field: "name" | "setName";
+        before: string;
+        after: string;
+      }> = [];
       for (const item of items) {
-        if (!item.name) continue;
-        const corrected = correctSpelling(item.name);
-        if (corrected !== item.name) {
-          changes.push({ id: item.id, before: item.name, after: corrected });
-          if (apply) {
-            // Also clear the stale tcgpProductId so the next pricing refresh
-            // re-matches with the corrected spelling.
-            await storage.updateInventory(item.id, {
-              name: corrected,
-              tcgpProductId: null,
-            } as any);
+        const patch: any = {};
+        if (item.name) {
+          const cn = correctSpelling(item.name);
+          if (cn !== item.name) {
+            changes.push({ id: item.id, field: "name", before: item.name, after: cn });
+            patch.name = cn;
           }
+        }
+        if (item.setName) {
+          const cs = correctSetName(item.setName);
+          if (cs && cs !== item.setName) {
+            changes.push({
+              id: item.id,
+              field: "setName",
+              before: item.setName,
+              after: cs,
+            });
+            patch.setName = cs;
+          }
+        }
+        if (Object.keys(patch).length > 0 && apply) {
+          // Also clear the stale tcgpProductId so the next pricing refresh
+          // re-matches with the corrected spelling.
+          patch.tcgpProductId = null;
+          await storage.updateInventory(item.id, patch);
         }
       }
       if (apply) broadcast({ type: "inventory:bulk", payload: {} });
