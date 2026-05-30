@@ -98,6 +98,18 @@ export function RegisterScanner({
     isNew: boolean;
   } | null>(null);
 
+  const attachStream = useCallback(async () => {
+    const v = videoRef.current;
+    const s = streamRef.current;
+    if (!v || !s) return;
+    if (v.srcObject !== s) v.srcObject = s;
+    try {
+      await v.play();
+    } catch {
+      // Some browsers reject autoplay; ignore — user click below will retry.
+    }
+  }, []);
+
   const startCamera = useCallback(async () => {
     setCameraState("starting");
     setCameraError("");
@@ -107,16 +119,22 @@ export function RegisterScanner({
         setCameraError("Camera not available in this browser.");
         return;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
+      // Try back camera first; fall back to any camera if it fails.
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
       }
+      streamRef.current = stream;
       setCameraState("ready");
+      // attachStream runs via the effect below once the <video> is in the DOM.
     } catch (err: any) {
       const name = err?.name || "";
       if (name === "NotAllowedError" || name === "SecurityError") {
@@ -128,6 +146,13 @@ export function RegisterScanner({
       }
     }
   }, []);
+
+  // Once the <video> element exists and we have a stream, attach it.
+  useEffect(() => {
+    if (cameraState === "ready") {
+      attachStream();
+    }
+  }, [cameraState, attachStream]);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -301,18 +326,27 @@ export function RegisterScanner({
         </div>
 
         <div className="relative bg-black aspect-[3/4] flex items-center justify-center">
-          {cameraState === "ready" ? (
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              className="w-full h-full object-cover"
-            />
-          ) : cameraState === "starting" ? (
+          {/* Video is always mounted so ref is valid; hidden until ready. */}
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            autoPlay
+            onCanPlay={() => {
+              // Defensive: ensure playback starts on iOS Safari.
+              videoRef.current?.play().catch(() => {});
+            }}
+            className={
+              cameraState === "ready"
+                ? "w-full h-full object-cover"
+                : "hidden"
+            }
+          />
+          {cameraState === "starting" || cameraState === "idle" ? (
             <div className="text-white text-sm flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" /> Starting camera…
             </div>
-          ) : (
+          ) : cameraState !== "ready" ? (
             <div className="text-white p-6 text-center">
               <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-yellow-400" />
               <p className="text-sm">{cameraError || "Camera unavailable"}</p>
@@ -325,7 +359,7 @@ export function RegisterScanner({
                 Try again
               </Button>
             </div>
-          )}
+          ) : null}
 
           {working && (
             <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
