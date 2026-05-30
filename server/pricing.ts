@@ -492,6 +492,10 @@ function expandProductName(rawName: string): string {
   for (const [re, to] of replacements) n = n.replace(re, to);
   // Also apply the global spelling corrections so search queries benefit too.
   n = correctSpelling(n);
+  // Strip parens — TCGplayer search returns 0 results when parens appear.
+  // Also strip trailing language tags like "(JP)" / "(EN)" which exclude
+  // English search results we want to match anyway.
+  n = n.replace(/\([^)]*\)/g, " ");
   // Collapse any extra whitespace introduced by the substitutions.
   n = n.replace(/\s+/g, " ").trim();
   return n;
@@ -590,7 +594,13 @@ export async function findTcgplayerProductId(
   try {
     const productLine = TCGPLAYER_PRODUCT_LINE_MAP[franchise];
     const expandedName = expandProductName(rawName);
-    const cleanSet = correctSetName(setHint);
+    // Strip parenthetical descriptors and trailing modifiers from setHint;
+    // TCGplayer search returns 0 results when parens are in the query.
+    const cleanSet = correctSetName(setHint)
+      ?.replace(/\([^)]*\)/g, " ")
+      .replace(/\s+-\s+.*$/, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
     const queryParts: string[] = [];
     if (cleanSet) queryParts.push(cleanSet);
     queryParts.push(expandedName);
