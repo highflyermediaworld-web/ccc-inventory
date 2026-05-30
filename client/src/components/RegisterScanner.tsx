@@ -16,7 +16,10 @@ type Identified = {
   franchise?: string;
   confidence?: number;
   suggestedCondition?: string;
+  category?: string; // sealed mode: "Blister" | "Booster Box" | "ETB" | …
 };
+
+type ScanMode = "card" | "sealed";
 
 type Props = {
   open: boolean;
@@ -49,7 +52,11 @@ function findExistingMatch(
   const nFr = norm(ided.franchise);
 
   const eligible = inventory.filter(
-    (i) => i.status === "In Inventory" || i.status === "Listed"
+    (i) =>
+      (i.status === "In Inventory" || i.status === "Listed") &&
+      (scanMode === "sealed"
+        ? i.category === "Sealed"
+        : i.category !== "Sealed")
   );
 
   // 1. Strongest match: same franchise + name + set.
@@ -98,6 +105,7 @@ export function RegisterScanner({
     item: Inventory;
     isNew: boolean;
   } | null>(null);
+  const [mode, setMode] = useState<ScanMode>("card");
 
   const attachStream = useCallback(async () => {
     const v = videoRef.current;
@@ -209,7 +217,7 @@ export function RegisterScanner({
       const identifyRes = await apiRequest("POST", "/api/scan/identify", {
         imageBase64: frame.base64,
         mediaType: frame.mediaType,
-        mode: "card",
+        mode,
       });
       const ided: Identified = await identifyRes.json();
       if (!ided?.name) {
@@ -225,7 +233,7 @@ export function RegisterScanner({
 
       // Try to match against existing inventory first.
       setPhase("matching");
-      const existing = findExistingMatch(ided, inventory);
+      const existing = findExistingMatch(ided, inventory, mode);
       if (existing) {
         setLastResult({ item: existing, isNew: false });
         setPhase("done");
@@ -243,6 +251,11 @@ export function RegisterScanner({
       // Not in inventory — create a new row via the intake endpoint, then add.
       setPhase("creating");
 
+      const isSealed = mode === "sealed";
+      const condition = isSealed ? "Sealed" : (ided.suggestedCondition || "NM");
+      const category = isSealed ? "Sealed" : "Raw";
+      const rarity = isSealed ? (ided.category || "") : (ided.rarity || "");
+
       // Get a price estimate so the new row has a usable marketValue.
       let marketValue: number | null = null;
       try {
@@ -250,8 +263,8 @@ export function RegisterScanner({
           name: ided.name,
           set: ided.set || "",
           franchise: ided.franchise || "Other",
-          rarity: ided.rarity || "",
-          condition: ided.suggestedCondition || "NM",
+          rarity,
+          condition,
         });
         const priceData = await priceRes.json();
         if (typeof priceData?.marketValue === "number") {
@@ -263,11 +276,11 @@ export function RegisterScanner({
 
       const createRes = await apiRequest("POST", "/api/intake/scan-add", {
         franchise: ided.franchise || "Other",
-        category: "Raw",
+        category,
         setName: ided.set || "",
         name: ided.name,
-        rarity: ided.rarity || "",
-        condition: ided.suggestedCondition || "NM",
+        rarity,
+        condition,
         qty: 1,
         costPerUnit: null,
         marketValue,
@@ -312,7 +325,7 @@ export function RegisterScanner({
           <div className="flex items-center gap-2">
             <Camera className="h-5 w-5 text-primary" />
             <h3 className="font-anime-alt text-base font-bold">
-              Scan card to register
+              Scan to register
             </h3>
           </div>
           <Button
@@ -323,6 +336,30 @@ export function RegisterScanner({
             data-testid="button-close-scanner"
           >
             <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Card / Sealed toggle */}
+        <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={mode === "card" ? "default" : "outline"}
+            className="flex-1"
+            onClick={() => setMode("card")}
+            disabled={working}
+            data-testid="button-mode-card"
+          >
+            Card
+          </Button>
+          <Button
+            size="sm"
+            variant={mode === "sealed" ? "default" : "outline"}
+            className="flex-1"
+            onClick={() => setMode("sealed")}
+            disabled={working}
+            data-testid="button-mode-sealed"
+          >
+            Sealed
           </Button>
         </div>
 
