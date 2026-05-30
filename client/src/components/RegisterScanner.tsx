@@ -40,7 +40,8 @@ function norm(s: string | null | undefined): string {
 // Matches on franchise + name + set name, falling back to name only.
 function findExistingMatch(
   ided: Identified,
-  inventory: Inventory[]
+  inventory: Inventory[],
+  scanMode: ScanMode = "card"
 ): Inventory | null {
   if (!ided.name) return null;
   const nName = norm(ided.name);
