@@ -104,48 +104,55 @@ async function getPokemonTcgApiPrice(
     const collectorNumber = parsed.collectorNumber;
     const setHint = set || parsed.setCode || null;
 
-    // Build Lucene-style query. Wrap name in quotes to require full match.
-    const qParts: string[] = [`name:"${cleanName.replace(/"/g, "")}"`];
-    if (collectorNumber) qParts.push(`number:${collectorNumber}`);
-    if (setHint) {
-      // Match set name substring; the API supports wildcards.
-      const setClean = setHint.replace(/["()]/g, "").trim();
-      if (setClean) qParts.push(`set.name:"${setClean}"`);
-    }
-    const q = qParts.join(" ");
+    // Escape special Lucene chars in the name. Wrap in quotes for full-phrase match.
+    const escapedName = cleanName.replace(/["\\]/g, "");
+    const nameClause = `name:"${escapedName}"`;
+    const numberClause = collectorNumber ? `number:${collectorNumber}` : "";
 
     const headers: Record<string, string> = { ...COMMON_HEADERS };
     if (process.env.POKEMON_TCG_API_KEY) {
       headers["X-Api-Key"] = process.env.POKEMON_TCG_API_KEY;
     }
 
-    // Try the strict query first; if 0 results, drop the set filter and retry.
     const searchOnce = async (query: string) => {
       const url = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(
         query,
-      )}&pageSize=10&orderBy=-set.releaseDate`;
+      )}&pageSize=25&orderBy=-set.releaseDate`;
       const res = await fetch(url, { headers });
       if (!res.ok) return [];
       const data: any = await res.json();
       return Array.isArray(data?.data) ? data.data : [];
     };
 
-    let cards: any[] = await searchOnce(q);
-    if (cards.length === 0 && setHint) {
-      // Retry without the set filter.
-      const fallbackQ = qParts.filter((p) => !p.startsWith("set.name:")).join(" ");
-      cards = await searchOnce(fallbackQ);
+    // Broad search by name (+ number if we have it). We'll filter by set client-side
+    // — quoted set names in Lucene are brittle for names like "151" or with special chars.
+    const baseQ = [nameClause, numberClause].filter(Boolean).join(" ");
+    let cards: any[] = await searchOnce(baseQ);
+
+    // If nothing on name+number, retry name-only (in case the number was wrong).
+    if (cards.length === 0 && numberClause) {
+      cards = await searchOnce(nameClause);
     }
     if (cards.length === 0) return null;
 
-    // Prefer exact set match if we had a hint; else take the newest release.
+    // Score candidates by set-name overlap with the hint (case-insensitive).
+    // If no hint, take the newest (already sorted by set.releaseDate desc).
     let card = cards[0];
     if (setHint) {
-      const setLc = setHint.toLowerCase();
-      const match = cards.find((c) =>
-        (c?.set?.name || "").toLowerCase().includes(setLc),
-      );
-      if (match) card = match;
+      const setLc = setHint.toLowerCase().replace(/[()]/g, "").trim();
+      const scored = cards.map((c) => {
+        const cSet = (c?.set?.name || "").toLowerCase();
+        const cSeries = (c?.set?.series || "").toLowerCase();
+        let score = 0;
+        if (cSet === setLc) score += 100;
+        else if (cSet.includes(setLc) || setLc.includes(cSet)) score += 50;
+        if (cSeries.includes(setLc) || setLc.includes(cSeries)) score += 10;
+        // Prefer cards that actually have TCGplayer prices.
+        if (c?.tcgplayer?.prices) score += 5;
+        return { c, score };
+      });
+      scored.sort((a, b) => b.score - a.score);
+      if (scored[0].score > 0) card = scored[0].c;
     }
 
     // Pick the best price from tcgplayer.prices variants.
