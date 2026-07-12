@@ -39,7 +39,7 @@ function cacheSet(key: string, result: PriceResult) {
   CACHE.set(key, { result, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
-export type PriceSource = "Scryfall" | "TCGdex" | "AI est" | "Manual" | "Seed";
+export type PriceSource = "Scryfall" | "PokemonTCG" | "TCGdex" | "AI est" | "Manual" | "Seed";
 
 export interface PriceResult {
   marketValue: number | null;
@@ -85,6 +85,129 @@ export async function getScryfallPrice(
 }
 
 // --- TCGdex -------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Free Pokémon TCG API (pokemontcg.io) — US-focused TCGplayer market prices.
+// No API key required for public data; optional POKEMON_TCG_API_KEY env var
+// raises rate limits if set. Response has `tcgplayer.prices` keyed by variant
+// (normal, holofoil, reverseHolofoil, etc.) with { low, mid, high, market, directLow }.
+// ---------------------------------------------------------------------------
+async function getPokemonTcgApiPrice(
+  name: string,
+  set?: string | null,
+  rarity?: string | null,
+): Promise<PriceResult | null> {
+  if (!name) return null;
+  try {
+    // Parse messy import names first (e.g. "Kirlia - 212/198 - SV01: Scarlet & Violet Base Set (SVI)")
+    const parsed = parsePokemonName(name);
+    const cleanName = parsed.cleanName || name;
+    const collectorNumber = parsed.collectorNumber;
+    const setHint = set || parsed.setCode || null;
+
+    // Build Lucene-style query. Wrap name in quotes to require full match.
+    const qParts: string[] = [`name:"${cleanName.replace(/"/g, "")}"`];
+    if (collectorNumber) qParts.push(`number:${collectorNumber}`);
+    if (setHint) {
+      // Match set name substring; the API supports wildcards.
+      const setClean = setHint.replace(/["()]/g, "").trim();
+      if (setClean) qParts.push(`set.name:"${setClean}"`);
+    }
+    const q = qParts.join(" ");
+
+    const headers: Record<string, string> = { ...COMMON_HEADERS };
+    if (process.env.POKEMON_TCG_API_KEY) {
+      headers["X-Api-Key"] = process.env.POKEMON_TCG_API_KEY;
+    }
+
+    // Try the strict query first; if 0 results, drop the set filter and retry.
+    const searchOnce = async (query: string) => {
+      const url = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(
+        query,
+      )}&pageSize=10&orderBy=-set.releaseDate`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) return [];
+      const data: any = await res.json();
+      return Array.isArray(data?.data) ? data.data : [];
+    };
+
+    let cards: any[] = await searchOnce(q);
+    if (cards.length === 0 && setHint) {
+      // Retry without the set filter.
+      const fallbackQ = qParts.filter((p) => !p.startsWith("set.name:")).join(" ");
+      cards = await searchOnce(fallbackQ);
+    }
+    if (cards.length === 0) return null;
+
+    // Prefer exact set match if we had a hint; else take the newest release.
+    let card = cards[0];
+    if (setHint) {
+      const setLc = setHint.toLowerCase();
+      const match = cards.find((c) =>
+        (c?.set?.name || "").toLowerCase().includes(setLc),
+      );
+      if (match) card = match;
+    }
+
+    // Pick the best price from tcgplayer.prices variants.
+    // Prefer holofoil for rare/holo cards, else normal, else first available.
+    const tp = card?.tcgplayer?.prices || {};
+    const variantKeys = Object.keys(tp);
+    let variant: string | null = null;
+    const rLc = (rarity || "").toLowerCase();
+    const isHoloish =
+      rLc.includes("holo") ||
+      rLc.includes("rare") ||
+      rLc.includes("vmax") ||
+      rLc.includes("vstar") ||
+      rLc.includes("ex") ||
+      rLc.includes("gx");
+    const pref = isHoloish
+      ? ["holofoil", "reverseHolofoil", "normal", "unlimitedHolofoil", "1stEditionHolofoil"]
+      : ["normal", "holofoil", "reverseHolofoil"];
+    for (const k of pref) {
+      if (variantKeys.includes(k)) {
+        variant = k;
+        break;
+      }
+    }
+    if (!variant && variantKeys.length > 0) variant = variantKeys[0];
+
+    let price: number | null = null;
+    if (variant) {
+      const v = tp[variant] || {};
+      if (typeof v.market === "number" && v.market > 0) price = v.market;
+      else if (typeof v.mid === "number" && v.mid > 0) price = v.mid;
+      else if (typeof v.directLow === "number" && v.directLow > 0) price = v.directLow;
+    }
+
+    // Cardmarket fallback (EUR → USD).
+    if (price == null) {
+      const cm = card?.cardmarket?.prices || {};
+      if (typeof cm.averageSellPrice === "number" && cm.averageSellPrice > 0) {
+        price = cm.averageSellPrice * 1.08;
+      } else if (typeof cm.trendPrice === "number" && cm.trendPrice > 0) {
+        price = cm.trendPrice * 1.08;
+      }
+    }
+
+    if (price == null) return null;
+
+    const image = card?.images?.large || card?.images?.small || null;
+    const noteBits: string[] = [];
+    if (variant && variant !== "normal") noteBits.push(`${variant} variant`);
+    if (card?.set?.name) noteBits.push(`set: ${card.set.name}`);
+
+    return {
+      marketValue: Math.round(price * 100) / 100,
+      imageUrl: image,
+      source: "PokemonTCG",
+      note: noteBits.join(", ") || undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getTcgdexPrice(
   name: string,
   set?: string | null
@@ -266,7 +389,10 @@ export async function refreshItem(item: Inventory): Promise<PriceResult> {
   if (franchise === "Magic The Gathering") {
     result = await getScryfallPrice(name, set);
   } else if (franchise === "Pok\u00e9mon") {
-    result = await getTcgdexPrice(name, set);
+    // Primary: free pokemontcg.io API (US TCGplayer market prices).
+    result = await getPokemonTcgApiPrice(name, set, item.rarity);
+    // Fallback: TCGdex (mixes TCGplayer + Cardmarket EU).
+    if (!result) result = await getTcgdexPrice(name, set);
   }
 
   // Fallback to Claude for Other / One Piece / DBZ / Union Arena / LoL \u2014 and as
