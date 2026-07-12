@@ -1169,12 +1169,17 @@ export async function tryRealSourcesOnly(opts: {
   name: string;
   set: string;
   franchise: string;
+  rarity?: string;
 }): Promise<PriceResult | null> {
-  const { franchise, name, set } = opts;
+  const { franchise, name, set, rarity } = opts;
   if (franchise === "Magic The Gathering") {
     const r = await getScryfallPrice(name, set);
     if (r) return r;
   } else if (franchise === "Pok\u00e9mon") {
+    // Primary: pokemontcg.io (free, US TCGplayer market prices).
+    const primary = await getPokemonTcgApiPrice(name, set, rarity);
+    if (primary) return primary;
+    // Fallback: TCGdex.
     const r = await getTcgdexPrice(name, set);
     if (r) return r;
   }

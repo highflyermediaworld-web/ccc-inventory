@@ -317,6 +317,7 @@ Focus on popular / well-known cards. If nothing obvious, return [].`;
           name: name ?? "",
           set: set ?? "",
           franchise: franchise ?? "",
+          rarity: rarity ?? "",
         });
         if (real && real.marketValue != null) {
           return res.json({
