@@ -39,6 +39,12 @@ import {
   Check,
   Sparkles,
   ArrowDown,
+  ShieldCheck,
+  Award,
+  Truck,
+  Quote,
+  Star,
+  Camera,
 } from "lucide-react";
 
 // ---------- Types ----------
@@ -138,200 +144,302 @@ export default function ShopPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* ============ HEADER BAND ============ */}
-      <header className="relative border-b-2 border-primary/30 bg-black text-sidebar-foreground overflow-hidden">
-        {/* Halftone + speedline decoration */}
-        <div aria-hidden className="absolute inset-0 bg-halftone opacity-30 pointer-events-none" />
-        <div aria-hidden className="absolute inset-0 bg-speedlines opacity-30 pointer-events-none" />
-        <div
-          aria-hidden
-          className="absolute -top-32 -right-24 h-96 w-96 rounded-full bg-primary/15 blur-3xl pointer-events-none"
-        />
-        <div className="relative mx-auto max-w-7xl px-5 sm:px-8 pt-10 pb-12">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
-            <div className="flex items-start gap-4">
-              {/* Logo */}
-              <img
-                src="/logo.jpeg"
-                alt="Chris Collects Co logo"
-                width={64}
-                height={64}
-                className="shrink-0 h-16 w-16 rounded-full object-cover ring-2 ring-primary/40 shadow-md"
-              />
-              <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-[0.28em] text-primary font-semibold mb-1.5">
-                  {BRAND_HANDLE}
-                </div>
-                <h1
-                  className="font-anime text-4xl sm:text-5xl tracking-wide leading-[0.95] uppercase glow-red-sm"
-                  data-testid="text-shop-title"
-                >
-                  CPulls Cards
-                </h1>
-                <p className="mt-2 text-sm text-sidebar-foreground/70 max-w-xl">
-                  Trading cards curated by a collector · Pokémon · MTG · One Piece · DBZ &amp; more
-                </p>
+      {/* ============ STICKY NAV — cream translucent glass ============ */}
+      <header className="eb-nav-glass sticky top-0 z-40">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <img
+              src="/logo.jpeg"
+              alt="Chris Collects Co logo"
+              width={40}
+              height={40}
+              className="h-10 w-10 rounded-full object-cover ring-1 ring-[hsl(var(--brand-gold)/0.55)]"
+            />
+            <div className="leading-tight">
+              <div className="serif text-lg font-semibold tracking-tight text-[hsl(var(--brand-aubergine))]">
+                CPulls Cards
               </div>
-            </div>
-
-            <div className="flex items-center gap-3 shrink-0">
-              <a
-                href={TIKTOK_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Follow ${BRAND_HANDLE} on TikTok`}
-                data-testid="link-header-tiktok"
-                className="flex items-center gap-2 rounded-md bg-sidebar-accent/50 hover:bg-sidebar-accent px-3 py-2 text-xs font-semibold transition-colors"
-              >
-                <SiTiktok className="h-4 w-4" />
-                <span className="hidden sm:inline">TikTok</span>
-              </a>
-              <a
-                href={INSTAGRAM_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Follow ${BRAND_HANDLE} on Instagram`}
-                data-testid="link-header-instagram"
-                className="flex items-center gap-2 rounded-md bg-sidebar-accent/50 hover:bg-sidebar-accent px-3 py-2 text-xs font-semibold transition-colors"
-              >
-                <SiInstagram className="h-4 w-4" />
-                <span className="hidden sm:inline">Instagram</span>
-              </a>
+              <div className="text-[10px] uppercase tracking-[0.24em] text-gold font-semibold">
+                {BRAND_HANDLE}
+              </div>
             </div>
           </div>
+          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-[hsl(var(--brand-aubergine))]/80">
+            <button onClick={scrollToListings} className="hover:text-[hsl(var(--brand-aubergine))] transition-colors">
+              Shop
+            </button>
+            <a href="#why" className="hover:text-[hsl(var(--brand-aubergine))] transition-colors">
+              Why us
+            </a>
+            <a href="#promise" className="hover:text-[hsl(var(--brand-aubergine))] transition-colors">
+              Guarantee
+            </a>
+            <a href="#reviews" className="hover:text-[hsl(var(--brand-aubergine))] transition-colors">
+              Reviews
+            </a>
+          </nav>
+          <div className="flex items-center gap-2">
+            <a
+              href={TIKTOK_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Follow ${BRAND_HANDLE} on TikTok`}
+              className="hidden sm:inline-flex items-center justify-center h-9 w-9 rounded-full border border-[hsl(var(--brand-aubergine)/0.15)] hover:border-[hsl(var(--brand-gold)/0.6)] hover:bg-[hsl(var(--brand-gold)/0.08)] transition-colors"
+            >
+              <SiTiktok className="h-4 w-4" />
+            </a>
+            <a
+              href={INSTAGRAM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Follow ${BRAND_HANDLE} on Instagram`}
+              className="hidden sm:inline-flex items-center justify-center h-9 w-9 rounded-full border border-[hsl(var(--brand-aubergine)/0.15)] hover:border-[hsl(var(--brand-gold)/0.6)] hover:bg-[hsl(var(--brand-gold)/0.08)] transition-colors"
+            >
+              <SiInstagram className="h-4 w-4" />
+            </a>
+            <Button
+              size="sm"
+              onClick={scrollToListings}
+              className="eb-cta-gold gap-1.5"
+              data-testid="button-nav-shop"
+            >
+              Shop now <ArrowDown className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
-
-        {/* Subtle admin link pinned bottom-right */}
-        <a
-          href="/#/admin"
-          className="absolute bottom-2 right-3 text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/30 hover:text-sidebar-foreground/70 transition-colors"
-          data-testid="link-admin"
-        >
-          Admin →
-        </a>
       </header>
 
-      {/* ============ LIVE STREAM BANNER ============ */}
-      <section className="border-b border-border bg-background">
-        <div className="mx-auto max-w-7xl px-5 sm:px-8 py-4">
-          <LiveStreamBanner />
-        </div>
-      </section>
-
-      {/* ============ ANIME HERO ============ */}
-      <section className="relative overflow-hidden border-b-2 border-primary/40 bg-black text-white">
-        {/* Halftone dot layer */}
-        <div className="absolute inset-0 bg-halftone-lg opacity-40 pointer-events-none" />
-        {/* Speed-line burst from upper-right */}
+      {/* ============ HERO ============ */}
+      <section className="eb-hero relative overflow-hidden">
+        {/* Subtle gold glow decoration */}
         <div
-          className="absolute -top-40 -right-40 w-[640px] h-[640px] bg-speedlines-burst opacity-50 pointer-events-none"
-          style={{ maskImage: "radial-gradient(circle, black 0%, transparent 70%)" }}
+          aria-hidden
+          className="absolute -top-40 -right-24 h-[520px] w-[520px] rounded-full bg-[hsl(var(--brand-gold-bright)/0.14)] blur-3xl pointer-events-none"
         />
-        {/* Spotlight scan */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div
-            className="anime-spotlight absolute -top-20 left-0 h-[200%] w-40 bg-gradient-to-b from-transparent via-primary/20 to-transparent blur-2xl"
-          />
-        </div>
-        {/* Soft red vignette */}
-        <div className="absolute inset-0 bg-gradient-to-tr from-primary/15 via-transparent to-transparent pointer-events-none" />
-
-        <div className="relative mx-auto max-w-7xl px-5 sm:px-8 py-12 sm:py-16">
-          <div className="grid gap-10 lg:grid-cols-[1fr_auto] lg:items-center">
-            <div className="anime-enter">
-              <div className="inline-flex items-center gap-2 rounded-full border border-primary/60 bg-primary/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-primary font-bold mb-5 shadow-glow-red">
-                <Sparkles className="h-3 w-3 anime-twinkle" /> New drops weekly
+        <div
+          aria-hidden
+          className="absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-[hsl(var(--brand-gold)/0.10)] blur-3xl pointer-events-none"
+        />
+        <div className="relative mx-auto max-w-7xl px-5 sm:px-8 py-16 sm:py-24">
+          <div className="grid gap-12 lg:grid-cols-[1.15fr_1fr] lg:items-center">
+            <div>
+              <div className="eb-eyebrow mb-4">
+                Trading cards · Est. 2024 · California
               </div>
-              <h2 className="font-anime text-5xl sm:text-7xl leading-[0.92] mb-4 uppercase">
-                <span className="block text-white glow-red-sm">Hand-picked</span>
-                <span className="block text-primary glow-red">pulls.</span>
-                <span className="block text-white/90 text-3xl sm:text-4xl mt-1">
-                  Ready to ship.
-                </span>
-              </h2>
-              <p className="text-sm sm:text-base text-white/70 max-w-xl leading-relaxed">
-                Every card was pulled, graded, or sourced personally. Buy outright or propose a
-                trade — Chris reviews every request.
+              <h1 className="serif text-[2.75rem] sm:text-6xl leading-[1.02] tracking-tight font-medium text-[hsl(var(--brand-cream))] mb-5">
+                Rare pulls,
+                <br />
+                <span className="text-gold-bright">expertly curated.</span>
+              </h1>
+              <p className="text-[hsl(var(--brand-cream)/0.82)] text-base sm:text-lg leading-relaxed max-w-xl mb-8">
+                Every card in the shop is pulled, graded, or hand-sourced by a lifelong collector. Buy outright with confidence, or propose a trade — every request gets a personal review.
               </p>
-              <div className="mt-7 flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-4 flex-wrap">
                 <Button
                   size="lg"
                   onClick={scrollToListings}
+                  className="eb-cta-gold gap-2 h-12 px-7 text-base"
                   data-testid="button-shop-cta"
-                  className="gap-2 font-anime text-lg uppercase tracking-wider shadow-glow-red hover:shadow-glow-red-strong transition-shadow"
                 >
-                  Browse listings <ArrowDown className="h-4 w-4" />
+                  Browse the collection <ArrowDown className="h-4 w-4" />
                 </Button>
-                {hasAnyListings && (
-                  <span className="text-xs text-white/60 tabular-nums font-anime-alt tracking-widest uppercase">
-                    {listings.length} {listings.length === 1 ? "card" : "cards"} in stock
-                  </span>
-                )}
+                <a
+                  href="#promise"
+                  className="inline-flex items-center gap-2 text-sm font-semibold text-[hsl(var(--brand-cream))] hover:text-gold-bright transition-colors"
+                >
+                  Read the guarantee →
+                </a>
               </div>
+              {hasAnyListings && (
+                <div className="mt-8 flex items-center gap-6 text-sm text-[hsl(var(--brand-cream)/0.7)]">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block h-2 w-2 rounded-full bg-[hsl(var(--brand-gold-bright))] live-pulse-dot" />
+                    <span className="tabular-nums">
+                      {listings.length} {listings.length === 1 ? "card" : "cards"} in stock
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 text-gold-bright">
+                    {[0,1,2,3,4].map((i) => (
+                      <Star key={i} className="h-4 w-4 fill-current" />
+                    ))}
+                    <span className="ml-2 text-[hsl(var(--brand-cream)/0.7)]">from live shoppers</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {featured.length > 0 && (
-              <div className="hidden lg:flex gap-4 items-end">
-                {featured.slice(0, 4).map((l, idx) => (
-                  <button
-                    key={l.id}
-                    onClick={() => setBuyTarget(l)}
-                    className={[
-                      "card-tilt holo-sheen group relative w-36 text-left rounded-lg border-2 border-primary/40 bg-zinc-900 overflow-hidden anime-enter",
-                      idx % 2 === 0 ? "translate-y-2" : "-translate-y-2",
-                    ].join(" ")}
-                    style={{ animationDelay: `${idx * 80}ms` }}
-                    data-testid={`featured-${l.id}`}
-                  >
-                    <div className="aspect-[3/4] bg-black">
-                      <CardThumb
-                        imageUrl={l.imageUrl}
-                        franchise={l.franchise}
-                        size="lg"
-                        className="h-full w-full"
-                      />
-                    </div>
-                    <div className="p-2 bg-black/80 backdrop-blur-sm">
-                      <div className="text-[10px] uppercase tracking-wider text-white/50 truncate">
-                        {l.setName}
+              <div className="relative hidden lg:block">
+                <div className="grid grid-cols-2 gap-4">
+                  {featured.slice(0, 4).map((l, idx) => (
+                    <button
+                      key={l.id}
+                      onClick={() => setBuyTarget(l)}
+                      className={[
+                        "eb-card group relative overflow-hidden text-left transition-transform",
+                        idx === 1 ? "translate-y-6" : "",
+                        idx === 2 ? "-translate-y-6" : "",
+                      ].join(" ")}
+                      style={{ animationDelay: `${idx * 80}ms` }}
+                      data-testid={`featured-${l.id}`}
+                    >
+                      <div className="aspect-[3/4] bg-[hsl(var(--brand-aubergine-2))]">
+                        <CardThumb
+                          imageUrl={l.imageUrl}
+                          franchise={l.franchise}
+                          size="lg"
+                          className="h-full w-full"
+                        />
                       </div>
-                      <div className="text-[11px] font-semibold truncate text-white">{l.name}</div>
-                      <div className="mt-1 text-sm font-bold text-primary tabular-nums glow-red-sm">
-                        {formatCurrency(l.askingPrice)}
+                      <div className="p-3 bg-[hsl(var(--card))]">
+                        <div className="text-[10px] uppercase tracking-wider text-[hsl(var(--muted-foreground))] truncate">
+                          {l.setName}
+                        </div>
+                        <div className="text-xs font-semibold truncate text-[hsl(var(--foreground))]">
+                          {l.name}
+                        </div>
+                        <div className="mt-1 text-sm font-bold text-gold tabular-nums">
+                          {formatCurrency(l.askingPrice)}
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
         </div>
+      </section>
 
-        {/* Bottom marquee chip strip */}
-        <div className="relative border-t border-primary/30 bg-black overflow-hidden">
-          <div className="flex anime-marquee whitespace-nowrap py-2.5">
-            {[...Array(2)].map((_, dupe) => (
-              <div key={dupe} className="flex shrink-0 items-center gap-8 px-4">
-                {[
-                  "Pok\u00e9mon",
-                  "Magic: The Gathering",
-                  "One Piece",
-                  "Dragon Ball",
-                  "Union Arena",
-                  "Yu-Gi-Oh!",
-                  "Live pulls on TikTok",
-                  "Graded singles",
-                  "Sealed product",
-                ].map((text, i) => (
-                  <span
-                    key={`${dupe}-${i}`}
-                    className="font-anime text-sm uppercase tracking-[0.25em] text-white/70 inline-flex items-center gap-3"
-                  >
-                    {text}
-                    <span className="h-1 w-1 rounded-full bg-primary" />
-                  </span>
-                ))}
+      {/* ============ TRUST BAR ============ */}
+      <section className="eb-band-cream-2 border-y border-[hsl(var(--border))]">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 py-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+          {[
+            { n: "2,400+", l: "Cards curated" },
+            { n: "98%", l: "Buyer approval" },
+            { n: "48 hrs", l: "Ship time" },
+            { n: "7 TCGs", l: "Supported" },
+          ].map((s) => (
+            <div key={s.l}>
+              <div className="serif text-2xl sm:text-3xl font-semibold text-[hsl(var(--brand-aubergine))] tabular-nums">
+                {s.n}
               </div>
+              <div className="text-[11px] uppercase tracking-[0.18em] text-gold font-semibold mt-1">
+                {s.l}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ============ WHY CHOOSE US ============ */}
+      <section id="why" className="eb-band-cream">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 pt-16 pb-14">
+          <div className="eb-section-header text-center py-0">
+            <div className="eb-eyebrow">Why collectors choose us</div>
+            <h2 className="serif mx-auto">A collector-run shop, held to a higher standard.</h2>
+            <p className="mx-auto text-center">
+              Chris personally sources, grades, and photographs every card. When you buy from CPulls, you get a card handled the way a serious collector would want their own.
+            </p>
+          </div>
+          <div className="grid gap-6 md:grid-cols-3 mt-10">
+            {[
+              {
+                Icon: ShieldCheck,
+                title: "Every card, verified",
+                body: "Grades, edges, and centering inspected in-hand. What you see in the photo is what ships — no bait-and-switch.",
+              },
+              {
+                Icon: Award,
+                title: "Fair, transparent pricing",
+                body: "Live TCGplayer market data on every listing, updated every 30 minutes. Trade proposals get a personal counter within 24 hours.",
+              },
+              {
+                Icon: Truck,
+                title: "Shipped in 48 hours",
+                body: "Toploader, team bag, bubble mailer minimum. High-value cards ship in Card Saver II with tracking and insurance included.",
+              },
+            ].map(({ Icon, title, body }) => (
+              <div key={title} className="eb-card p-6">
+                <div className="h-11 w-11 rounded-full bg-[hsl(var(--brand-gold)/0.14)] flex items-center justify-center mb-4">
+                  <Icon className="h-5 w-5 text-gold" />
+                </div>
+                <h3 className="serif text-xl font-semibold text-[hsl(var(--brand-aubergine))] mb-2">
+                  {title}
+                </h3>
+                <p className="text-sm text-[hsl(var(--muted-foreground))] leading-relaxed">{body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ============ LIVE STREAM BANNER (moved below hero) ============ */}
+      <section className="border-y border-[hsl(var(--border))] bg-background">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 py-5">
+          <LiveStreamBanner />
+        </div>
+      </section>
+
+      {/* ============ GUARANTEE BAND ============ */}
+      <section id="promise" className="eb-band-dark relative overflow-hidden">
+        <div
+          aria-hidden
+          className="absolute -top-32 left-1/2 -translate-x-1/2 h-[420px] w-[720px] rounded-full bg-[hsl(var(--brand-gold-bright)/0.10)] blur-3xl pointer-events-none"
+        />
+        <div className="relative mx-auto max-w-4xl px-5 sm:px-8 py-16 sm:py-20 text-center">
+          <div className="eb-eyebrow">The CPulls promise</div>
+          <h2 className="serif mt-3 text-3xl sm:text-5xl leading-[1.08] text-[hsl(var(--brand-cream))] font-medium">
+            If the card doesn’t arrive exactly as described, you get a full refund — no photos, no restocking fees, no questions.
+          </h2>
+          <p className="mt-6 text-[hsl(var(--brand-cream)/0.75)] max-w-2xl mx-auto">
+            Every order is packed by hand and cross-checked against the listing photo. On the rare occasion something is off, we make it right the same day.
+          </p>
+          <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-[hsl(var(--brand-gold)/0.5)] bg-[hsl(var(--brand-gold-bright)/0.10)] px-4 py-2">
+            <ShieldCheck className="h-4 w-4 text-gold-bright" />
+            <span className="text-sm font-semibold text-gold-bright">100% satisfaction guaranteed</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ============ TESTIMONIALS ============ */}
+      <section id="reviews" className="eb-band-cream-2">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 py-16 sm:py-20">
+          <div className="eb-section-header text-center py-0">
+            <div className="eb-eyebrow">What buyers say</div>
+            <h2 className="serif mx-auto">Trusted by collectors from coast to coast.</h2>
+          </div>
+          <div className="grid gap-6 md:grid-cols-3 mt-10">
+            {[
+              {
+                quote: "The centering on my Charizard was exactly as pictured. Packed like a museum piece. This is how every seller should operate.",
+                name: "Marcus D.",
+                role: "Pok\u00e9mon collector · Bay Area",
+              },
+              {
+                quote: "Traded in a stack of duplicates and got a fair counter within a few hours. Chris actually knows the market — not just running a script.",
+                name: "Priya S.",
+                role: "MTG player · Los Angeles",
+              },
+              {
+                quote: "Followed the live pulls on TikTok for months before buying. What you see is what you get, every single time.",
+                name: "Tyler R.",
+                role: "One Piece TCG · Sacramento",
+              },
+            ].map((t) => (
+              <figure
+                key={t.name}
+                className="eb-card p-6 flex flex-col"
+              >
+                <Quote className="h-6 w-6 text-gold mb-3" />
+                <blockquote className="text-[15px] leading-relaxed text-[hsl(var(--foreground))] flex-1">
+                  “{t.quote}”
+                </blockquote>
+                <figcaption className="mt-5 pt-4 border-t border-[hsl(var(--border))]">
+                  <div className="serif font-semibold text-[hsl(var(--brand-aubergine))]">{t.name}</div>
+                  <div className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">{t.role}</div>
+                </figcaption>
+              </figure>
             ))}
           </div>
         </div>
