@@ -318,10 +318,11 @@
 
 /* Cream translucent glass nav (used on top bar / register / login) */
 .eb-nav-glass {
-  background: hsl(var(--brand-cream) / 0.82);
-  backdrop-filter: saturate(140%) blur(10px);
-  -webkit-backdrop-filter: saturate(140%) blur(10px);
+  background: hsl(var(--brand-cream) / 0.96);
+  backdrop-filter: saturate(160%) blur(12px);
+  -webkit-backdrop-filter: saturate(160%) blur(12px);
   border-bottom: 1px solid hsl(var(--border));
+  box-shadow: 0 1px 0 hsl(var(--brand-gold) / 0.15), 0 8px 24px -12px hsl(var(--brand-aubergine) / 0.25);
 }
 .dark .eb-nav-glass {
   background: hsl(var(--brand-aubergine) / 0.72);
