@@ -114,6 +114,32 @@ export default function ShopPage() {
     [listings]
   );
 
+  const stats = useMemo(() => {
+    const totalQty = listings.reduce((sum, l) => sum + (l.qty || 0), 0);
+    const franchises = new Set(
+      listings
+        .map((l) => l.franchise)
+        .filter((f): f is string => !!f && f !== "Other")
+    );
+    const sealedCount = listings.filter((l) => l.category === "Sealed").length;
+    const slabCount = listings.filter((l) => l.category === "Slab").length;
+    const fmt = (n: number) => {
+      if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, "")}k+`;
+      if (n >= 100) return `${Math.floor(n / 10) * 10}+`;
+      return `${n}`;
+    };
+    return {
+      totalQtyLabel: fmt(totalQty),
+      franchisesLabel: `${franchises.size}`,
+      sealedLabel: fmt(sealedCount),
+      slabLabel: fmt(slabCount),
+      totalQty,
+      franchiseCount: franchises.size,
+      sealedCount,
+      slabCount,
+    };
+  }, [listings]);
+
   const hasAnyListings = listings.length > 0;
   const activeFilterCount =
     franchiseFilter.length +
@@ -311,16 +337,16 @@ export default function ShopPage() {
         </div>
       </section>
 
-      {/* ============ TRUST BAR ============ */}
+      {/* ============ TRUST BAR (live inventory) ============ */}
       <section className="eb-band-cream-2 border-y border-[hsl(var(--border))]">
         <div className="mx-auto max-w-7xl px-5 sm:px-8 py-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
           {[
-            { n: "2,400+", l: "Cards curated" },
-            { n: "98%", l: "Buyer approval" },
+            { n: stats.totalQtyLabel, l: "Cards in stock" },
+            { n: stats.franchisesLabel, l: "TCGs supported" },
+            { n: stats.sealedLabel, l: "Sealed products" },
             { n: "48 hrs", l: "Ship time" },
-            { n: "7 TCGs", l: "Supported" },
           ].map((s) => (
-            <div key={s.l}>
+            <div key={s.l} data-testid={`stat-${s.l.replace(/\s+/g, "-").toLowerCase()}`}>
               <div className="serif text-2xl sm:text-3xl font-semibold text-[hsl(var(--brand-aubergine))] tabular-nums">
                 {s.n}
               </div>
