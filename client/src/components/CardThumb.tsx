@@ -39,28 +39,33 @@ export function CardThumb({
   className?: string;
   alt?: string;
 }) {
-  const dims =
-    size === "sm"
+  // If a wrapping className already sets h-*/w-*, we don't want CardThumb to
+  // force its own aspect box (which introduces whitespace inside the frame).
+  // Sniff for a caller-provided sizer to opt into "fill parent" mode.
+  const callerControlsSize = /\b(h-full|w-full|h-\[|w-\[|aspect-)/.test(className);
+  const dims = callerControlsSize
+    ? ""
+    : size === "sm"
       ? "w-10 h-14"
       : "w-full aspect-[5/7] max-w-[280px]";
   const resolved = resolveUploadUrl(imageUrl);
-  // sm thumbs (lists/tables) use cover so they look uniform.
-  // lg (detail dialog) uses contain so booster boxes, sealed product, etc.
-  // are fully visible without aggressive cropping.
-  const fit = size === "lg" ? "object-contain" : "object-cover";
+  // Fill-the-frame everywhere for a tight, editorial layout — no negative
+  // space around product photos. Callers who need contain can pass
+  // object-contain in className to override.
+  const fit = "object-cover object-center";
   if (resolved) {
     return (
       <img
         src={resolved}
         alt={alt ?? "Card"}
         loading="lazy"
-        className={`${dims} ${fit} rounded-md border border-border bg-muted ${className}`}
+        className={`${dims} ${fit} block ${className}`}
       />
     );
   }
   return (
     <div
-      className={`${dims} rounded-md border border-border bg-gradient-to-br ${gradientFor(
+      className={`${dims} bg-gradient-to-br ${gradientFor(
         franchise
       )} flex items-center justify-center ${className}`}
       aria-label={`${franchise} placeholder`}
