@@ -74,7 +74,7 @@
   --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
   --font-serif: Fraunces, Georgia, serif;
   --font-mono: Menlo, monospace;
-  --radius: 0.5rem;
+  --radius: 2px;
   --shadow-2xs: 0px 2px 0px 0px hsl(283 44% 15% / 0);
   --shadow-xs: 0px 2px 0px 0px hsl(283 44% 15% / 0);
   --shadow-sm: 0px 2px 4px -1px hsl(283 44% 15% / 0.05);
@@ -329,17 +329,29 @@
   border-bottom: 1px solid hsl(var(--sidebar-border));
 }
 
-/* Card with subtle gold border on hover */
+/* Shadcn Card global squaring + subtle gold hairline top */
+.shadcn-card {
+  border-radius: 0;
+  border-top: 1px solid hsl(var(--brand-gold) / 0.35);
+}
+.shadcn-card:hover {
+  border-top-color: hsl(var(--brand-gold) / 0.55);
+}
+
+/* Bloomberg-style panel: 1px gold hairline top rail, flat corners, thin border */
 .eb-card {
+  position: relative;
   background: hsl(var(--card));
   color: hsl(var(--card-foreground));
   border: 1px solid hsl(var(--card-border));
-  border-radius: var(--radius);
+  border-top-color: hsl(var(--brand-gold) / 0.6);
+  border-radius: 0;
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 .eb-card:hover {
   border-color: hsl(var(--brand-gold) / 0.55);
-  box-shadow: var(--shadow-md);
+  border-top-color: hsl(var(--brand-gold-bright));
+  box-shadow: 0 1px 0 hsl(var(--brand-gold) / 0.25), 0 8px 24px -12px hsl(var(--brand-aubergine) / 0.35);
 }
 
 /* Section header — gold eyebrow + serif title cluster */

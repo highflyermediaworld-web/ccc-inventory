@@ -6,9 +6,12 @@ export default {
   theme: {
     extend: {
       borderRadius: {
-        lg: ".5625rem", /* 9px */
-        md: ".375rem", /* 6px */
-        sm: ".1875rem", /* 3px */
+        /* Fortune-500 institutional look: near-flat corners (2px hairline) */
+        "2xl": "2px",
+        xl: "2px",
+        lg: "2px",
+        md: "2px",
+        sm: "2px",
       },
       colors: {
         // Flat / base colors (regular buttons)
