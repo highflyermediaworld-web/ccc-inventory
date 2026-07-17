@@ -26,6 +26,7 @@ import {
   X,
   LogOut,
   UserCircle,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRealtimeStatus } from "@/lib/realtime";
@@ -83,9 +84,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen w-full bg-background text-foreground">
       {/* Sidebar (desktop) */}
       <aside className="hidden md:flex md:w-60 lg:w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
-        <div className="flex h-16 items-center px-5 border-b border-sidebar-border">
+        <div className="flex h-16 items-center px-5 border-b border-sidebar-border" style={{ boxShadow: "0 1px 0 hsl(var(--brand-gold) / 0.2)" }}>
           <Logo />
         </div>
+        {/* Back-to-shop pill */}
+        <Link
+          href="/"
+          data-testid="link-back-to-shop"
+          className="mx-3 mt-3 flex items-center justify-between rounded-md border border-[hsl(var(--brand-gold)/0.35)] bg-[hsl(var(--brand-gold)/0.08)] px-3 py-2 text-xs font-semibold text-sidebar-foreground/90 hover:bg-[hsl(var(--brand-gold)/0.18)] hover:text-sidebar-foreground transition-colors"
+        >
+          <span className="inline-flex items-center gap-2">
+            <Store className="h-3.5 w-3.5 text-[hsl(var(--brand-gold-bright))]" />
+            <span>View customer shop</span>
+          </span>
+          <ExternalLink className="h-3 w-3 opacity-60" />
+        </Link>
         <nav className="flex-1 p-3 space-y-0.5">
           {NAV.map((item) => {
             const active = location === item.path;
@@ -141,9 +154,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </button>
 
           {user && (
-            <div className="mt-2 rounded-md border border-sidebar-border/50 bg-sidebar-accent/30 px-3 py-2.5">
+            <div className="mt-2 rounded-md border border-[hsl(var(--brand-gold)/0.25)] bg-sidebar-accent/40 px-3 py-2.5">
               <div className="flex items-center gap-2 min-w-0">
-                <UserCircle className="h-4 w-4 shrink-0 text-sidebar-foreground/70" />
+                <UserCircle className="h-4 w-4 shrink-0 text-[hsl(var(--brand-gold-bright))]" />
                 <span
                   className="truncate text-xs font-semibold text-sidebar-foreground"
                   data-testid="text-current-username"
@@ -151,11 +164,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 >
                   {user.username}
                 </span>
+                <span className="ml-auto text-[9px] uppercase tracking-[0.16em] text-[hsl(var(--brand-gold-bright))] font-bold">
+                  Admin
+                </span>
               </div>
               <button
                 onClick={handleSignOut}
                 data-testid="button-sign-out"
-                className="mt-2 flex w-full items-center gap-2 rounded-sm px-1 py-1 text-[11px] uppercase tracking-[0.14em] text-sidebar-foreground/60 hover:text-sidebar-foreground"
+                className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-md border border-sidebar-border/60 bg-sidebar/60 px-2 py-1.5 text-[11px] font-semibold text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground hover:border-[hsl(var(--brand-gold)/0.4)] transition-colors"
               >
                 <LogOut className="h-3 w-3" />
                 Sign out

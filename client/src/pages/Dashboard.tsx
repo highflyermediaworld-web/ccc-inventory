@@ -36,21 +36,31 @@ interface KpiCardProps {
 function KpiCard({ label, value, sub, subClass, icon: Icon, accent }: KpiCardProps) {
   return (
     <Card className="relative overflow-hidden">
+      {/* gold accent left rail (brighter on featured KPI) */}
+      <span
+        aria-hidden
+        className="absolute left-0 top-0 bottom-0 w-[3px]"
+        style={{
+          background: accent
+            ? "linear-gradient(to bottom, hsl(var(--brand-gold-bright)), hsl(var(--brand-gold)))"
+            : "linear-gradient(to bottom, hsl(var(--brand-gold) / 0.55), hsl(var(--brand-gold) / 0.15))",
+        }}
+      />
       <CardContent className="p-5">
         <div className="flex items-start justify-between mb-3">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-gold font-semibold">
             {label}
           </div>
-          <Icon className={accent ? "h-4 w-4 text-primary" : "h-4 w-4 text-muted-foreground"} />
+          <Icon className={accent ? "h-4 w-4 text-gold-bright" : "h-4 w-4 text-muted-foreground"} />
         </div>
         <div
-          className={`tnum text-2xl font-bold tracking-tight ${accent ? "text-primary" : ""}`}
+          className={`serif tnum text-3xl font-semibold tracking-tight ${accent ? "text-gold-bright" : "text-foreground"}`}
           data-testid={`kpi-${label.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}
         >
           {value}
         </div>
         {sub && (
-          <div className={`mt-1 text-xs tnum ${subClass ?? "text-muted-foreground"}`}>
+          <div className={`mt-1.5 text-xs tnum ${subClass ?? "text-muted-foreground"}`}>
             {sub}
           </div>
         )}
@@ -215,7 +225,8 @@ export default function Dashboard() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-sm font-semibold">Category breakdown</h2>
+                <div className="text-[10px] uppercase tracking-[0.22em] text-gold font-semibold mb-0.5">Portfolio mix</div>
+                <h2 className="serif text-xl font-medium tracking-tight">Category breakdown</h2>
                 <p className="text-xs text-muted-foreground">Market value by type</p>
               </div>
             </div>
@@ -273,7 +284,8 @@ export default function Dashboard() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-sm font-semibold">Franchise value</h2>
+                <div className="text-[10px] uppercase tracking-[0.22em] text-gold font-semibold mb-0.5">Franchise performance</div>
+                <h2 className="serif text-xl font-medium tracking-tight">Franchise value</h2>
                 <p className="text-xs text-muted-foreground">Cost vs. market value per franchise</p>
               </div>
             </div>
@@ -313,7 +325,10 @@ export default function Dashboard() {
       {/* Franchise cards */}
       <div className="mb-6">
         <div className="flex items-end justify-between mb-3">
-          <h2 className="text-sm font-semibold">By franchise</h2>
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.22em] text-gold font-semibold mb-0.5">Portfolio detail</div>
+            <h2 className="serif text-xl font-medium tracking-tight">By franchise</h2>
+          </div>
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
             {franchiseStats.length} total
           </span>
@@ -356,7 +371,8 @@ export default function Dashboard() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-sm font-semibold">Top 5 by market value</h2>
+                <div className="text-[10px] uppercase tracking-[0.22em] text-gold font-semibold mb-0.5">Featured holdings</div>
+                <h2 className="serif text-xl font-medium tracking-tight">Top 5 by market value</h2>
                 <p className="text-xs text-muted-foreground">Most valuable active holdings</p>
               </div>
             </div>
@@ -399,7 +415,8 @@ export default function Dashboard() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-sm font-semibold">Recent activity</h2>
+                <div className="text-[10px] uppercase tracking-[0.22em] text-gold font-semibold mb-0.5">Ledger</div>
+                <h2 className="serif text-xl font-medium tracking-tight">Recent activity</h2>
                 <p className="text-xs text-muted-foreground">Last 10 transactions</p>
               </div>
             </div>
