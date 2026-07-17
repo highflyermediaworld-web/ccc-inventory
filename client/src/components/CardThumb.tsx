@@ -41,7 +41,6 @@ export function CardThumb({
 }) {
   // If a wrapping className already sets h-*/w-*, we don't want CardThumb to
   // force its own aspect box (which introduces whitespace inside the frame).
-  // Sniff for a caller-provided sizer to opt into "fill parent" mode.
   const callerControlsSize = /\b(h-full|w-full|h-\[|w-\[|aspect-)/.test(className);
   const dims = callerControlsSize
     ? ""
@@ -49,18 +48,46 @@ export function CardThumb({
       ? "w-10 h-14"
       : "w-full aspect-[5/7] max-w-[280px]";
   const resolved = resolveUploadUrl(imageUrl);
-  // Fill-the-frame everywhere for a tight, editorial layout — no negative
-  // space around product photos. Callers who need contain can pass
-  // object-contain in className to override.
-  const fit = "object-cover object-center";
+
   if (resolved) {
+    // sm (list thumbnails) — keep the crisp uniform look with object-cover.
+    if (size === "sm") {
+      return (
+        <img
+          src={resolved}
+          alt={alt ?? "Card"}
+          loading="lazy"
+          className={`${dims} object-cover object-center block ${className}`}
+        />
+      );
+    }
+    // lg (product cards, detail views) — SHOW THE WHOLE PRODUCT (object-contain)
+    // but eliminate visible negative space by filling padding with a blurred,
+    // scaled-up copy of the same image. This is the Apple/Shopify/Bloomberg
+    // "seamless frame" technique: the product is never cropped, yet the
+    // container never shows an empty background color.
     return (
-      <img
-        src={resolved}
-        alt={alt ?? "Card"}
-        loading="lazy"
-        className={`${dims} ${fit} block ${className}`}
-      />
+      <div
+        className={`relative overflow-hidden ${dims} ${className}`}
+        aria-label={alt ?? "Product"}
+      >
+        {/* Blurred backdrop — fills the frame edge-to-edge */}
+        <img
+          src={resolved}
+          aria-hidden
+          loading="lazy"
+          className="absolute inset-0 h-full w-full object-cover scale-125 blur-2xl opacity-70"
+        />
+        {/* Subtle dark overlay so the sharp image on top stays readable */}
+        <div className="absolute inset-0 bg-black/25" />
+        {/* Sharp product photo — full item always visible, never cropped */}
+        <img
+          src={resolved}
+          alt={alt ?? "Card"}
+          loading="lazy"
+          className="absolute inset-0 h-full w-full object-contain object-center p-1"
+        />
+      </div>
     );
   }
   return (
