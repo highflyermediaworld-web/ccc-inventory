@@ -121,6 +121,7 @@ export default function ShopPage() {
   );
 
   const stats = useMemo(() => {
+    const empty = listings.length === 0;
     const totalQty = listings.reduce((sum, l) => sum + (l.qty || 0), 0);
     const franchises = new Set(
       listings
@@ -135,10 +136,10 @@ export default function ShopPage() {
       return `${n}`;
     };
     return {
-      totalQtyLabel: fmt(totalQty),
-      franchisesLabel: `${franchises.size}`,
-      sealedLabel: fmt(sealedCount),
-      slabLabel: fmt(slabCount),
+      totalQtyLabel: empty ? "\u2014" : fmt(totalQty),
+      franchisesLabel: empty ? "\u2014" : `${franchises.size}`,
+      sealedLabel: empty ? "\u2014" : fmt(sealedCount),
+      slabLabel: empty ? "\u2014" : fmt(slabCount),
       totalQty,
       franchiseCount: franchises.size,
       sealedCount,
