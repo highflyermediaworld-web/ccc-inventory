@@ -26,6 +26,8 @@ import { CategoryBadge, FranchiseBadge } from "@/components/Badges";
 import { SocialLinks, BRAND_HANDLE, TIKTOK_URL, INSTAGRAM_URL } from "@/components/SocialLinks";
 import { LiveStreamBanner } from "@/components/LiveStreamBanner";
 import { formatCurrency } from "@/lib/format";
+import { useAuth } from "@/lib/auth";
+import { LayoutDashboard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { SiTiktok, SiInstagram } from "react-icons/si";
@@ -76,6 +78,10 @@ const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG", "PSA 10", "PSA 9", "PSA 8", "
 
 // ---------- Page ----------
 export default function ShopPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const isSignedIn = !!user;
+
   const { data: listings = [], isLoading } = useQuery<ShopListing[]>({
     queryKey: ["/api/shop/listings"],
   });
@@ -223,6 +229,24 @@ export default function ShopPage() {
             >
               <SiInstagram className="h-4 w-4" />
             </a>
+            {isAdmin ? (
+              <a
+                href="#/admin"
+                data-testid="link-nav-admin"
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border border-[hsl(var(--brand-gold)/0.55)] bg-[hsl(var(--brand-gold)/0.10)] text-[hsl(var(--brand-aubergine))] text-sm font-semibold hover:bg-[hsl(var(--brand-gold)/0.18)] transition-colors"
+              >
+                <LayoutDashboard className="h-4 w-4 text-gold" />
+                <span className="hidden sm:inline">Admin</span>
+              </a>
+            ) : !isSignedIn ? (
+              <a
+                href="#/login?next=/admin"
+                data-testid="link-nav-signin"
+                className="hidden sm:inline-flex items-center h-9 px-3 rounded-full text-[hsl(var(--brand-aubergine))]/70 text-sm font-medium hover:text-[hsl(var(--brand-aubergine))] transition-colors"
+              >
+                Owner sign in
+              </a>
+            ) : null}
             <Button
               size="sm"
               onClick={scrollToListings}
