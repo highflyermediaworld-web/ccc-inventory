@@ -123,6 +123,7 @@ export default function UsersPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow="Access"
         title="Admin Users"
         description="Add or remove people who can sign in to the admin app."
         actions={
@@ -210,12 +211,12 @@ export default function UsersPage() {
       <div className="rounded-lg border bg-card">
         <table className="w-full text-sm">
           <thead className="text-left text-muted-foreground border-b">
-            <tr>
-              <th className="px-4 py-3 font-medium">Username</th>
-              <th className="px-4 py-3 font-medium">Email</th>
-              <th className="px-4 py-3 font-medium">Role</th>
-              <th className="px-4 py-3 font-medium">Created</th>
-              <th className="px-4 py-3 font-medium text-right">Actions</th>
+            <tr className="text-[10px] uppercase tracking-[0.18em] font-semibold">
+              <th className="px-4 py-3">Username</th>
+              <th className="px-4 py-3">Email</th>
+              <th className="px-4 py-3">Role</th>
+              <th className="px-4 py-3">Created</th>
+              <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>

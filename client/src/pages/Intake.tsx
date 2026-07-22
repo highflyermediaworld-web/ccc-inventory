@@ -388,7 +388,7 @@ export default function IntakePage() {
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
                     Market value
                   </div>
-                  <div className="text-lg font-bold font-anime-alt text-primary tabular-nums">
+                  <div className="text-lg font-bold serif text-primary tabular-nums">
                     {formatCurrency(totalMarketValue)}
                   </div>
                 </div>

@@ -161,9 +161,10 @@ export default function AutoImportPage() {
         <CardContent className="p-6 space-y-4">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
+              <FileSpreadsheet className="h-5 w-5 text-gold" />
               <div>
-                <div className="font-medium">Auto-import schedule</div>
+                <div className="text-[10px] uppercase tracking-[0.22em] text-gold font-semibold mb-0.5">Schedule</div>
+                <div className="serif text-xl font-medium tracking-tight">Auto-import schedule</div>
                 <div className="text-sm text-muted-foreground">
                   {s?.enabled
                     ? `Running every ${s.intervalMin} minutes`
@@ -234,7 +235,10 @@ export default function AutoImportPage() {
       <Card>
         <CardContent className="p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <div className="font-medium">Last run</div>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.22em] text-gold font-semibold mb-0.5">Status</div>
+              <div className="serif text-xl font-medium tracking-tight">Last run</div>
+            </div>
             {s?.lastRunOk === true && (
               <Badge variant="secondary" className="gap-1">
                 <CheckCircle2 className="h-3 w-3" /> Success

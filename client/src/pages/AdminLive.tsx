@@ -96,8 +96,9 @@ export default function AdminLive() {
       {!isLoading && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Radio className="h-4 w-4 text-primary" /> Go live
+            <div className="text-[10px] uppercase tracking-[0.22em] text-gold font-semibold">Broadcast</div>
+            <CardTitle className="serif text-xl font-medium tracking-tight flex items-center gap-2">
+              <Radio className="h-4 w-4 text-gold" /> Go live
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -182,7 +183,8 @@ export default function AdminLive() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Preview</CardTitle>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-gold font-semibold">Storefront</div>
+          <CardTitle className="serif text-xl font-medium tracking-tight">Preview</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-xs text-muted-foreground mb-4">

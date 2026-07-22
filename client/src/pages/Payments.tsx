@@ -190,9 +190,12 @@ function SellTab() {
         <Card>
           <CardContent className="p-4 md:p-5">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-anime-alt text-base font-bold">
-                Cart ({cart.length})
-              </h3>
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.22em] text-gold font-semibold mb-0.5">Session</div>
+                <h3 className="serif text-xl font-medium tracking-tight">
+                  Cart ({cart.length})
+                </h3>
+              </div>
               <div className="flex items-center gap-2">
                 <Button
                   size="sm"
@@ -435,10 +438,10 @@ function SellTab() {
                 </div>
               )}
               <div className="flex items-center justify-between pt-1.5 border-t border-border">
-                <span className="font-anime-alt text-base font-bold">
+                <span className="serif text-base font-bold">
                   TOTAL
                 </span>
-                <span className="font-anime-alt text-2xl font-bold text-primary tabular-nums">
+                <span className="serif text-2xl font-bold text-primary tabular-nums">
                   {formatCurrency(total)}
                 </span>
               </div>
@@ -691,10 +694,10 @@ function TradeTab() {
           <CardContent className="p-4 md:p-5">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                <div className="text-[10px] uppercase tracking-[0.22em] text-gold font-semibold">
                   They give you
                 </div>
-                <h3 className="font-anime-alt text-base font-bold">
+                <h3 className="serif text-xl font-medium tracking-tight">
                   Trade-in side
                 </h3>
               </div>
@@ -838,7 +841,7 @@ function TradeTab() {
               <span className="text-xs uppercase tracking-wider text-muted-foreground">
                 Their total
               </span>
-              <span className="font-anime-alt text-xl font-bold tabular-nums">
+              <span className="serif text-xl font-bold tabular-nums">
                 {formatCurrency(theirValue)}
               </span>
             </div>
@@ -850,10 +853,10 @@ function TradeTab() {
           <CardContent className="p-4 md:p-5">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                <div className="text-[10px] uppercase tracking-[0.22em] text-gold font-semibold">
                   You give them
                 </div>
-                <h3 className="font-anime-alt text-base font-bold">
+                <h3 className="serif text-xl font-medium tracking-tight">
                   Trade-out side
                 </h3>
               </div>
@@ -973,7 +976,7 @@ function TradeTab() {
               <span className="text-xs uppercase tracking-wider text-muted-foreground">
                 Your total
               </span>
-              <span className="font-anime-alt text-xl font-bold tabular-nums">
+              <span className="serif text-xl font-bold tabular-nums">
                 {formatCurrency(ourValue)}
               </span>
             </div>
@@ -990,11 +993,11 @@ function TradeTab() {
                 Balance
               </div>
               {bootDirection === "none" ? (
-                <div className="text-2xl font-anime-alt font-bold">
+                <div className="text-2xl serif font-bold">
                   Even trade
                 </div>
               ) : (
-                <div className="text-2xl font-anime-alt font-bold">
+                <div className="text-2xl serif font-bold">
                   <span
                     className={cn(
                       bootDirection === "in"

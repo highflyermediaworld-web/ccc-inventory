@@ -57,21 +57,43 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen w-full flex items-center justify-center bg-background px-4 relative overflow-hidden">
+      {/* Ambient gold glow behind the card */}
+      <div
+        aria-hidden
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(600px 400px at 50% 40%, hsl(var(--brand-gold) / 0.08), transparent 70%)",
+        }}
+      />
+      <div className="w-full max-w-sm relative">
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-6"
+          className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground hover:text-gold-bright font-semibold mb-6"
           data-testid="link-back-to-shop"
         >
           <ArrowLeft className="h-3.5 w-3.5" /> Back to shop
         </Link>
 
-        <div className="rounded-xl border border-border bg-card p-6 sm:p-8 shadow-sm">
-          <div className="flex items-center justify-center mb-4">
-            <Logo size={32} />
+        <div
+          className="border border-border bg-card p-6 sm:p-8"
+          style={{
+            borderTop: "1px solid hsl(var(--brand-gold) / 0.6)",
+            boxShadow:
+              "0 1px 0 hsl(var(--brand-gold) / 0.25), 0 24px 48px -20px hsl(var(--brand-aubergine) / 0.6)",
+          }}
+        >
+          <div className="flex items-center justify-center mb-5">
+            <Logo size={36} />
           </div>
-          <h1 className="text-xl font-bold text-center mb-1" data-testid="heading-login">
+          <div className="text-[10px] uppercase tracking-[0.24em] text-gold font-semibold text-center mb-1">
+            Owner Portal
+          </div>
+          <h1
+            className="serif text-3xl font-medium tracking-tight text-center leading-none mb-2"
+            data-testid="heading-login"
+          >
             Sign in
           </h1>
           <p className="text-xs text-muted-foreground text-center mb-6">
