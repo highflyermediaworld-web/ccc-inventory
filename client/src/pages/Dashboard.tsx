@@ -451,10 +451,10 @@ export default function Dashboard() {
                     <div
                       className={`shrink-0 w-10 text-[10px] font-bold text-center uppercase tracking-wider rounded-sm py-1 ${
                         t.type === "Buy"
-                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                          ? "bg-emerald-500/20 text-emerald-800 dark:bg-emerald-400/25 dark:text-emerald-100"
                           : t.type === "Sell"
-                          ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
-                          : "bg-violet-500/15 text-violet-700 dark:text-violet-300"
+                          ? "bg-rose-500/20 text-rose-800 dark:bg-rose-400/25 dark:text-rose-100"
+                          : "bg-violet-500/20 text-violet-800 dark:bg-violet-400/25 dark:text-violet-100"
                       }`}
                     >
                       {t.type}

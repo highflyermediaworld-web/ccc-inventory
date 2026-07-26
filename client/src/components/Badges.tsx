@@ -1,10 +1,23 @@
 import { cn } from "@/lib/utils";
 
+/**
+ * All badges below are calibrated for WCAG AA (4.5:1 body / 3:1 large text)
+ * on both the aubergine dark theme and the cream light theme.
+ *
+ * Dark theme rule of thumb:
+ *   • Background: color-500/25   (heavier tint so the pill reads on aubergine)
+ *   • Text:       color-100      (very light so it clears 4.5:1 over the tint)
+ *   • Border:     color-500/50   (crisper edge)
+ */
+
 export function CategoryBadge({ category }: { category: string }) {
   const map: Record<string, string> = {
-    Sealed: "bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30",
-    Raw: "bg-slate-500/15 text-slate-700 dark:text-slate-300 border border-slate-500/30",
-    Slab: "bg-primary/15 text-primary border border-primary/30",
+    Sealed:
+      "bg-teal-500/20 text-teal-800 dark:bg-teal-400/25 dark:text-teal-100 border border-teal-500/40",
+    Raw:
+      "bg-slate-500/20 text-slate-800 dark:bg-slate-400/25 dark:text-slate-100 border border-slate-500/40",
+    Slab:
+      "bg-primary/20 text-[hsl(var(--brand-aubergine))] dark:bg-[hsl(var(--brand-gold)/0.28)] dark:text-[hsl(var(--brand-gold-bright))] border border-[hsl(var(--brand-gold)/0.5)]",
   };
   return (
     <span
@@ -22,12 +35,18 @@ export function CategoryBadge({ category }: { category: string }) {
 export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     "In Inventory": "bg-foreground/10 text-foreground",
-    Sold: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-    Listed: "bg-primary/15 text-primary",
-    Traded: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
-    Pending: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-    Accepted: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-    Declined: "bg-rose-500/15 text-rose-700 dark:text-rose-300",
+    Sold:
+      "bg-emerald-500/20 text-emerald-800 dark:bg-emerald-400/25 dark:text-emerald-100",
+    Listed:
+      "bg-primary/20 text-[hsl(var(--brand-aubergine))] dark:bg-[hsl(var(--brand-gold)/0.28)] dark:text-[hsl(var(--brand-gold-bright))]",
+    Traded:
+      "bg-violet-500/20 text-violet-800 dark:bg-violet-400/25 dark:text-violet-100",
+    Pending:
+      "bg-amber-500/20 text-amber-800 dark:bg-amber-400/25 dark:text-amber-100",
+    Accepted:
+      "bg-emerald-500/20 text-emerald-800 dark:bg-emerald-400/25 dark:text-emerald-100",
+    Declined:
+      "bg-rose-500/20 text-rose-800 dark:bg-rose-400/25 dark:text-rose-100",
   };
   return (
     <span

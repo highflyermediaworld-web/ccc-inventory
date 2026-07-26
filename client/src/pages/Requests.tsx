@@ -157,8 +157,8 @@ export default function RequestsPage() {
 function RequestCard({ req, onClick }: { req: RequestRow; onClick: () => void }) {
   const typeBadge =
     req.type === "Buy"
-      ? "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30"
-      : "bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-500/30";
+      ? "bg-blue-500/20 text-blue-800 dark:bg-blue-400/25 dark:text-blue-100 border-blue-500/40"
+      : "bg-violet-500/20 text-violet-800 dark:bg-violet-400/25 dark:text-violet-100 border-violet-500/40";
   return (
     <button
       onClick={onClick}

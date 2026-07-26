@@ -180,12 +180,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           )}
 
           <div className="px-3 pt-2 pb-1 flex items-center justify-between">
-            <span className="text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/40">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/70">
               @cpulls.cards
             </span>
             <SocialLinks size="sm" variant="ghost" />
           </div>
-          <div className="px-3 py-2 flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/40">
+          <div className="px-3 py-2 flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/70">
             <span>v1.0 · Collector</span>
             <ConnectionDot />
           </div>
@@ -284,7 +284,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             )}
             <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/40">
+              <span className="text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/70">
                 @cpulls.cards
               </span>
               <SocialLinks size="sm" variant="ghost" />
