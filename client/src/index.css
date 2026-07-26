@@ -289,6 +289,28 @@
   color: hsl(var(--brand-aubergine));
 }
 
+/* Force aubergine text inside cream bands regardless of dark mode
+   (fixes cream-on-cream headings and dim body copy) */
+.eb-band-cream h1, .eb-band-cream h2, .eb-band-cream h3,
+.eb-band-cream h4, .eb-band-cream h5, .eb-band-cream h6,
+.eb-band-cream-2 h1, .eb-band-cream-2 h2, .eb-band-cream-2 h3,
+.eb-band-cream-2 h4, .eb-band-cream-2 h5, .eb-band-cream-2 h6 {
+  color: hsl(var(--brand-aubergine)) !important;
+}
+.eb-band-cream p, .eb-band-cream li,
+.eb-band-cream-2 p, .eb-band-cream-2 li {
+  color: hsl(283 44% 15% / 0.78);
+}
+.eb-band-cream .eb-section-header p,
+.eb-band-cream-2 .eb-section-header p {
+  color: hsl(283 44% 15% / 0.72) !important;
+}
+/* Eyebrow on cream needs a deeper gold for WCAG AA on cream backgrounds */
+.eb-band-cream .eb-eyebrow,
+.eb-band-cream-2 .eb-eyebrow {
+  color: hsl(40 92% 26%) !important; /* ~#805d06, ~5.4:1 on cream */
+}
+
 /* Gold eyebrow — small uppercase label above serif titles */
 .eb-eyebrow {
   display: inline-block;
@@ -367,11 +389,22 @@
 .eb-section-header p {
   color: hsl(var(--muted-foreground));
   max-width: 60ch;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 /* Gold accent utilities */
 .text-gold { color: hsl(var(--brand-gold-deep)); }
 .text-gold-bright { color: hsl(var(--brand-gold-bright)); }
+
+/* When .text-gold sits directly on cream (sticky nav / cream cards),
+   force a deeper gold that clears WCAG AA on cream (#f8f4ec). */
+.eb-band-cream .text-gold,
+.eb-band-cream-2 .text-gold,
+header.sticky .text-gold,
+[class*="bg-[hsl(var(--brand-cream)"] .text-gold {
+  color: hsl(40 92% 26%) !important; /* ~#805d06 – 5.4:1 on cream */
+}
 .bg-gold { background-color: hsl(var(--brand-gold-bright)); }
 .border-gold { border-color: hsl(var(--brand-gold)); }
 .ring-gold:focus, .ring-gold:focus-visible {
