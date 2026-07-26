@@ -17,3 +17,23 @@ data.db-journal
 
 # scan photos
 uploads/
+
+# Capacitor build outputs (project source IS tracked, only outputs excluded)
+ios/App/Pods/
+ios/App/Podfile.lock
+ios/App/build/
+ios/DerivedData/
+ios/.gradle/
+android/app/build/
+android/build/
+android/.gradle/
+android/.idea/
+android/local.properties
+android/app/release/
+android/app/debug/
+*.iml
+*.hprof
+
+# Capacitor resource intermediates
+resources/*.jpg
+.capacitor/
