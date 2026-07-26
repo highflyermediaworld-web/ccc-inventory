@@ -413,12 +413,12 @@ export default function ShopPage() {
             ].map(({ Icon, title, body }) => (
               <div key={title} className="eb-card p-6">
                 <div className="h-11 w-11 rounded-full bg-[hsl(var(--brand-gold)/0.14)] flex items-center justify-center mb-4">
-                  <Icon className="h-5 w-5 text-gold" />
+                  <Icon className="h-5 w-5 text-gold-bright" />
                 </div>
-                <h3 className="serif text-xl font-semibold text-[hsl(var(--brand-aubergine))] mb-2">
+                <h3 className="serif text-xl font-semibold mb-2">
                   {title}
                 </h3>
-                <p className="text-sm text-[hsl(var(--muted-foreground))] leading-relaxed">{body}</p>
+                <p className="text-sm leading-relaxed">{body}</p>
               </div>
             ))}
           </div>
@@ -482,13 +482,13 @@ export default function ShopPage() {
                 key={t.name}
                 className="eb-card p-6 flex flex-col"
               >
-                <Quote className="h-6 w-6 text-gold mb-3" />
-                <blockquote className="text-[15px] leading-relaxed text-[hsl(var(--foreground))] flex-1">
+                <Quote className="h-6 w-6 text-gold-bright mb-3" />
+                <blockquote className="text-[15px] leading-relaxed flex-1">
                   “{t.quote}”
                 </blockquote>
-                <figcaption className="mt-5 pt-4 border-t border-[hsl(var(--border))]">
-                  <div className="serif font-semibold text-[hsl(var(--brand-aubergine))]">{t.name}</div>
-                  <div className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">{t.role}</div>
+                <figcaption className="mt-5 pt-4 border-t border-[hsl(var(--brand-cream)/0.15)]">
+                  <div className="serif font-semibold">{t.name}</div>
+                  <div className="text-xs opacity-75 mt-0.5">{t.role}</div>
                 </figcaption>
               </figure>
             ))}

@@ -290,25 +290,50 @@
 }
 
 /* Force aubergine text inside cream bands regardless of dark mode
-   (fixes cream-on-cream headings and dim body copy) */
-.eb-band-cream h1, .eb-band-cream h2, .eb-band-cream h3,
-.eb-band-cream h4, .eb-band-cream h5, .eb-band-cream h6,
-.eb-band-cream-2 h1, .eb-band-cream-2 h2, .eb-band-cream-2 h3,
-.eb-band-cream-2 h4, .eb-band-cream-2 h5, .eb-band-cream-2 h6 {
+   (fixes cream-on-cream headings and dim body copy).
+   Scoped to direct section chrome only — .eb-card children opt out
+   because cards have their own aubergine background + cream text. */
+.eb-band-cream .eb-section-header h1,
+.eb-band-cream .eb-section-header h2,
+.eb-band-cream .eb-section-header h3,
+.eb-band-cream .eb-section-header h4,
+.eb-band-cream-2 .eb-section-header h1,
+.eb-band-cream-2 .eb-section-header h2,
+.eb-band-cream-2 .eb-section-header h3,
+.eb-band-cream-2 .eb-section-header h4 {
   color: hsl(var(--brand-aubergine)) !important;
-}
-.eb-band-cream p, .eb-band-cream li,
-.eb-band-cream-2 p, .eb-band-cream-2 li {
-  color: hsl(283 44% 15% / 0.78);
 }
 .eb-band-cream .eb-section-header p,
 .eb-band-cream-2 .eb-section-header p {
-  color: hsl(283 44% 15% / 0.72) !important;
+  color: hsl(283 44% 15% / 0.75) !important;
 }
 /* Eyebrow on cream needs a deeper gold for WCAG AA on cream backgrounds */
 .eb-band-cream .eb-eyebrow,
 .eb-band-cream-2 .eb-eyebrow {
   color: hsl(40 92% 26%) !important; /* ~#805d06, ~5.4:1 on cream */
+}
+
+/* Cards inside cream bands — give them explicit cream text so the
+   .eb-band-cream inherited aubergine color doesn't leak into card copy. */
+.eb-band-cream .eb-card,
+.eb-band-cream-2 .eb-card {
+  color: hsl(var(--brand-cream));
+}
+.eb-band-cream .eb-card h1,
+.eb-band-cream .eb-card h2,
+.eb-band-cream .eb-card h3,
+.eb-band-cream .eb-card h4,
+.eb-band-cream-2 .eb-card h1,
+.eb-band-cream-2 .eb-card h2,
+.eb-band-cream-2 .eb-card h3,
+.eb-band-cream-2 .eb-card h4 {
+  color: hsl(var(--brand-cream)) !important;
+}
+.eb-band-cream .eb-card p,
+.eb-band-cream .eb-card li,
+.eb-band-cream-2 .eb-card p,
+.eb-band-cream-2 .eb-card li {
+  color: hsl(var(--brand-cream) / 0.82) !important;
 }
 
 /* Gold eyebrow — small uppercase label above serif titles */
