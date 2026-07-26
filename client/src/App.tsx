@@ -9,6 +9,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { AppLayout } from "@/components/AppLayout";
 import { AuthProvider } from "@/lib/auth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { InstallPrompt } from "@/components/InstallPrompt";
 import { useRealtime } from "@/lib/realtime";
 import Dashboard from "@/pages/Dashboard";
 import Inventory from "@/pages/Inventory";
@@ -91,6 +92,7 @@ function App() {
         <AuthProvider>
           <TooltipProvider>
             <Toaster />
+            <InstallPrompt />
             <Router hook={useHashLocation}>
               <AppRouter />
             </Router>
