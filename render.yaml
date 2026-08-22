@@ -14,13 +14,13 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: ADMIN_USERNAME
-        value: Cpullscards
+        sync: false
       - key: ADMIN_PASSWORD
-        value: cpulls2026
+        sync: false
       - key: ADMIN_INVITE_CODE
         sync: false
       - key: AUTO_IMPORT_URL
-        value: https://docs.google.com/spreadsheets/d/1o01iG3cIHHTlHwCER2G1RmOCGN6LcYYuvFJ14RUkzB4/edit?usp=drivesdk
+        sync: false
       - key: AUTO_IMPORT_INTERVAL_MIN
         value: "30"
     disk:
