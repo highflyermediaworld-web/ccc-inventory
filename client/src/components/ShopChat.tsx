@@ -113,7 +113,7 @@ export function ShopChat() {
       {open && (
         <section id="pc-chat-panel" className="pc-chat" role="dialog" aria-label="Ask CPulls chat" data-testid="chat-panel">
           <header className="pc-chat-head">
-            <img src="/logo.jpeg" alt="" width={36} height={36} />
+            <img src="/logo-96.png" alt="" width={36} height={36} />
             <div className="min-w-0">
               <strong>Ask CPulls</strong>
               <span>Shop assistant · answers from the vault, FAQ and show list</span>

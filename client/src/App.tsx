@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Switch, Route, Router, useLocation } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
@@ -6,29 +6,23 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { AppLayout } from "@/components/AppLayout";
 import { AuthProvider } from "@/lib/auth";
-import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { useRealtime } from "@/lib/realtime";
-import Dashboard from "@/pages/Dashboard";
-import Inventory from "@/pages/Inventory";
-import Marketplace from "@/pages/Marketplace";
-import Trades from "@/pages/Trades";
-import Transactions from "@/pages/Transactions";
-import Scan from "@/pages/Scan";
 import Shop from "@/pages/Shop";
 import { FaqPage, AboutPage } from "@/pages/Info";
-import ShopSettings from "@/pages/ShopSettings";
-import AboutSettings from "@/pages/AboutSettings";
-import SystemHealth from "@/pages/SystemHealth";
-import Requests from "@/pages/Requests";
-import Users from "@/pages/Users";
-import AutoImport from "@/pages/AutoImport";
-import AdminLive from "@/pages/AdminLive";
-import Intake from "@/pages/Intake";
-import Payments from "@/pages/Payments";
-import Login from "@/pages/Login";
-import Signup from "@/pages/Signup";
+
+// Admin, login and signup are split into their own chunks so the public
+// storefront only downloads what it needs.
+const AdminShell = lazy(() => import("./AdminApp"));
+const Login = lazy(() => import("@/pages/Login"));
+const Signup = lazy(() => import("@/pages/Signup"));
+
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center text-sm text-muted-foreground" aria-busy="true">
+      Loading…
+    </div>
+  );
+}
 import NotFound from "@/pages/not-found";
 
 // Redirects legacy /#/shop to the new home page at /#/.
@@ -40,34 +34,6 @@ function ShopRedirect() {
   return null;
 }
 
-// Admin shell: sidebar layout + protected admin routes.
-function AdminShell() {
-  useRealtime();
-  return (
-    <ProtectedRoute>
-      <AppLayout>
-        <Switch>
-          <Route path="/admin" component={Dashboard} />
-          <Route path="/admin/inventory" component={Inventory} />
-          <Route path="/admin/marketplace" component={Marketplace} />
-          <Route path="/admin/trades" component={Trades} />
-          <Route path="/admin/transactions" component={Transactions} />
-          <Route path="/admin/scan" component={Scan} />
-          <Route path="/admin/requests" component={Requests} />
-          <Route path="/admin/users" component={Users} />
-          <Route path="/admin/auto-import" component={AutoImport} />
-          <Route path="/admin/live" component={AdminLive} />
-          <Route path="/admin/intake" component={Intake} />
-          <Route path="/admin/payments" component={Payments} />
-          <Route path="/admin/shop-settings" component={ShopSettings} />
-          <Route path="/admin/about-page" component={AboutSettings} />
-          <Route path="/admin/system" component={SystemHealth} />
-          <Route component={NotFound} />
-        </Switch>
-      </AppLayout>
-    </ProtectedRoute>
-  );
-}
 
 function AppRouter() {
   const [location] = useLocation();
@@ -101,7 +67,9 @@ function App() {
           <TooltipProvider>
             <Toaster />
             <Router hook={useHashLocation}>
-              <AppRouter />
+              <Suspense fallback={<RouteFallback />}>
+                <AppRouter />
+              </Suspense>
             </Router>
           </TooltipProvider>
         </AuthProvider>

@@ -55,7 +55,7 @@ function InfoShell({ title, kicker, intro, children, current }: { title: ReactNo
         </div>
         <div className="pc-container h-[72px] flex items-center justify-between gap-4">
           <a href="#/" className="flex items-center gap-3 shrink-0" aria-label="CPulls Cards home">
-            <img src="/logo.jpeg" alt="" width={44} height={44} className="h-11 w-11 rounded-lg object-cover ring-1 ring-white/15" />
+            <img src="/logo-96.png" alt="" width={44} height={44} className="h-11 w-11 rounded-lg object-cover ring-1 ring-white/15" />
             <span className="pc-wordmark">CPulls<small>Cards</small></span>
           </a>
           <nav className="pc-nav flex items-center gap-0.5" aria-label="Site">
@@ -85,7 +85,7 @@ function InfoShell({ title, kicker, intro, children, current }: { title: ReactNo
         <div className="pc-container py-10 grid gap-8 md:grid-cols-[1.2fr_1fr_1fr]">
           <div>
             <div className="flex items-center gap-3">
-              <img src="/logo.jpeg" alt="" width={44} height={44} className="h-11 w-11 rounded-lg object-cover ring-1 ring-white/15" />
+              <img src="/logo-96.png" alt="" width={44} height={44} className="h-11 w-11 rounded-lg object-cover ring-1 ring-white/15" />
               <span className="pc-wordmark">CPulls<small>Cards</small></span>
             </div>
             <p className="mt-4 text-sm text-white/70 pc-body leading-relaxed max-w-sm">

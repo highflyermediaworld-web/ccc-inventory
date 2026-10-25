@@ -8,7 +8,7 @@ export function Logo({ size = 32, showText = true, className = "" }: LogoProps) 
   return (
     <div className={`flex items-center gap-2.5 ${className}`} data-testid="logo">
       <img
-        src="/logo.jpeg"
+        src="/logo-192.png"
         alt="Chris Collects Co logo"
         width={size}
         height={size}

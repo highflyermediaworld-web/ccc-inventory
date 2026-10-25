@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express, { Response, NextFunction } from 'express';
+import compression from 'compression';
 import type { Request } from 'express';
 import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
@@ -11,6 +12,7 @@ import { startAutoImport } from "./autoImport";
 import { startAutoPricing } from "./autoPricing";
 
 const app = express();
+app.use(compression());
 const httpServer = createServer(app);
 
 declare module "http" {
