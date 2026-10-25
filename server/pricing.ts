@@ -528,6 +528,8 @@ const SPELLING_CORRECTIONS: [RegExp, string][] = [
   [/\bGyrados\b/gi, "Gyarados"],
   [/\bGiratena\b/gi, "Giratina"],
   [/\bArceaus\b/gi, "Arceus"],
+  [/\bLatia's\b/gi, "Latias"],
+  [/\bLatio's\b/gi, "Latios"],
   [/\bDailga\b/gi, "Dialga"],
   [/\bPalika\b/gi, "Palkia"],
   [/\bSnorlex\b/gi, "Snorlax"],
@@ -572,6 +574,8 @@ export const SET_NAME_CORRECTIONS: [RegExp, string][] = [
   [/\bScarlet\s+Violet\s*-\s*151\b/gi, "Pokemon 151"],
   [/\bSv9\s*\(Korean\)/gi, "Journey Together"],
   [/\bSv09\b/gi, "Journey Together"],
+  [/\bAscended\s+Heros\b/gi, "Ascended Heroes"],
+  [/\bPhantasmal\s+Flame\b/gi, "Phantasmal Flames"],
 ];
 
 export function correctSetName(raw: string | null | undefined): string | null {
@@ -602,6 +606,8 @@ function expandProductName(rawName: string): string {
     [/\bETB\b/gi, "Elite Trainer Box"],
     [/\bBooster Bundle Display\b/gi, "Booster Bundle"],
     [/\bBooster Display\b/gi, "Booster Box"],
+    [/\bBooster Packs?\b/gi, "Booster Pack"],
+    [/\bSleeved Boosters?\b/gi, "Sleeved Booster Pack"],
     [/\bBB\b/gi, "Booster Box"],
     [/\bUPC\b/gi, "Ultra Premium Collection"],
     [/\bPC\b/gi, "Premium Collection"],
@@ -694,6 +700,32 @@ function matchScore(queryName: string, candidateName: string): number {
   return Math.max(queryCoverage, candidateCoverage);
 }
 
+// Full-string score for sealed product: every word counts (no stopwords), both
+// sides lowercased, set-code prefixes like "SV08:" ignored. Requires the query
+// to be fully covered by the candidate (so "Booster Pack" never matches a
+// "Booster Box"), then penalises extra candidate words lightly so the plain
+// product outranks "... Case" / "Code Card - ..." variants.
+function sealedMatchScore(queryFull: string, candFull: string): number {
+  const tok = (x: string) =>
+    new Set(
+      (x || "")
+        .toLowerCase()
+        .replace(/\b[a-z]{1,4}\d{1,3}(\.\d)?:/g, " ") // "sv08:", "me01:" set-code prefixes
+        .replace(/[^a-z0-9 ]+/g, " ")
+        .split(/\s+/)
+        .filter((t) => t.length >= 2 && !/^\d{4}$/.test(t) && t !== "pokemon" && t !== "tcg" && t !== "the")
+    );
+  const q = tok(queryFull);
+  const c = tok(candFull);
+  if (q.size === 0 || c.size === 0) return 0;
+  let hits = 0;
+  for (const t of q) if (c.has(t)) hits++;
+  const coverage = hits / q.size;
+  if (coverage < 1) return coverage * 0.6; // partial: never clears the 0.5 bar on its own
+  const extra = c.size - hits;
+  return Math.max(0.5, 1 - extra * 0.08);
+}
+
 // Returns true if the query and candidate share an exact card number like
 // "185/159". Card numbers uniquely identify a card within a set, so an exact
 // match is a strong signal that overrides low token overlap.
@@ -756,21 +788,40 @@ export async function findTcgplayerProductId(
             productLine.toLowerCase()
         )
       : items;
+    // Never cross game lines: a Pokémon item must not match a Dragon Ball or
+    // One Piece product just because the words overlap.
+    if (productLine && !lineFiltered.length) return null;
     const pool = lineFiltered.length ? lineFiltered : items;
 
     // Score every candidate by token overlap with the (expanded) name.
     // This prevents "Charizard VMAX" picking up Eternatus VMAX just because
     // it shares the same set + product type. Card-number match boosts score.
+    // Generic sealed names ("Booster Pack", "ETB", "Booster Bundle") lose every
+    // token to the stopword list, so name-only scoring returns 0 even when
+    // TCGplayer handed us the exact product. For those, score the full
+    // "set + product" string against the candidate's "set + product" string
+    // with no stopwords, so the set name and the product type both count.
+    const nameOnlyTokens = nameTokens(expandedName).size;
     const scored = pool.map((it: any) => {
       const candName = String(it?.productName || "");
+      const candSet = String(it?.setName || "");
       let score = matchScore(expandedName, candName);
+      const full = sealedMatchScore(
+        `${cleanSet || ""} ${expandedName}`,
+        `${candSet} ${candName}`
+      );
+      if (nameOnlyTokens === 0 || score < 0.5) {
+        score = Math.max(score, full);
+      }
       // Boost when the card number matches exactly (e.g. 185/159 == 185/159).
       if (sharesCardNumber(rawName, candName)) {
         score = Math.max(score, 0.9);
       }
-      return { item: it, score, candName };
+      return { item: it, score, full, candName };
     });
-    scored.sort((a, b) => b.score - a.score);
+    // Ties (e.g. "Booster Box" vs "Booster Box Case") go to the candidate whose
+    // full name is the closest fit, then to TCGplayer's own ranking.
+    scored.sort((a, b) => b.score - a.score || b.full - a.full);
     const best = scored[0];
     if (!best) return null;
 
@@ -1042,6 +1093,12 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
   const set = item.setName ?? null;
   const franchise = item.franchise;
 
+  // ---- Already matched on TCGplayer by the pricing pass? Use that product's image. ----
+  const knownId = Number((item as any).tcgpProductId);
+  if (Number.isFinite(knownId) && knownId > 0) {
+    return tcgplayerImageUrl(knownId);
+  }
+
   // ---- MTG ----
   if (franchise === "Magic The Gathering") {
     const r = await getScryfallPrice(rawName, set);
@@ -1091,9 +1148,15 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
 // batch plus the remaining work, so the client can loop. Each successful
 // lookup is persisted to the DB before the next iteration, so progress
 // survives server restarts.
+// Items we already searched for and couldn't match are retried at most once
+// per cooldown window (in-memory; a restart simply retries everything once).
+const imageAttemptAt = new Map<string, number>();
+const IMAGE_RETRY_COOLDOWN_MS = 12 * 60 * 60 * 1000;
+
 export async function fetchMissingImagesBatch(
   batchSize: number = 15,
-  offset: number = 0
+  offset: number = 0,
+  force: boolean = false
 ): Promise<{
   updated: number;
   skipped: number;
@@ -1105,9 +1168,15 @@ export async function fetchMissingImagesBatch(
   nextOffset: number;
 }> {
   const items = await storage.listInventory();
-  const allCandidates = items.filter(
-    (i) => !i.imageUrl && (i.status === "In Inventory" || i.status === "Listed")
-  );
+  const now = Date.now();
+  const allCandidates = items.filter((i) => {
+    if (i.imageUrl) return false;
+    if (!force) {
+      const last = imageAttemptAt.get(i.id);
+      if (last && now - last < IMAGE_RETRY_COOLDOWN_MS) return false;
+    }
+    return true;
+  });
   const startIdx = Math.max(0, Math.min(offset, allCandidates.length));
   const batch = allCandidates.slice(startIdx, startIdx + batchSize);
   let updated = 0;
@@ -1124,12 +1193,15 @@ export async function fetchMissingImagesBatch(
       ]);
       if (url) {
         await storage.updateInventory(item.id, { imageUrl: url } as any);
+        imageAttemptAt.delete(item.id);
         updated++;
       } else {
+        imageAttemptAt.set(item.id, Date.now());
         skipped++;
       }
     } catch (err) {
       console.error("[pricing] image fetch failed for", item.id, err);
+      imageAttemptAt.set(item.id, Date.now());
       failed++;
     }
     processed++;

@@ -909,7 +909,8 @@ export async function registerRoutes(
         parseInt(String((req.query.offset as string) ?? "0"), 10) || 0,
         0
       );
-      const result = await fetchMissingImagesBatch(batchSize, offset);
+      const force = String(req.query.force ?? "") === "1" || offset === 0;
+      const result = await fetchMissingImagesBatch(batchSize, offset, force);
       // Broadcast once per batch so the UI refreshes
       broadcast({ type: "inventory:bulk", payload: {} });
       res.json(result);
@@ -922,9 +923,7 @@ export async function registerRoutes(
   app.get("/api/inventory/fetch-missing-images/status", async (_req, res) => {
     try {
       const items = await storage.listInventory();
-      const candidates = items.filter(
-        (i) => !i.imageUrl && (i.status === "In Inventory" || i.status === "Listed")
-      );
+      const candidates = items.filter((i) => !i.imageUrl);
       const withImage = items.filter((i) => i.imageUrl).length;
       res.json({
         total: items.length,
