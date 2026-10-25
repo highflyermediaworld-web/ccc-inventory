@@ -8,7 +8,7 @@ interface PageHeaderProps {
 export function PageHeader({ eyebrow, title, description, actions }: PageHeaderProps) {
   return (
     <div className="relative flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between pb-5 mb-6">
-      <div className="space-y-1.5 min-w-0">
+      <div className="space-y-1.5 min-w-0 shrink-0 max-w-full">
         {eyebrow && (
           <div className="text-[10px] uppercase tracking-[0.24em] text-gold font-semibold">
             {eyebrow}
@@ -24,7 +24,7 @@ export function PageHeader({ eyebrow, title, description, actions }: PageHeaderP
           <p className="text-sm text-muted-foreground max-w-2xl pt-1">{description}</p>
         )}
       </div>
-      {actions && <div className="flex flex-wrap gap-2 shrink-0">{actions}</div>}
+      {actions && <div className="flex flex-wrap gap-2 sm:justify-end min-w-0">{actions}</div>}
       {/* subtle gold-to-transparent underline separator */}
       <div
         aria-hidden

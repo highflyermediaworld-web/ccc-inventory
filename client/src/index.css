@@ -3,98 +3,100 @@
 @tailwind utilities;
 
 /* =====================================================================
-   FORTUNE-500 REBRAND
-   Deep aubergine primary (#2a1638), champagne cream surfaces (#f8f4ec),
-   polished gold accents (#c9960a / #d4a428), Fraunces serif headings,
-   Inter body. Matches Montalvo Services / Enchanted Broom brand family.
+   CPULLS CARDS — ADMIN THEME
+   Matches the public storefront: black surfaces (#111114 / #17171b),
+   white type, CPulls red (#dc2626) for primary actions, storefront gold
+   (#f5a524) reserved for eyebrows and hairlines. Fraunces headings,
+   Inter body. Squared-off (2px radius), flat, strong contrast.
    ===================================================================== */
 
-/* LIGHT MODE — cream surfaces, aubergine primary, gold accent */
+/* LIGHT MODE — paper surfaces, ink text, red primary, black sidebar */
 :root {
-  --button-outline: rgba(42, 22, 56, 0.14);
-  --badge-outline: rgba(42, 22, 56, 0.08);
+  --button-outline: rgba(21, 21, 26, 0.14);
+  --badge-outline: rgba(21, 21, 26, 0.08);
   --opaque-button-border-intensity: -8;
-  --elevate-1: rgba(42, 22, 56, 0.05);
-  --elevate-2: rgba(42, 22, 56, 0.12);
+  --elevate-1: rgba(21, 21, 26, 0.05);
+  --elevate-2: rgba(21, 21, 26, 0.12);
 
-  /* Champagne cream #f8f4ec */
-  --background: 36 47% 95%;
-  /* Deep aubergine text #2a1638 */
-  --foreground: 283 44% 15%;
-  /* Warm cream border */
-  --border: 36 30% 86%;
+  /* Paper #f6f6f8 */
+  --background: 240 13% 97%;
+  /* Ink #15151a */
+  --foreground: 240 11% 9%;
+  --border: 240 11% 91%;
 
-  /* Card surface — pure cream #fdfaf5 */
-  --card: 36 50% 97%;
-  --card-foreground: 283 44% 15%;
-  --card-border: 36 30% 86%;
+  /* Card surface — white */
+  --card: 0 0% 100%;
+  --card-foreground: 240 11% 9%;
+  --card-border: 240 11% 91%;
 
-  /* Sidebar — deep aubergine on cream sidebars are heavy; keep aubergine chrome */
-  --sidebar: 283 44% 15%;
-  --sidebar-foreground: 36 47% 95%;
-  --sidebar-border: 283 30% 22%;
-  --sidebar-primary: 40 90% 42%;
-  --sidebar-primary-foreground: 283 44% 12%;
-  --sidebar-accent: 283 40% 20%;
-  --sidebar-accent-foreground: 36 47% 95%;
-  --sidebar-ring: 40 90% 42%;
+  /* Sidebar — storefront black chrome */
+  --sidebar: 240 8% 7%;
+  --sidebar-foreground: 0 0% 100%;
+  --sidebar-border: 240 6% 16%;
+  --sidebar-primary: 0 72% 51%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 240 6% 13%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-ring: 0 72% 51%;
 
-  --popover: 36 50% 97%;
-  --popover-foreground: 283 44% 15%;
-  --popover-border: 36 30% 86%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 11% 9%;
+  --popover-border: 240 11% 91%;
 
-  /* Primary = deep aubergine #2a1638 */
-  --primary: 283 44% 15%;
-  --primary-foreground: 36 47% 95%;
+  /* Primary = CPulls red #dc2626 */
+  --primary: 0 72% 51%;
+  --primary-foreground: 0 0% 100%;
 
-  /* Secondary = warm cream tint */
-  --secondary: 36 38% 92%;
-  --secondary-foreground: 283 44% 15%;
+  /* Secondary = light paper tint */
+  --secondary: 240 10% 93%;
+  --secondary-foreground: 240 11% 9%;
 
-  --muted: 36 32% 93%;
-  --muted-foreground: 283 15% 40%;
+  --muted: 240 10% 94%;
+  --muted-foreground: 240 5% 34%;
 
-  /* Accent = polished gold #c9960a */
-  --accent: 40 92% 42%;
-  --accent-foreground: 283 44% 12%;
+  /* Accent = black (ink) — red stays for actions */
+  --accent: 240 8% 7%;
+  --accent-foreground: 0 0% 100%;
 
-  --destructive: 0 65% 45%;
-  --destructive-foreground: 36 47% 95%;
+  --destructive: 0 74% 42%;
+  --destructive-foreground: 0 0% 100%;
 
-  --input: 36 25% 82%;
-  /* Gold focus ring */
-  --ring: 40 88% 45%;
+  --input: 240 8% 82%;
+  --ring: 0 72% 51%;
 
-  --chart-1: 283 44% 15%;
-  --chart-2: 40 90% 42%;
-  --chart-3: 152 40% 32%;
-  --chart-4: 24 60% 42%;
-  --chart-5: 283 20% 45%;
+  --chart-1: 0 72% 51%;
+  --chart-2: 240 8% 7%;
+  --chart-3: 142 71% 36%;
+  --chart-4: 38 91% 55%;
+  --chart-5: 240 5% 55%;
 
   --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
   --font-serif: Fraunces, Georgia, serif;
   --font-mono: Menlo, monospace;
   --radius: 2px;
-  --shadow-2xs: 0px 2px 0px 0px hsl(283 44% 15% / 0);
-  --shadow-xs: 0px 2px 0px 0px hsl(283 44% 15% / 0);
-  --shadow-sm: 0px 2px 4px -1px hsl(283 44% 15% / 0.05);
-  --shadow: 0px 2px 4px -1px hsl(283 44% 15% / 0.06);
-  --shadow-md: 0px 4px 8px -2px hsl(283 44% 15% / 0.08);
-  --shadow-lg: 0px 8px 20px -4px hsl(283 44% 15% / 0.10);
-  --shadow-xl: 0px 16px 32px -8px hsl(283 44% 15% / 0.12);
-  --shadow-2xl: 0px 24px 48px -12px hsl(283 44% 15% / 0.14);
+  --shadow-2xs: 0px 2px 0px 0px hsl(240 11% 9% / 0);
+  --shadow-xs: 0px 2px 0px 0px hsl(240 11% 9% / 0);
+  --shadow-sm: 0px 2px 4px -1px hsl(240 11% 9% / 0.05);
+  --shadow: 0px 2px 4px -1px hsl(240 11% 9% / 0.06);
+  --shadow-md: 0px 4px 8px -2px hsl(240 11% 9% / 0.08);
+  --shadow-lg: 0px 8px 20px -4px hsl(240 11% 9% / 0.10);
+  --shadow-xl: 0px 16px 32px -8px hsl(240 11% 9% / 0.12);
+  --shadow-2xl: 0px 24px 48px -12px hsl(240 11% 9% / 0.14);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
-  /* Brand tokens (used directly in .eb-* chrome classes) */
-  --brand-aubergine: 283 44% 15%;      /* #2a1638 */
-  --brand-aubergine-2: 283 42% 22%;    /* deeper section band */
-  --brand-cream: 36 47% 95%;           /* #f8f4ec */
-  --brand-cream-2: 36 38% 92%;         /* alternating band */
-  --brand-gold: 40 92% 42%;            /* #c9960a — CTA / eyebrow on cream */
-  --brand-gold-bright: 43 82% 49%;     /* #d4a428 — gold on dark surfaces */
-  --brand-gold-deep: 40 88% 32%;       /* #9a7208 — text on cream */
-  --brand-forest: 152 40% 22%;         /* optional forest section */
+  /* Brand tokens (names kept for the .eb-* chrome classes; values now map to
+     the storefront palette: "aubergine" = black, "cream" = white, "gold" = storefront gold) */
+  --brand-aubergine: 240 8% 7%;        /* #111114 storefront black */
+  --brand-aubergine-2: 240 10% 5%;     /* deeper band */
+  --brand-cream: 0 0% 100%;            /* #ffffff */
+  --brand-cream-2: 240 13% 97%;        /* #f6f6f8 paper */
+  --brand-gold: 38 91% 55%;            /* #f5a524 storefront gold — eyebrows / hairlines */
+  --brand-gold-bright: 38 91% 60%;     /* gold on dark surfaces */
+  --brand-gold-deep: 33 91% 44%;       /* #d4860a — gold text on paper */
+  --brand-red: 0 72% 51%;              /* #dc2626 */
+  --brand-red-2: 0 74% 42%;            /* #b91c1c */
+  --brand-forest: 142 71% 30%;
 
   /* Fallbacks (unchanged mechanics) */
   --sidebar-primary-border: hsl(var(--sidebar-primary));
@@ -127,57 +129,57 @@
   );
 }
 
-/* DARK MODE — aubergine surface, cream text, brighter gold */
+/* DARK MODE (default for the admin) — storefront black, white type, red actions */
 .dark {
-  --button-outline: rgba(248, 244, 236, 0.14);
-  --badge-outline: rgba(248, 244, 236, 0.08);
+  --button-outline: rgba(255, 255, 255, 0.14);
+  --badge-outline: rgba(255, 255, 255, 0.08);
   --opaque-button-border-intensity: 9;
-  --elevate-1: rgba(248, 244, 236, 0.05);
-  --elevate-2: rgba(248, 244, 236, 0.12);
+  --elevate-1: rgba(255, 255, 255, 0.05);
+  --elevate-2: rgba(255, 255, 255, 0.12);
 
-  --background: 283 40% 10%;
-  --foreground: 36 47% 95%;
-  --border: 283 30% 22%;
-  --card: 283 42% 14%;
-  --card-foreground: 36 47% 95%;
-  --card-border: 283 30% 22%;
+  --background: 240 8% 7%;            /* #111114 */
+  --foreground: 240 13% 97%;          /* #f6f6f8 */
+  --border: 240 6% 18%;
+  --card: 240 8% 10%;                 /* #17171b */
+  --card-foreground: 240 13% 97%;
+  --card-border: 240 6% 18%;
 
-  --sidebar: 283 44% 8%;
-  --sidebar-foreground: 36 47% 95%;
-  --sidebar-border: 283 30% 18%;
-  --sidebar-primary: 43 82% 55%;
-  --sidebar-primary-foreground: 283 44% 12%;
-  --sidebar-accent: 283 40% 16%;
-  --sidebar-accent-foreground: 36 47% 95%;
-  --sidebar-ring: 43 82% 55%;
+  --sidebar: 240 10% 5%;              /* #0c0c0e */
+  --sidebar-foreground: 240 13% 97%;
+  --sidebar-border: 240 6% 14%;
+  --sidebar-primary: 0 72% 51%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 240 6% 12%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-ring: 0 72% 51%;
 
-  --popover: 283 42% 14%;
-  --popover-foreground: 36 47% 95%;
-  --popover-border: 283 30% 22%;
+  --popover: 240 8% 10%;
+  --popover-foreground: 240 13% 97%;
+  --popover-border: 240 6% 18%;
 
-  --primary: 43 82% 55%;
-  --primary-foreground: 283 44% 12%;
+  --primary: 0 72% 51%;
+  --primary-foreground: 0 0% 100%;
 
-  --secondary: 283 35% 18%;
-  --secondary-foreground: 36 47% 95%;
+  --secondary: 240 6% 15%;
+  --secondary-foreground: 240 13% 97%;
 
-  --muted: 283 30% 16%;
-  --muted-foreground: 36 18% 68%;
+  --muted: 240 6% 14%;
+  --muted-foreground: 240 6% 72%;
 
-  --accent: 43 82% 55%;
-  --accent-foreground: 283 44% 12%;
+  --accent: 0 0% 100%;
+  --accent-foreground: 240 8% 7%;
 
-  --destructive: 0 70% 55%;
-  --destructive-foreground: 36 47% 95%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
 
-  --input: 283 25% 26%;
-  --ring: 43 82% 55%;
+  --input: 240 5% 24%;
+  --ring: 0 72% 51%;
 
-  --chart-1: 43 82% 55%;
-  --chart-2: 36 47% 88%;
-  --chart-3: 152 45% 50%;
-  --chart-4: 24 65% 55%;
-  --chart-5: 283 25% 65%;
+  --chart-1: 0 72% 51%;
+  --chart-2: 0 0% 92%;
+  --chart-3: 142 60% 45%;
+  --chart-4: 38 91% 55%;
+  --chart-5: 240 5% 55%;
 
   --shadow-2xs: 0px 2px 0px 0px hsl(0 0% 0% / 0);
   --shadow-xs: 0px 2px 0px 0px hsl(0 0% 0% / 0);
@@ -188,14 +190,16 @@
   --shadow-xl: 0px 16px 32px -8px hsl(0 0% 0% / 0.55);
   --shadow-2xl: 0px 24px 48px -12px hsl(0 0% 0% / 0.60);
 
-  --brand-aubergine: 283 42% 14%;
-  --brand-aubergine-2: 283 44% 8%;
-  --brand-cream: 36 47% 95%;
-  --brand-cream-2: 36 30% 88%;
-  --brand-gold: 43 82% 55%;
-  --brand-gold-bright: 43 82% 62%;
-  --brand-gold-deep: 40 78% 42%;
-  --brand-forest: 152 40% 28%;
+  --brand-aubergine: 240 8% 10%;
+  --brand-aubergine-2: 240 10% 5%;
+  --brand-cream: 240 13% 97%;
+  --brand-cream-2: 240 6% 88%;
+  --brand-gold: 38 91% 55%;
+  --brand-gold-bright: 38 91% 62%;
+  --brand-gold-deep: 33 91% 44%;
+  --brand-red: 0 72% 51%;
+  --brand-red-2: 0 74% 42%;
+  --brand-forest: 142 60% 32%;
 
   --sidebar-primary-border: hsl(var(--sidebar-primary));
   --sidebar-primary-border: hsl(
@@ -305,12 +309,12 @@
 }
 .eb-band-cream .eb-section-header p,
 .eb-band-cream-2 .eb-section-header p {
-  color: hsl(283 44% 15% / 0.75) !important;
+  color: hsl(240 11% 9% / 0.75) !important;
 }
 /* Eyebrow on cream needs a deeper gold for WCAG AA on cream backgrounds */
 .eb-band-cream .eb-eyebrow,
 .eb-band-cream-2 .eb-eyebrow {
-  color: hsl(40 92% 26%) !important; /* ~#805d06, ~5.4:1 on cream */
+  color: hsl(33 91% 30%) !important; /* deep gold, AA on paper */
 }
 
 /* Cards inside cream bands — give them explicit cream text so the
@@ -351,16 +355,16 @@
   color: hsl(var(--brand-gold-bright));
 }
 
-/* Gold CTA button (opt-in) */
+/* Primary CTA button (opt-in) — storefront red, white type. Class name kept for compatibility. */
 .eb-cta-gold {
-  background: hsl(var(--brand-gold-bright));
-  color: hsl(var(--brand-aubergine));
+  background: hsl(var(--brand-red));
+  color: #ffffff;
   font-weight: 600;
-  border: 1px solid hsl(var(--brand-gold));
+  border: 1px solid hsl(var(--brand-red-2));
 }
 .eb-cta-gold:hover {
-  background: hsl(var(--brand-gold));
-  color: hsl(var(--brand-aubergine));
+  background: hsl(var(--brand-red-2));
+  color: #ffffff;
 }
 
 /* Cream translucent glass nav (used on top bar / register / login) */
