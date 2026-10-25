@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { SHOWS as DEFAULT_SHOWS, splitShows, type CardShow } from "@/data/shows";
-import { Tent, Plus, Trash2, ArrowUp, ArrowDown, RotateCcw, Save, ExternalLink, Calculator, Radio } from "lucide-react";
+import { Tent, Plus, Trash2, ArrowUp, ArrowDown, RotateCcw, Save, ExternalLink, Calculator, Radio, BookUser, MessageSquare } from "lucide-react";
 import { Link } from "wouter";
 
 type ShowsResponse = { source: "default" | "settings"; shows: CardShow[] | null };
@@ -94,7 +94,7 @@ export default function ShopSettings() {
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Calculator className="size-4 text-gold" /> Sell &amp; Trade offers</CardTitle></CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-1">
@@ -108,6 +108,19 @@ export default function ShopSettings() {
           <CardContent className="text-sm text-muted-foreground">
             <p>Toggle the storefront Live banner and set the stream link.</p>
             <Link href="/admin/live" className="mt-2 inline-block text-primary font-semibold hover:underline" data-testid="link-live-settings">Open Live stream →</Link>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><BookUser className="size-4 text-gold" /> About page</CardTitle></CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            <p>Edit the story, quick facts and photo at #/about.</p>
+            <Link href="/admin/about-page" className="mt-2 inline-block text-primary font-semibold hover:underline" data-testid="link-about-settings">Open About page editor →</Link>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><MessageSquare className="size-4 text-gold" /> Ask CPulls chat</CardTitle></CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            <p>Storefront assistant answers from the FAQ, About story, shows and live inventory. Uses the same AI key as the scanner.</p>
           </CardContent>
         </Card>
         <Card>

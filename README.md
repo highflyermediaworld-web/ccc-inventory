@@ -77,6 +77,8 @@ The server listens on port 5000 (configurable via `PORT`).
 - **Pricing** — Per-item refresh and bulk "Refresh all" from Scryfall (MTG), TCGdex (Pokémon), with Claude fallback for other franchises. 1-hour in-memory cache and throttling.
 - **History** — Price history sparkline on every item, sourced from each successful refresh
 - **Exports** — XLSX export of inventory and transactions
+- **Storefront About page** — Admin → Storefront → About page edits the hero, story, photo, quick facts, values and closing call-out shown at `#/about`. Copy is stored in `app_settings` (`shop_about`); the photo is saved to `uploads/about/` on the persistent disk.
+- **Ask CPulls chat** — Floating assistant on the Shop, FAQ and About pages (`POST /api/shop/chat`). Answers are grounded in the FAQ, About story, published shows and live inventory, using the same AI key as the scanner. Rate-limited per IP; when no provider is reachable the widget says it is offline and points to the shop's DMs.
 
 ## Notes
 

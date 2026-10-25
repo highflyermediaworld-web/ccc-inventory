@@ -29,6 +29,7 @@ import {
   ExternalLink,
   Settings2,
   Activity,
+  BookUser,
 } from "lucide-react";
 import { roleLabel } from "@shared/roles";
 import { cn } from "@/lib/utils";
@@ -67,6 +68,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { path: "/admin/live", label: "Live stream", icon: Radio, testId: "nav-live" },
       { path: "/admin/shop-settings", label: "Shop settings", icon: Settings2, testId: "nav-shop-settings" },
+      { path: "/admin/about-page", label: "About page", icon: BookUser, testId: "nav-about-page" },
     ],
   },
   {

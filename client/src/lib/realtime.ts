@@ -92,6 +92,9 @@ function handleEvent(evt: Event) {
     case "shows:update":
       queryClient.invalidateQueries({ queryKey: ["/api/shop/shows"] });
       break;
+    case "about:update":
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/about"] });
+      break;
     case "live:update":
       queryClient.invalidateQueries({ queryKey: ["/api/live"] });
       break;

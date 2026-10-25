@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { CardThumb } from "@/components/CardThumb";
+import { ShopChat } from "@/components/ShopChat";
 import { BRAND_HANDLE, TIKTOK_URL, INSTAGRAM_URL } from "@/components/SocialLinks";
 import { resolveUploadUrl } from "@/lib/uploads";
 import { formatCurrency } from "@/lib/format";
@@ -1344,6 +1345,8 @@ export default function ShopPage() {
       {/* Dialogs */}
       {buyTarget && <BuyDialog listing={buyTarget} onOpenChange={(o) => !o && setBuyTarget(null)} />}
       {tradeTarget && <TradeDialog listing={tradeTarget} onOpenChange={(o) => !o && setTradeTarget(null)} />}
+
+      <ShopChat />
     </div>
   );
 }

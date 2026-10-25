@@ -1,4 +1,9 @@
 import { useEffect, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { API_BASE } from "@/lib/queryClient";
+import { resolveUploadUrl } from "@/lib/uploads";
+import { ShopChat } from "@/components/ShopChat";
+import { FAQ_GROUPS as FAQ_DATA, GAMES, CASH_PCT, TRADE_PCT, DEFAULT_ABOUT, mergeAbout, plainText, type AboutContent } from "@shared/storefront";
 import {
   ArrowRight,
   Award,
@@ -18,9 +23,6 @@ import "../shop.css";
 /* ------------------------------------------------------------------ */
 /*  Shared shell: compact storefront header + footer                   */
 /* ------------------------------------------------------------------ */
-
-const CASH_PCT = 70;
-const TRADE_PCT = 80;
 
 const LINKS: Array<{ label: string; href: string; testId: string }> = [
   { label: "Shop", href: "#/", testId: "info-nav-shop" },
@@ -116,133 +118,51 @@ function InfoShell({ title, kicker, intro, children, current }: { title: ReactNo
           <div className="pc-container py-4 text-xs text-white/60 pc-body">© {new Date().getFullYear()} CPulls Cards · Curated by a collector</div>
         </div>
       </footer>
+      <ShopChat />
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Rich text: **bold**, [label](url), {handle}                        */
+/* ------------------------------------------------------------------ */
+
+export function Rich({ text }: { text: string }) {
+  const src = text.replace(/\{handle\}/g, BRAND_HANDLE);
+  const parts: ReactNode[] = [];
+  const re = /\*\*(.+?)\*\*|\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let k = 0;
+  while ((m = re.exec(src))) {
+    if (m.index > last) parts.push(src.slice(last, m.index));
+    if (m[1] !== undefined) parts.push(<b key={k++}>{m[1]}</b>);
+    else parts.push(<a key={k++} href={m[3]} target="_blank" rel="noopener noreferrer">{m[2]}</a>);
+    last = m.index + m[0].length;
+  }
+  if (last < src.length) parts.push(src.slice(last));
+  return <>{parts}</>;
+}
+
+/** Hero headline: one *phrase* in asterisks renders gold. */
+function Headline({ text }: { text: string }) {
+  const m = /^([^*]*)\*([^*]+)\*([\s\S]*)$/.exec(text);
+  if (!m) return <>{text}</>;
+  return <>{m[1]}<em>{m[2]}</em>{m[3]}</>;
 }
 
 /* ------------------------------------------------------------------ */
 /*  FAQ                                                                */
 /* ------------------------------------------------------------------ */
 
-type Faq = { q: string; a: ReactNode; plain: string };
-type FaqGroup = { id: string; title: string; icon: typeof HandCoins; items: Faq[] };
-
-const FAQ_GROUPS: FaqGroup[] = [
-  {
-    id: "buying",
-    title: "Buying",
-    icon: ShieldCheck,
-    items: [
-      {
-        q: "How do I buy a card?",
-        plain: "Find the card in the vault, tap Buy, and leave your name and how you'd like to be contacted. Chris confirms the card is still in hand and reaches out, usually within 24 hours, to arrange payment and shipping.",
-        a: <>Find the card in the vault, tap <b>Buy</b>, and leave your name and how you'd like to be contacted. Chris confirms the card is still in hand and reaches out, usually within 24 hours, to arrange payment and shipping.</>,
-      },
-      {
-        q: "Are the photos the actual cards?",
-        plain: "Yes. What you see in the listing is the exact card that ships. Grades, edges and centering are inspected in hand before anything goes up.",
-        a: <>Yes. What you see in the listing is the exact card that ships. Grades, edges and centering are inspected in hand before anything goes up.</>,
-      },
-      {
-        q: "How are prices set?",
-        plain: "Every listing shows the live TCGplayer market price next to our price, and it refreshes while you browse. Our asking price follows the market; if a card is priced under market you'll see it right on the card.",
-        a: <>Every listing shows the live TCGplayer market price next to our price, and it refreshes while you browse. Our asking price follows the market; if a card is priced under market you'll see it right on the card.</>,
-      },
-      {
-        q: "What do the condition labels mean?",
-        plain: "NM is Near Mint (pack-fresh or close), LP is Lightly Played (minor edge or surface wear), MP is Moderately Played (visible wear, no major damage), HP is Heavily Played and DMG is Damaged (creases, tears or water damage). Graded cards show the grading company and grade, like PSA 10 or CGC 9.5.",
-        a: <><b>NM</b> is Near Mint (pack-fresh or close), <b>LP</b> is Lightly Played (minor edge or surface wear), <b>MP</b> is Moderately Played (visible wear, no major damage), <b>HP</b> is Heavily Played and <b>DMG</b> is Damaged (creases, tears or water damage). Graded cards show the grading company and grade, like PSA 10 or CGC 9.5.</>,
-      },
-      {
-        q: "A card says Sold Out. Can I still get it?",
-        plain: "Sold-out cards stay on the page so you can see what we carry. DM @cpulls.cards and we'll let you know if another copy is coming in or can be sourced for you.",
-        a: <>Sold-out cards stay on the page so you can see what we carry. DM {BRAND_HANDLE} and we'll let you know if another copy is coming in or can be sourced for you.</>,
-      },
-    ],
-  },
-  {
-    id: "shipping",
-    title: "Shipping & guarantee",
-    icon: Truck,
-    items: [
-      {
-        q: "How fast do orders ship?",
-        plain: "Orders ship within 48 hours of payment, anywhere in the United States.",
-        a: <>Orders ship within 48 hours of payment, anywhere in the United States.</>,
-      },
-      {
-        q: "How are cards packed?",
-        plain: "Every card goes in a penny sleeve and toploader, then a team bag and a bubble mailer at minimum. High-value cards ship insured with tracking.",
-        a: <>Every card goes in a penny sleeve and toploader, then a team bag and a bubble mailer at minimum. High-value cards ship insured with tracking.</>,
-      },
-      {
-        q: "What if something's wrong with my order?",
-        plain: "Every order carries a 100% satisfaction guarantee. If a card arrives damaged or isn't what was listed, DM @cpulls.cards with a photo and we'll make it right.",
-        a: <>Every order carries a 100% satisfaction guarantee. If a card arrives damaged or isn't what was listed, DM {BRAND_HANDLE} with a photo and we'll make it right.</>,
-      },
-    ],
-  },
-  {
-    id: "selling",
-    title: "Selling & trading in",
-    icon: HandCoins,
-    items: [
-      {
-        q: "How much do you pay for cards?",
-        plain: `We pay ${CASH_PCT}% of TCGplayer market in cash, or ${TRADE_PCT}% in trade credit toward anything in the vault. The Sell & Trade calculator on the shop page shows both numbers instantly for any card.`,
-        a: <>We pay <b>{CASH_PCT}% of TCGplayer market in cash</b>, or <b>{TRADE_PCT}% in trade credit</b> toward anything in the vault. The Sell &amp; Trade calculator on the shop page shows both numbers instantly for any card.</>,
-      },
-      {
-        q: "How does the card scanner work?",
-        plain: "Tap Scan in the calculator, allow camera access, and hold your card flat inside the frame. It recognizes the card automatically, pulls the live TCGplayer price and fills in the cash and trade offer. You can also take a photo or upload one. Photos are used only to identify the card and aren't kept.",
-        a: <>Tap <b>Scan</b> in the calculator, allow camera access, and hold your card flat inside the frame. It recognizes the card automatically, pulls the live TCGplayer price and fills in the cash and trade offer. You can also take a photo or upload one. Photos are used only to identify the card and aren't kept.</>,
-      },
-      {
-        q: "Is the calculator number my final offer?",
-        plain: "It's a close estimate. Final offers are based on the card in hand (condition, authenticity) and the market at that moment. Graded cards and sealed product are quoted individually.",
-        a: <>It's a close estimate. Final offers are based on the card in hand (condition, authenticity) and the market at that moment. Graded cards and sealed product are quoted individually.</>,
-      },
-      {
-        q: "How do trades work?",
-        plain: "Pick the card you want from the vault, tap Trade, tell us what you've got and add photos. Chris reviews every trade personally and sends a counter, usually within 24 hours. You can also bring your binder to any show we're vending.",
-        a: <>Pick the card you want from the vault, tap <b>Trade</b>, tell us what you've got and add photos. Chris reviews every trade personally and sends a counter, usually within 24 hours. You can also bring your binder to any show we're vending.</>,
-      },
-      {
-        q: "What games do you buy?",
-        plain: "Pokémon, One Piece, Magic: The Gathering, Dragon Ball Super, Yu-Gi-Oh, Riftbound and Union Arena, plus graded slabs and sealed product across those games. Not sure? Scan it or DM us.",
-        a: <>Pokémon, One Piece, Magic: The Gathering, Dragon Ball Super, Yu-Gi-Oh, Riftbound and Union Arena, plus graded slabs and sealed product across those games. Not sure? Scan it or DM us.</>,
-      },
-    ],
-  },
-  {
-    id: "shows",
-    title: "Shows & lives",
-    icon: Radio,
-    items: [
-      {
-        q: "Where can I find you in person?",
-        plain: "CPulls Cards vends at card shows around Northern California. Upcoming dates are listed on the shop page and announced first on Instagram @cpulls.cards. Bring your binder: we buy, sell and trade at every table.",
-        a: <>CPulls Cards vends at card shows around Northern California. Upcoming dates are listed on the shop page and announced first on Instagram {BRAND_HANDLE}. Bring your binder: we buy, sell and trade at every table.</>,
-      },
-      {
-        q: "Do you do live pulls?",
-        plain: "Yes. We go live on TikTok at @cpulls.cards. When a stream is on, a Live banner appears at the top of the shop with a link to watch.",
-        a: <>Yes. We go live on TikTok at {BRAND_HANDLE}. When a stream is on, a <b>Live</b> banner appears at the top of the shop with a link to watch.</>,
-      },
-      {
-        q: "How do I reach you?",
-        plain: "DM @cpulls.cards on Instagram or TikTok. That's the fastest way to ask about a card, a trade or a show.",
-        a: <>DM {BRAND_HANDLE} on <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer">Instagram</a> or <a href={TIKTOK_URL} target="_blank" rel="noopener noreferrer">TikTok</a>. That's the fastest way to ask about a card, a trade or a show.</>,
-      },
-    ],
-  },
-];
+const FAQ_ICONS = { buying: ShieldCheck, shipping: Truck, selling: HandCoins, shows: Radio } as const;
+const FAQ_GROUPS = FAQ_DATA.map((g) => ({ ...g, icon: FAQ_ICONS[g.id] }));
 
 export function FaqPage() {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
-    mainEntity: FAQ_GROUPS.flatMap((g) => g.items.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.plain } }))),
+    mainEntity: FAQ_GROUPS.flatMap((g) => g.items.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: plainText(f.a) } }))),
   };
   return (
     <InfoShell
@@ -275,7 +195,7 @@ export function FaqPage() {
                       <span>{f.q}</span>
                       <ChevronDown className="h-5 w-5 shrink-0" aria-hidden />
                     </summary>
-                    <div className="pc-faq-answer pc-body">{f.a}</div>
+                    <div className="pc-faq-answer pc-body"><Rich text={f.a} /></div>
                   </details>
                 ))}
               </div>
@@ -301,49 +221,83 @@ export function FaqPage() {
 /*  About                                                              */
 /* ------------------------------------------------------------------ */
 
-const GAMES = ["Pokémon", "One Piece", "Magic: The Gathering", "Dragon Ball Super", "Yu-Gi-Oh", "Riftbound", "Union Arena"];
+const FACT_ICONS = [MapPin, Radio, Award, Truck];
+const VALUE_ICONS = [ShieldCheck, Award, HandCoins];
+
+type AboutResponse = { source: "default" | "settings"; about: AboutContent };
+
+export function useAboutContent() {
+  return useQuery<AboutResponse>({
+    queryKey: ["/api/shop/about"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/shop/about`, { credentials: "omit" });
+      if (!res.ok) throw new Error("about load failed");
+      const json = (await res.json()) as AboutResponse;
+      return { source: json.source, about: mergeAbout(json.about) };
+    },
+    staleTime: 60_000,
+    placeholderData: { source: "default", about: DEFAULT_ABOUT },
+  });
+}
 
 export function AboutPage() {
+  const { data } = useAboutContent();
+  const about = data?.about ?? DEFAULT_ABOUT;
+  const photo = resolveUploadUrl(about.photoUrl);
+  const facts = about.facts.filter((f) => f.title || f.sub);
+  const values = about.values.filter((v) => v.title || v.body);
+  const story = about.story.filter((p) => p.trim());
+
   return (
     <InfoShell
       current="about"
-      kicker="About CPulls Cards"
-      title={<>A card shop run by a <em>collector</em>, not a warehouse.</>}
-      intro="CPulls Cards is Chris — a California collector who buys, sells and trades the cards he'd want in his own binder, in person at shows across Northern California and online, every day."
+      kicker={about.kicker || "About CPulls Cards"}
+      title={<Headline text={about.title} />}
+      intro={about.intro}
     >
       <div className="pc-container py-10 md:py-14 grid gap-12">
-        <section className="grid gap-8 lg:grid-cols-[1.1fr_1fr] lg:items-start" data-testid="about-story">
+        <section className={"grid gap-8 lg:items-start " + (photo ? "lg:grid-cols-[1fr_minmax(300px,420px)]" : "lg:grid-cols-[1.1fr_1fr]")} data-testid="about-story">
           <div>
-            <div className="pc-sec-title"><h2>How it started</h2></div>
+            {about.storyHeading && <div className="pc-sec-title"><h2>{about.storyHeading}</h2></div>}
             <div className="pc-info-prose pc-body mt-5">
-              <p>CPulls began the way most shops do: a binder that got too big. Opening packs on live streams turned into trading at local shows, trading turned into buying collections, and the vault you can shop today grew out of that — one hand-checked card at a time.</p>
-              <p>It's still a one-person operation on purpose. Every card is inspected, photographed and priced by Chris. Every trade offer and every order confirmation comes from him, not a script. That's slower than a warehouse, and it's the whole point.</p>
+              {story.map((p, i) => <p key={i}><Rich text={p} /></p>)}
             </div>
+            {photo && facts.length > 0 && (
+              <ul className="pc-info-facts mt-8" aria-label="Quick facts">
+                {facts.map((f, i) => { const Icon = FACT_ICONS[i % FACT_ICONS.length]; return (
+                  <li key={i}><Icon className="h-5 w-5" aria-hidden /><div><b>{f.title}</b><span>{f.sub}</span></div></li>
+                ); })}
+              </ul>
+            )}
           </div>
-          <ul className="pc-info-facts" aria-label="Quick facts">
-            <li><MapPin className="h-5 w-5" aria-hidden /><div><b>Based in California</b><span>Online orders ship nationwide</span></div></li>
-            <li><Radio className="h-5 w-5" aria-hidden /><div><b>Live on TikTok</b><span>Pack openings and pulls at {BRAND_HANDLE}</span></div></li>
-            <li><Award className="h-5 w-5" aria-hidden /><div><b>Northern California shows</b><span>Buying, selling and trading at the table</span></div></li>
-            <li><Truck className="h-5 w-5" aria-hidden /><div><b>Ships in 48 hours</b><span>Toploader, team bag, insured on high-value cards</span></div></li>
-          </ul>
+          {photo ? (
+            <figure className="pc-about-photo order-first lg:order-none" data-testid="about-photo">
+              <img src={photo} alt={about.photoAlt || "CPulls Cards"} loading="lazy" />
+              {about.photoCaption && <figcaption className="pc-body">{about.photoCaption}</figcaption>}
+            </figure>
+          ) : facts.length > 0 ? (
+            <ul className="pc-info-facts" aria-label="Quick facts">
+              {facts.map((f, i) => { const Icon = FACT_ICONS[i % FACT_ICONS.length]; return (
+                <li key={i}><Icon className="h-5 w-5" aria-hidden /><div><b>{f.title}</b><span>{f.sub}</span></div></li>
+              ); })}
+            </ul>
+          ) : null}
         </section>
 
-        <section data-testid="about-values">
-          <div className="pc-sec-title"><h2>What we stand on</h2></div>
-          <div className="grid gap-3 md:grid-cols-3 mt-5">
-            {[
-              { Icon: ShieldCheck, title: "Every card, verified", body: "Grades, edges and centering are inspected in hand. The photo in the listing is the card that ships." },
-              { Icon: Award, title: "Transparent pricing", body: "Live TCGplayer market data sits next to every price and refreshes while you browse. No guessing what a card is worth." },
-              { Icon: HandCoins, title: "Fair offers, in writing", body: `${CASH_PCT}% of market in cash or ${TRADE_PCT}% in trade credit, posted on the site so you know the number before you reach out.` },
-            ].map(({ Icon, title, body }) => (
-              <div key={title} className="pc-info-card">
-                <div className="pc-info-card-icon"><Icon className="h-5 w-5" /></div>
-                <h3>{title}</h3>
-                <p className="pc-body">{body}</p>
-              </div>
-            ))}
-          </div>
-        </section>
+        {values.length > 0 && (
+          <section data-testid="about-values">
+            {about.valuesHeading && <div className="pc-sec-title"><h2>{about.valuesHeading}</h2></div>}
+            <div className="grid gap-3 md:grid-cols-3 mt-5">
+              {values.map((v, i) => { const Icon = VALUE_ICONS[i % VALUE_ICONS.length]; return (
+                <div key={i} className="pc-info-card">
+                  <div className="pc-info-card-icon"><Icon className="h-5 w-5" /></div>
+                  <h3>{v.title}</h3>
+                  <p className="pc-body">{v.body}</p>
+                </div>
+              ); })}
+            </div>
+          </section>
+        )}
 
         <section className="grid gap-8 lg:grid-cols-2" data-testid="about-games">
           <div>
@@ -366,8 +320,8 @@ export function AboutPage() {
 
         <section className="pc-info-callout" data-testid="about-cta">
           <div>
-            <h2>Come say hi</h2>
-            <p className="pc-body">Catch a live on TikTok, find the table at the next Northern California show, or shop the vault right now.</p>
+            <h2>{about.ctaHeading || "Come say hi"}</h2>
+            <p className="pc-body">{about.ctaBody}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <a href="#/" className="pc-btn pc-btn-sm pc-btn-white" data-testid="about-cta-shop">Shop the vault <ArrowRight className="h-4 w-4" /></a>

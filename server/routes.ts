@@ -52,6 +52,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { aiHealth } from "./ai";
+import { registerStorefrontRoutes } from "./storefront";
 import {
   requireAuth,
   requireOwner,
@@ -73,6 +74,9 @@ export async function registerRoutes(
 ): Promise<Server> {
   // ===== Uploads (scan photos) =====
   app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "30d" }));
+
+  // ===== Storefront content (About page editor) + shop assistant =====
+  registerStorefrontRoutes(app, UPLOADS_DIR);
 
   // ===== AUTH (public) =====
   // Signup is gated by ADMIN_INVITE_CODE env var. The status endpoint lets the
