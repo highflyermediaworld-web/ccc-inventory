@@ -15,7 +15,7 @@ import {
 } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { registerScanRoutes } from "./scan";
+import { registerScanRoutes, identifyCardFromImage } from "./scan";
 import {
   getAutoImportStatus,
   runAutoImport,
@@ -1398,6 +1398,91 @@ export async function registerRoutes(
       res.json({ prices, fetchedAt: Math.floor(Date.now() / 1000) });
     } catch (err: any) {
       res.status(500).json({ message: err?.message || "Price refresh failed" });
+    }
+  });
+
+  // ── Public card scan: photo → identified card → live TCGplayer matches ──
+  // Stricter limiter than the text lookups (each scan is a vision call).
+  const scanHits = new Map<string, { count: number; resetAt: number }>();
+  function scanRateLimited(req: Request): boolean {
+    const ip =
+      (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ||
+      req.socket.remoteAddress ||
+      "unknown";
+    const now = Date.now();
+    const slot = scanHits.get(ip);
+    if (!slot || slot.resetAt < now) {
+      scanHits.set(ip, { count: 1, resetAt: now + 60_000 });
+      if (scanHits.size > 5000) scanHits.clear();
+      return false;
+    }
+    slot.count += 1;
+    return slot.count > 12;
+  }
+  const normNumber = (v: string | null | undefined) =>
+    String(v ?? "").split("/")[0].trim().replace(/^0+(?=\d)/, "").toLowerCase();
+
+  app.post("/api/prices/scan", async (req, res) => {
+    if (scanRateLimited(req)) {
+      return res.status(429).json({ message: "Too many scans — give it a minute." });
+    }
+    try {
+      const imageBase64 = typeof req.body?.imageBase64 === "string" ? req.body.imageBase64 : "";
+      const mediaType = typeof req.body?.mediaType === "string" ? req.body.mediaType : "image/jpeg";
+      if (imageBase64.length < 100) return res.status(400).json({ message: "imageBase64 required" });
+      if (imageBase64.length > 8_000_000) return res.status(413).json({ message: "Photo too large" });
+      const requestedMode = req.body?.mode === "sealed" ? "sealed" : "card";
+
+      const ident = await identifyCardFromImage(imageBase64, mediaType, requestedMode);
+      const name = String(ident?.name ?? "").trim();
+      const confidence = Number(ident?.confidence) || 0;
+      const identified = {
+        name,
+        set: String(ident?.set ?? "").trim(),
+        number: String(ident?.number ?? "").trim(),
+        franchise: String(ident?.franchise ?? "Other"),
+        confidence,
+      };
+      if (!name || confidence < 0.15) {
+        return res.json({ identified, query: null, line: null, results: [], autoPick: null });
+      }
+
+      const line = tcgplayerProductLineFor(identified.franchise);
+      const num = normNumber(identified.number);
+      const attempts: Array<{ q: string; line: string | null }> = [];
+      if (num) attempts.push({ q: `${name} ${num}`, line });
+      if (identified.set) attempts.push({ q: `${name} ${identified.set}`, line });
+      attempts.push({ q: name, line });
+      if (line) attempts.push({ q: name, line: null });
+
+      let results: Awaited<ReturnType<typeof searchTcgplayerProducts>> = [];
+      let used: { q: string; line: string | null } | null = null;
+      for (const a of attempts) {
+        const hits = await searchTcgplayerProducts(a.q, a.line, 12);
+        if (hits.length) { results = hits; used = a; break; }
+      }
+      // Exact card-number matches first, then same-set matches.
+      const setLc = identified.set.toLowerCase();
+      const score = (h: (typeof results)[number]) =>
+        (num && normNumber(h.number) === num ? 2 : 0) +
+        (setLc && String(h.setName ?? "").toLowerCase().includes(setLc) ? 1 : 0);
+      results = [...results].sort((a, b) => score(b) - score(a));
+      const top = results[0];
+      const autoPick =
+        top && ((num && normNumber(top.number) === num) || (!num && results.length === 1))
+          ? top.productId
+          : null;
+      res.json({
+        identified,
+        query: used?.q ?? null,
+        line: used?.line ?? line,
+        results,
+        autoPick,
+        fetchedAt: Math.floor(Date.now() / 1000),
+      });
+    } catch (err: any) {
+      console.error("prices/scan error:", err);
+      res.status(502).json({ message: err?.message || "Scan failed" });
     }
   });
 

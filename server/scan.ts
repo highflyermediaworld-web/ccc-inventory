@@ -65,7 +65,7 @@ function extractText(msg: Anthropic.Messages.Message): string {
   return "";
 }
 
-async function identifyCardFromImage(
+export async function identifyCardFromImage(
   imageBase64: string,
   mediaType: string,
   mode: "card" | "sealed" = "card"
@@ -95,6 +95,12 @@ If you cannot identify the product, return {"confidence":0,"name":"","set":"","n
   "suggestedCondition": one of ["NM","LP","MP","HP","DMG","Sealed","Graded"]
 }
 If you cannot identify the card, return {"confidence":0,"name":"","set":"","number":"","rarity":"","franchise":"Other","suggestedCondition":"NM"}.`;
+
+  // Local QA seam: lets the storefront scanner be exercised where no vision
+  // model is reachable. Never set in production.
+  if (process.env.SCAN_IDENTIFY_STUB) {
+    try { return JSON.parse(process.env.SCAN_IDENTIFY_STUB); } catch { /* fall through */ }
+  }
 
   const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
   const validMediaType = (

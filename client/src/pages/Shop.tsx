@@ -280,6 +280,27 @@ export default function ShopPage() {
     setVisible(PAGE_SIZE);
   }, [search, franchiseFilter, categoryFilter, conditionFilter, minPrice, maxPrice, sort, hideSoldOut]);
 
+  // "Find in our shop" from the card lookup / scanner: search the vault for it.
+  useEffect(() => {
+    const onFind = (e: Event) => {
+      const q = String((e as CustomEvent<{ q?: string }>).detail?.q ?? "").trim();
+      if (!q) return;
+      setSearch(q);
+      setFranchiseFilter([]);
+      setCategoryFilter("all");
+      setConditionFilter("all");
+      setMinPrice("");
+      setMaxPrice("");
+      setHideSoldOut(false);
+      requestAnimationFrame(() => {
+        vaultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        searchRef.current?.focus({ preventScroll: true });
+      });
+    };
+    window.addEventListener("pc:find-in-shop", onFind);
+    return () => window.removeEventListener("pc:find-in-shop", onFind);
+  }, []);
+
   // Derived data ---------------------------------------------------------
   const available = useMemo(() => listings.filter(inStock), [listings]);
 
@@ -1304,6 +1325,46 @@ export default function ShopPage() {
 const CASH_RATE = 0.7;
 const TRADE_RATE = 0.8;
 
+// Shrink a camera photo before upload (long side ≤ 1280px, JPEG) so a 12 MP
+// shot becomes ~150–300 KB instead of several MB.
+async function downscalePhoto(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Couldn't read that photo"));
+      el.src = url;
+    });
+    const MAX = 1280;
+    const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Couldn't process that photo");
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// TCGplayer names look like "Charizard ex - 223/197"; the shop search wants
+// just the card name.
+function shopQueryFor(hit: PriceHit): string {
+  const base = hit.name.replace(/\s*\([^)]*\)\s*$/, "").replace(/\s+-\s+[\w/]+\s*$/, "").trim();
+  return base || hit.name;
+}
+
+type ScanState =
+  | { status: "idle" }
+  | { status: "working"; preview: string }
+  | { status: "done"; preview: string; label: string; alt: PriceHit[]; matched: boolean }
+  | { status: "error"; preview: string | null; message: string };
+
 function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printing: string | null) => void }) {
   const [q, setQ] = useState("");
   const [line, setLine] = useState<string | null>("Pokemon");
@@ -1314,6 +1375,47 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
   const [printings, setPrintings] = useState<Printing[]>([]);
   const [printing, setPrinting] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [scan, setScan] = useState<ScanState>({ status: "idle" });
+
+  async function onScanFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    let preview: string | null = null;
+    try {
+      preview = await downscalePhoto(file);
+      setScan({ status: "working", preview });
+      setPicked(null); setPrintings([]); setPrinting(null); setHits([]); setQ(""); setError(null);
+      const res = await fetch(`${API_BASE}/api/prices/scan`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "omit",
+        body: JSON.stringify({ imageBase64: preview, mediaType: "image/jpeg" }),
+      });
+      if (!res.ok) {
+        throw new Error(res.status === 429 ? "Too many scans — give it a minute." : "Couldn't read the card — try a clearer, straight-on photo.");
+      }
+      const data = await res.json();
+      const results: PriceHit[] = Array.isArray(data?.results) ? data.results : [];
+      const ident = data?.identified ?? {};
+      const label = [ident.name, ident.number ? `#${ident.number}` : null, ident.set || null].filter(Boolean).join(" · ");
+      if (!results.length) {
+        setScan({ status: "error", preview, message: ident?.name ? `Read it as “${label}” but found no TCGplayer match — try typing it below.` : "Couldn't read the card — try a clearer, straight-on photo." });
+        return;
+      }
+      const auto = data?.autoPick ? results.find((h) => h.productId === data.autoPick) : null;
+      if (auto) {
+        void pick(auto);
+        setScan({ status: "done", preview, label, alt: results.filter((h) => h.productId !== auto.productId), matched: true });
+      } else {
+        setHits(results);
+        setScan({ status: "done", preview, label, alt: [], matched: false });
+      }
+    } catch (err: any) {
+      setScan({ status: "error", preview, message: err?.message || "Scan failed" });
+    }
+  }
 
   useEffect(() => {
     const term = q.trim();
@@ -1375,7 +1477,7 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
   return (
     <div className="pc-lookup" data-testid="card-lookup">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="pc-field-label pc-calc-label !mb-0">Look up a card — live TCGplayer price</span>
+        <span className="pc-field-label pc-calc-label !mb-0">Scan or look up a card — live TCGplayer price</span>
         <select
           className="pc-lookup-line"
           value={line ?? ""}
@@ -1399,8 +1501,51 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
           autoComplete="off"
           data-testid="input-calc-search"
         />
-        {loading && <Loader2 className="h-4 w-4 mr-3 animate-spin text-white/60" aria-hidden />}
+        {loading && <Loader2 className="h-4 w-4 mr-1 animate-spin text-white/60" aria-hidden />}
+        <button
+          type="button"
+          className="pc-scan-btn"
+          onClick={() => fileRef.current?.click()}
+          disabled={scan.status === "working"}
+          aria-label="Scan a card with your camera"
+          data-testid="button-scan-card"
+        >
+          {scan.status === "working" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Camera className="h-4 w-4" aria-hidden />}
+          <span>{scan.status === "working" ? "Reading…" : "Scan"}</span>
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="sr-only"
+          tabIndex={-1}
+          onChange={onScanFile}
+          data-testid="input-scan-file"
+        />
       </div>
+      {scan.status !== "idle" && (
+        <div className={cn("pc-scan-note", scan.status === "error" && "is-error")} role={scan.status === "error" ? "alert" : "status"} data-testid="scan-status">
+          {scan.status !== "working" && scan.preview && <img src={scan.preview} alt="" className="pc-scan-thumb" />}
+          <div className="min-w-0 flex-1">
+            {scan.status === "working" && <span>Reading your card…</span>}
+            {scan.status === "done" && (
+              <>
+                <span className="block">Scanned: <b className="text-white">{scan.label}</b>{scan.matched ? " — matched on TCGplayer." : " — pick the right match below."}</span>
+                {scan.matched && scan.alt.length > 0 && (
+                  <button type="button" className="pc-scan-link" onClick={() => setHits(scan.alt)} data-testid="button-scan-alternatives">
+                    Not the right card? See {scan.alt.length} other match{scan.alt.length === 1 ? "" : "es"}
+                  </button>
+                )}
+              </>
+            )}
+            {scan.status === "error" && <span>{scan.message}</span>}
+          </div>
+          <button type="button" className="pc-lookup-clear" onClick={() => setScan({ status: "idle" })} aria-label="Dismiss scan result" data-testid="button-scan-dismiss">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       {error && <p className="mt-2 text-[12px] text-amber-200" role="alert">{error}</p>}
       {!!hits.length && (
         <ul className="pc-lookup-results" role="listbox" aria-label="Matching cards" data-testid="list-lookup-results">
@@ -1448,6 +1593,14 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
                 ))}
               </div>
             )}
+            <button
+              type="button"
+              className="pc-scan-link mt-2"
+              onClick={() => window.dispatchEvent(new CustomEvent("pc:find-in-shop", { detail: { q: shopQueryFor(picked) } }))}
+              data-testid="button-find-in-shop"
+            >
+              <Search className="h-3.5 w-3.5" aria-hidden /> Find “{shopQueryFor(picked)}” in our shop
+            </button>
           </div>
           <button type="button" className="pc-lookup-clear" onClick={() => { setPicked(null); setPrintings([]); setPrinting(null); }} aria-label="Clear selected card" data-testid="button-lookup-clear">
             <X className="h-4 w-4" />
@@ -1479,7 +1632,7 @@ function SellCalculator() {
         <span className="pc-calc-badge"><Calculator className="h-5 w-5" /></span>
       </div>
       <p className="mt-2 text-sm text-white/70 pc-body">
-        Look up any card for its live TCGplayer market price, or type a value. We pay <b className="text-white">{Math.round(CASH_RATE * 100)}% in cash</b> or <b className="text-white">{Math.round(TRADE_RATE * 100)}% in trade credit</b> toward anything in the vault.
+        Scan a card with your camera or search it by name for its live TCGplayer market price, or just type a value. We pay <b className="text-white">{Math.round(CASH_RATE * 100)}% in cash</b> or <b className="text-white">{Math.round(TRADE_RATE * 100)}% in trade credit</b> toward anything in the vault.
       </p>
 
       <div className="mt-5">
