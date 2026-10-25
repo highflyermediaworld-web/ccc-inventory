@@ -24,7 +24,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { CardThumb } from "@/components/CardThumb";
 import { ShopChat } from "@/components/ShopChat";
 import { BRAND_HANDLE, TIKTOK_URL, INSTAGRAM_URL } from "@/components/SocialLinks";
-import { resolveUploadUrl } from "@/lib/uploads";
+import { resolveUploadUrl, thumbSrcSet } from "@/lib/uploads";
 import { formatCurrency } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -89,7 +89,7 @@ type ShopListing = {
   askingPrice: number;
   marketValue: number | null;
   imageUrl: string | null;
-  notes: string | null;
+  notes?: string | null;
   createdAt?: number | null;
 };
 
@@ -2127,6 +2127,7 @@ function ProductCard({
   const condKey = (listing.condition ?? "").toUpperCase();
   const [imgFailed, setImgFailed] = useState(false);
   const src = imgFailed ? null : resolveUploadUrl(listing.imageUrl);
+  const thumb = thumbSrcSet(src);
   const soldOut = !inStock(listing);
   const hotSeller = hot || false;
   const isNew = !soldOut && (showNewTag || (listing.createdAt ? Date.now() / 1000 - listing.createdAt < 7 * 86400 : false));
@@ -2139,7 +2140,16 @@ function ProductCard({
     >
       <div className="pc-product-media">
         {src ? (
-          <img src={src} alt={listing.name} loading="lazy" onError={() => setImgFailed(true)} className="h-full w-full object-contain p-3" />
+          <img
+            src={thumb?.src ?? src}
+            srcSet={thumb?.srcSet}
+            sizes={thumb?.sizes}
+            alt={listing.name}
+            loading="lazy"
+            decoding="async"
+            onError={() => setImgFailed(true)}
+            className="h-full w-full object-contain p-3"
+          />
         ) : (
           <CardThumb imageUrl={null} franchise={listing.franchise} size="lg" className="h-full w-full" />
         )}

@@ -68,12 +68,50 @@ const CUSTOMER_UPLOADS_DIR = path.join(UPLOADS_DIR, "customer");
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 fs.mkdirSync(CUSTOMER_UPLOADS_DIR, { recursive: true });
 
+// Photos pasted in as base64 ("data:image/jpeg;base64,...") used to be stored
+// straight in the imageUrl column, so every storefront visitor downloaded
+// ~180 KB per photo inside the listings JSON before a single card rendered.
+// Write them to the uploads disk and store the small /uploads/... path.
+function persistDataUrlImage(imageUrl: unknown): string | null {
+  if (typeof imageUrl !== "string") return null;
+  const m = imageUrl.match(/^data:image\/([a-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/i);
+  if (!m) return null;
+  const sub = m[1].toLowerCase();
+  const ext = sub.includes("png") ? "png" : sub.includes("webp") ? "webp" : sub.includes("gif") ? "gif" : "jpg";
+  const buf = Buffer.from(m[2].replace(/\s+/g, ""), "base64");
+  if (!buf.length) return null;
+  const filename = `${randomUUID()}.${ext}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, filename), buf);
+  return `/uploads/${filename}`;
+}
+
+// One-time pass over existing rows. Safe to run on every boot — it only
+// touches items whose imageUrl is still a data URL.
+async function migrateDataUrlImages(): Promise<void> {
+  try {
+    const inv = await storage.listInventory();
+    let moved = 0;
+    for (const item of inv) {
+      if (typeof item.imageUrl !== "string" || !item.imageUrl.startsWith("data:image/")) continue;
+      const url = persistDataUrlImage(item.imageUrl);
+      if (!url) continue;
+      await storage.updateInventory(item.id, { imageUrl: url } as any);
+      moved++;
+    }
+    if (moved) console.log(`[uploads] moved ${moved} inline photo(s) to /uploads`);
+  } catch (err) {
+    console.error("[uploads] inline photo migration failed", err);
+  }
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   // ===== Uploads (scan photos) =====
   app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "30d" }));
+  // Move any base64 photos still sitting in the database onto the disk.
+  void migrateDataUrlImages();
 
   // ===== Storefront content (About page editor) + shop assistant =====
   registerStorefrontRoutes(app, UPLOADS_DIR);
@@ -962,6 +1000,8 @@ export async function registerRoutes(
   app.post("/api/inventory", async (req, res) => {
     try {
       const parsed = insertInventorySchema.parse(req.body);
+      const persisted = persistDataUrlImage((parsed as any).imageUrl);
+      if (persisted) (parsed as any).imageUrl = persisted;
       // Note: spelling autocorrect happens inside storage.createInventory.
       const item = await storage.createInventory(parsed);
       // If the user set a market value on creation, record it as the first history row.
@@ -982,6 +1022,8 @@ export async function registerRoutes(
   app.patch("/api/inventory/:id", async (req, res) => {
     try {
       const patch = insertInventorySchema.partial().parse(req.body);
+      const persistedPatch = persistDataUrlImage((patch as any).imageUrl);
+      if (persistedPatch) (patch as any).imageUrl = persistedPatch;
       // Note: spelling autocorrect happens inside storage.updateInventory.
       const existing = await storage.getInventoryItem(req.params.id);
       if (!existing) return res.status(404).json({ message: "Not found" });
@@ -1407,14 +1449,35 @@ export async function registerRoutes(
             tcgpProductId: i.tcgpProductId ?? null,
             tcgpMarketPrice: i.tcgpMarketPrice ?? null,
             tcgpPricedAt: i.tcgpPricedAt ?? null,
-            imageUrl: i.imageUrl,
-            notes: i.notes,
+            // Belt and braces: an inline photo that hasn't been migrated yet
+            // is served from its own URL instead of inflating this payload.
+            imageUrl:
+              typeof i.imageUrl === "string" && i.imageUrl.startsWith("data:")
+                ? `/api/shop/image/${encodeURIComponent(i.id)}`
+                : i.imageUrl,
             createdAt: i.createdAt ?? null,
           };
         });
       res.json(filtered);
     } catch (err: any) {
       res.status(500).json({ message: err?.message || "Shop load failed" });
+    }
+  });
+
+  // Serves a not-yet-migrated inline photo as a real image response.
+  app.get("/api/shop/image/:id", async (req, res) => {
+    try {
+      const item = await storage.getInventoryItem(req.params.id);
+      const url = item?.imageUrl;
+      if (typeof url !== "string") return res.status(404).end();
+      if (!url.startsWith("data:")) return res.redirect(302, url);
+      const m = url.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+      if (!m) return res.status(404).end();
+      res.setHeader("Content-Type", m[1]);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.end(Buffer.from(m[2], "base64"));
+    } catch {
+      res.status(404).end();
     }
   });
 

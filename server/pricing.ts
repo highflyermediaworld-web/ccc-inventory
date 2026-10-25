@@ -84,6 +84,82 @@ export async function getScryfallPrice(
   }
 }
 
+// Image-only Scryfall lookup. `named?set=` needs a 3-5 letter set CODE, but
+// listings carry names like "Marvel's Spider-Man (SPM)" and variants like
+// "(Borderless)" that live in a bonus-sheet set (MAR). Search prints instead
+// and fall back from set-restricted -> variant-restricted -> any print.
+export async function getScryfallImage(
+  rawName: string,
+  setHint?: string | null
+): Promise<string | null> {
+  if (!rawName) return null;
+  const variants = (rawName.match(/\(([^)]*)\)/g) || []).map((m) => m.slice(1, -1).toLowerCase());
+  const name = rawName.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  if (!name) return null;
+  const wantBorderless = variants.some((v) => /borderless/.test(v));
+  const wantShowcase = variants.some((v) => /showcase/.test(v));
+  const wantExtended = variants.some((v) => /extended/.test(v));
+  const codeMatch = (setHint || "").match(/\(([a-z0-9]{3,5})\)/i);
+  const setCode = codeMatch ? codeMatch[1].toLowerCase() : null;
+  const setWords = new Set(
+    (setHint || "")
+      .toLowerCase()
+      .replace(/\([^)]*\)/g, " ")
+      .replace(/'s\b/g, "")
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length >= 4 && !["edition", "commander", "booster"].includes(w))
+  );
+  const variantFilter = [
+    wantBorderless ? "border:borderless" : "",
+    wantShowcase ? "frame:showcase" : "",
+    wantExtended ? "frame:extendedart" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const exact = `!"${name.replace(/"/g, "")}"`;
+  const queries: string[] = [];
+  if (setCode) queries.push(`${exact} set:${setCode} ${variantFilter}`.trim());
+  if (variantFilter) queries.push(`${exact} ${variantFilter}`);
+  queries.push(exact);
+  const imgOf = (c: any): string | null =>
+    c?.image_uris?.normal ?? c?.card_faces?.[0]?.image_uris?.normal ?? null;
+  for (const q of queries) {
+    try {
+      const url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}&unique=prints&order=released`;
+      const res = await fetch(url, { headers: COMMON_HEADERS });
+      if (!res.ok) continue;
+      const data: any = await res.json();
+      const prints: any[] = Array.isArray(data?.data) ? data.data : [];
+      if (!prints.length) continue;
+      // Prefer the print whose set name shares a word with the listing's set
+      // ("Marvel's Spider-Man" -> "Marvel Universe"), then the newest print.
+      const scored = prints
+        .map((c, idx) => {
+          const sn = String(c?.set_name || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ");
+          const hit = Array.from(setWords).some((w) => sn.split(/\s+/).includes(w));
+          return { c, score: (hit ? 10 : 0) - idx * 0.01 };
+        })
+        .sort((a, b) => b.score - a.score);
+      const best = scored.find((x) => imgOf(x.c));
+      if (best) return imgOf(best.c);
+    } catch {
+      /* try the next query */
+    }
+  }
+  // Last resort: fuzzy name match on any print.
+  try {
+    const res = await fetch(
+      `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}`,
+      { headers: COMMON_HEADERS }
+    );
+    if (res.ok) return imgOf(await res.json());
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 // --- TCGdex -------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // Free Pokémon TCG API (pokemontcg.io) — US-focused TCGplayer market prices.
@@ -504,6 +580,26 @@ const TCGPLAYER_PRODUCT_LINE_MAP: Record<string, string> = {
   "Union Arena": "Union Arena",
   "League of Legends": "Riftbound",
 };
+// Some franchises span more than one TCGplayer product line (Dragon Ball has
+// the original CCG and Fusion World). Matching accepts any of them.
+const TCGPLAYER_EXTRA_LINES: Record<string, string[]> = {
+  "Dragon Ball Super CCG": ["Dragon Ball Super: Fusion World", "Dragon Ball Z TCG"],
+};
+function productLineFor(franchise: string | null | undefined): string | null {
+  if (!franchise) return null;
+  const direct = TCGPLAYER_PRODUCT_LINE_MAP[franchise];
+  if (direct) return direct;
+  const want = franchise.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  for (const [k, v] of Object.entries(TCGPLAYER_PRODUCT_LINE_MAP)) {
+    if (k.toLowerCase().replace(/[^a-z0-9]+/g, "") === want) return v;
+  }
+  return null;
+}
+function productLinesFor(franchise: string | null | undefined): string[] {
+  const main = productLineFor(franchise);
+  if (!main) return [];
+  return [main, ...(TCGPLAYER_EXTRA_LINES[main] ?? [])];
+}
 
 // Common Pokemon / TCG spelling corrections seen in spreadsheet imports.
 // We split these from expandProductName so callers can ALSO get a clean
@@ -610,6 +706,21 @@ export const SET_NAME_CORRECTIONS: [RegExp, string][] = [
   [/\bSv09\b/gi, "Journey Together"],
   [/\bAscended\s+Heros\b/gi, "Ascended Heroes"],
   [/\bPhantasmal\s+Flame\b/gi, "Phantasmal Flames"],
+  [/\bCelebrations?\s*\(\s*classic\s+collection\s*\)/gi, "Celebrations: Classic Collection"],
+  // Japanese sets -> the English set that reprints the same cards. TCGplayer
+  // only carries the English printings, and the artwork is identical.
+  [/\bNight\s+Wanderer\b(\s*\(SV6a\))?/gi, "Shrouded Fable"],
+  [/\bWild\s+Force\b(\s*\(SV5K\))?/gi, "Temporal Forces"],
+  [/\bCyber\s+Judge\b(\s*\(SV5M\))?/gi, "Temporal Forces"],
+  [/\bMEGA\s+Dream\s+ex\b(\s*\(M2a\))?/gi, "Phantasmal Flames"],
+  [/\bMega\s+Brave\b(\s*\(M1[LS]?\))?/gi, "Mega Evolution"],
+  [/\bMega\s+Symphonia\b(\s*\(M1[LS]?\))?/gi, "Mega Evolution"],
+  [/\bBattle\s+Partners\b(\s*\(SV9\))?/gi, "Journey Together"],
+  [/\bHeat\s+Wave\s+Arena\b(\s*\(SV9a\))?/gi, "Destined Rivals"],
+  [/\bGlory\s+of\s+Team\s+Rocket\b(\s*\(SV10\))?/gi, "Destined Rivals"],
+  [/\bBlack\s+Bolt\b(\s*\(SV11B\))?/gi, "Black Bolt"],
+  [/\bWhite\s+Flare\b(\s*\(SV11W\))?/gi, "White Flare"],
+  [/\bBattles?\s+of\s+Legends?\s*[-:]\s*/gi, "Battles of Legend: "],
 ];
 
 export function correctSetName(raw: string | null | undefined): string | null {
@@ -684,6 +795,12 @@ function expandProductName(rawName: string): string {
     [/\bBooster Display Box\b/gi, "Booster Box"],
     [/\bBooster Display\b/gi, "Booster Box"],
     [/\bBooster Packs?\b/gi, "Booster Pack"],
+    [/\bKnock\s*out\s+(Pack|Collection|Box)\b/gi, "Knock Out Collection"],
+    [/\bTuck Box\b/gi, "Booster Box"],
+    // Rarity shorthand lives on the listing, not in TCGplayer product names.
+    [/\b(Special Art Rare|Art Rare|Illustration Rare|Special Illustration Rare|Super Rare|Ultra Rare|Secret Rare|Hyper Rare|Double Rare|SAR|SIR|CHR|CSR|SR|AR|IR|UR|HR)\b/g, ""],
+    // "158 / 131" -> "158/131" so the card-number check lines up.
+    [/\b(\d{1,3})\s*\/\s*(\d{1,3})\b/g, "$1/$2"],
     [/\bvol\.?\s*(\d+)/gi, "Vol. $1"],
     [/\bSleeved Boosters?\b/gi, "Sleeved Booster Pack"],
     [/\bBB\b/gi, "Booster Box"],
@@ -797,8 +914,13 @@ function sealedTokens(x: string, minLen = 2): Set<string> {
       .replace(/[^a-z0-9 ]+/g, " ")
       .split(/\s+/)
       .filter((t) => (t.length >= minLen || /^\d$/.test(t)) && !/^\d{4}$/.test(t) && !GENERIC_SET_TOKENS.has(t))
+      // "Battles of Legend" vs "Battle of legend" — compare singular forms.
+      .map((t) => (t.length >= 5 && /[a-z]s$/.test(t) && !/ss$/.test(t) ? t.slice(0, -1) : t))
   );
 }
+// Words that mark a TCGplayer product as sealed / an accessory rather than a card.
+const SEALED_PRODUCT_WORDS =
+  /\b(booster|box|pack|packs|tin|tins|bundle|blister|deck|decks|case|display|collection|kit|binder|portfolio|sleeves|playmat|lot|set|starter|bag|pin|figure|coin|album|chest|trunk|crate|tuck|lair|cards)\b/i;
 function sealedMatchScore(
   setPart: string,
   namePart: string,
@@ -856,7 +978,8 @@ export async function findTcgplayerProductId(
 ): Promise<number | null> {
   if (!rawName) return null;
   try {
-    const productLine = TCGPLAYER_PRODUCT_LINE_MAP[franchise];
+    const productLines = productLinesFor(franchise).map((l) => l.toLowerCase());
+    const productLine = productLines[0] ?? null;
     const embedded = extractEmbeddedSet(rawName);
     const nameForSearch = correctSpelling(embedded ? embedded.name : rawName);
     const expandedName = expandProductName(nameForSearch);
@@ -908,6 +1031,13 @@ export async function findTcgplayerProductId(
     let scoreName = expandedName;
     let scoreSet = cleanSet || "";
     if (!items.length && cleanSet) items = await runSearch(expandedName);
+    // Some lines (Union Arena, Yu-Gi-Oh) never list a "Sleeved" SKU — the
+    // plain booster pack is the same product in different packaging.
+    if (!items.length && /\bSleeved\b/i.test(expandedName)) {
+      scoreName = expandedName.replace(/\bSleeved\s*/gi, "").replace(/\s+/g, " ").trim();
+      items = await runSearch(`${scoreSet} ${scoreName}`.trim());
+      if (!items.length && scoreSet) items = await runSearch(scoreName);
+    }
     if (!items.length) {
       const simple = simplifyListingTitle(rawName);
       if (simple) {
@@ -921,10 +1051,8 @@ export async function findTcgplayerProductId(
 
     // Filter by product line if known.
     const lineFiltered = productLine
-      ? items.filter(
-          (i: any) =>
-            String(i?.productLineName || "").toLowerCase() ===
-            productLine.toLowerCase()
+      ? items.filter((i: any) =>
+          productLines.includes(String(i?.productLineName || "").toLowerCase())
         )
       : items;
     // Never cross game lines: a Pokémon item must not match a Dragon Ball or
@@ -940,11 +1068,43 @@ export async function findTcgplayerProductId(
     // TCGplayer handed us the exact product. For those, score the full
     // "set + product" string against the candidate's "set + product" string
     // with no stopwords, so the set name and the product type both count.
+    // Lines without a "Sleeved" SKU (Union Arena, Yu-Gi-Oh): the plain booster
+    // pack is the same product, so judge the candidates against that.
+    if (/\bSleeved\b/i.test(scoreName) && !pool.some((it: any) => /sleeved/i.test(String(it?.productName || "")))) {
+      scoreName = scoreName.replace(/\bSleeved\s*/gi, "").replace(/\s+/g, " ").trim();
+    }
     const nameOnlyTokens = nameTokens(scoreName).size;
+    const scoreSetT = new Set(Array.from(sealedTokens(scoreSet)).filter((t) => !/^[a-z]{1,4}\d{1,3}[a-z]?$/.test(t)));
+    const poolHasSet =
+      !scoreSetT.size ||
+      pool.some((it: any) => {
+        const cT = sealedTokens(String(it?.setName || ""), 1);
+        let hits = 0;
+        for (const t of scoreSetT) if (cT.has(t)) hits++;
+        return hits / scoreSetT.size >= 0.5;
+      });
+    // "Art Rare" / "SR" / "SIR" on the listing: in English sets those hits
+    // are numbered past the set size (147/132), so prefer that sibling.
+    const wantsSecret =
+      /\b(Special Art Rare|Art Rare|Illustration Rare|Special Illustration Rare|Super Rare|Ultra Rare|Secret Rare|Hyper Rare|SAR|SIR|SR|AR|IR|UR|HR)\b/.test(
+        rawName
+      );
+    const queryNums = cardNumbers(scoreName);
+    const queryDenoms = new Set(Array.from(queryNums).map((n) => n.split("/")[1]).filter(Boolean));
+    const scoreNameNoNum = scoreName.replace(/\b\d{1,3}\s*\/\s*\d{1,3}\b/g, " ").replace(/\s+/g, " ").trim();
     const scored = pool.map((it: any) => {
       const candName = String(it?.productName || "");
       const candSet = String(it?.setName || "");
       let score = matchScore(scoreName, candName);
+      // Japanese numbering ("121/100") never matches the English print
+      // ("157/159"). When the denominators differ, the number says nothing
+      // about the card — score the name alone, slightly discounted.
+      if (!sealedItem && queryDenoms.size && scoreNameNoNum) {
+        const candDenoms = Array.from(cardNumbers(candName)).map((n) => n.split("/")[1]).filter(Boolean);
+        if (candDenoms.length && !candDenoms.some((d) => queryDenoms.has(d))) {
+          score = Math.max(score, matchScore(scoreNameNoNum, candName) * 0.95);
+        }
+      }
       const full = sealedMatchScore(scoreSet, scoreName, `${candSet} ${candName}`, variantHint);
       // Singles: prefer the printing from the known set, and the candidate
       // that carries the same variant ("(Alternate Art)", "(107)").
@@ -955,6 +1115,22 @@ export async function findTcgplayerProductId(
           let hits = 0;
           for (const t of setT) if (cT.has(t)) hits++;
           if (setT.size) score += hits / setT.size >= 0.5 ? 0.05 : -0.12;
+          // A card from a set TCGplayer doesn't carry (Japanese-only sets)
+          // must not fall back to the same Pokémon from another set — that's
+          // a different card with different art. Only applies when NO
+          // candidate comes from the named set; a set-name typo still gets
+          // the usual -0.12 nudge instead.
+          if (setT.size && hits / setT.size < 0.5 && !poolHasSet && !sharesCardNumber(rawName, candName)) {
+            score -= 0.5;
+          }
+        }
+        if (wantsSecret) {
+          const nums = Array.from(cardNumbers(candName));
+          const secret = nums.some((n) => {
+            const [a, b] = n.split("/").map(Number);
+            return Number.isFinite(a) && Number.isFinite(b) && a > b;
+          });
+          if (nums.length) score += secret ? 0.05 : -0.03;
         }
         if (variantHint) {
           const vT = sealedTokens(variantHint, 1);
@@ -969,6 +1145,9 @@ export async function findTcgplayerProductId(
         // loose single-word overlap lets "Pokeball Tin" hit any product with
         // "Pokeball" in it.
         score = full;
+        // A sealed listing named after its set ("Battle of Legend - Glorious
+        // Gallery") must not land on a single card from that set.
+        if (!SEALED_PRODUCT_WORDS.test(candName)) score = Math.min(score, 0.45);
       } else if (nameOnlyTokens === 0 || score < 0.5) {
         score = Math.max(score, full);
       }
@@ -1294,9 +1473,9 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
   }
 
   // ---- MTG ----
-  if (franchise === "Magic The Gathering") {
-    const r = await getScryfallPrice(rawName, set);
-    if (r?.imageUrl && (await imageUrlLoads(r.imageUrl))) return r.imageUrl;
+  if (franchise === "Magic The Gathering" && !isSealedProduct(item)) {
+    const img = await getScryfallImage(rawName, set);
+    if (img && (await imageUrlLoads(img))) return img;
   }
 
   // ---- Pokemon ----
@@ -1578,8 +1757,7 @@ function num(v: any): number | null {
 }
 
 export function tcgplayerProductLineFor(franchise: string | null | undefined): string | null {
-  if (!franchise) return null;
-  return TCGPLAYER_PRODUCT_LINE_MAP[franchise] ?? null;
+  return productLineFor(franchise);
 }
 
 export function tcgplayerImageUrl(productId: number, size = 437): string {
