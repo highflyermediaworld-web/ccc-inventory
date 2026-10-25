@@ -1,5 +1,5 @@
 /**
- * Card shows CPulls Cards is vending at (built-in list).
+ * Card shows Chris Collects Co is vending at (built-in list).
  *
  * The owner can override this list from Admin → Shop settings; this file is
  * the fallback shown when nothing has been published. Dates are ISO

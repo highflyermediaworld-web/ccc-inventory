@@ -63,7 +63,7 @@ export default function NotFound() {
         </div>
 
         <div className="mt-6 text-[10px] uppercase tracking-[0.22em] text-muted-foreground/50 text-center">
-          CPulls Cards · Trading cards · Est. 2024
+          Chris Collects Co · Trading cards · Est. 2024
         </div>
       </div>
     </div>

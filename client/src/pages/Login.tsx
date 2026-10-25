@@ -112,7 +112,7 @@ export default function LoginPage() {
             Sign in
           </h1>
           <p className="text-xs text-muted-foreground text-center mb-5">
-            CPulls Cards back office
+            Chris Collects Co back office
           </p>
 
           <div className="grid grid-cols-2 gap-1.5 mb-5" role="tablist" aria-label="Login type">

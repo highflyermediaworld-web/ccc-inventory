@@ -78,7 +78,7 @@ export default function SignupPage() {
             Create admin account
           </h1>
           <p className="text-xs text-muted-foreground text-center mb-6">
-            Invite-only · CPulls Cards
+            Invite-only · Chris Collects Co
           </p>
 
           {!isLoading && status && !status.signupEnabled ? (

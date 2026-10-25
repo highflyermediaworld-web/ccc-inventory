@@ -1,5 +1,5 @@
 /**
- * CPulls Cards — service worker
+ * Chris Collects Co — service worker
  *
  * Strategy:
  *   • App shell (HTML)   → network-first, fall back to cached shell offline.
@@ -110,7 +110,7 @@ async function networkFirstShell(request) {
       (await cache.match("/"));
     if (cached) return cached;
     return new Response(
-      "<h1>Offline</h1><p>CPulls Cards is offline. Reconnect and reload.</p>",
+      "<h1>Offline</h1><p>Chris Collects Co is offline. Reconnect and reload.</p>",
       { status: 503, headers: { "Content-Type": "text/html; charset=utf-8" } }
     );
   }

@@ -100,7 +100,7 @@ export const FAQ_GROUPS: FaqGroup[] = [
     items: [
       {
         q: "Where can I find you in person?",
-        a: "CPulls Cards vends at card shows around Northern California. Upcoming dates are listed on the shop page and announced first on Instagram {handle}. Bring your binder: we buy, sell and trade at every table.",
+        a: "Chris Collects Co vends at card shows around Northern California. Upcoming dates are listed on the shop page and announced first on Instagram {handle}. Bring your binder: we buy, sell and trade at every table.",
       },
       {
         q: "Do you do live pulls?",
@@ -153,17 +153,17 @@ export type AboutContent = {
 export const ABOUT_LIMITS = { facts: 4, values: 3, story: 8 } as const;
 
 export const DEFAULT_ABOUT: AboutContent = {
-  kicker: "About CPulls Cards",
+  kicker: "About Chris Collects Co",
   title: "A card shop run by a *collector*, not a warehouse.",
   intro:
-    "CPulls Cards is Chris — a California collector who buys, sells and trades the cards he'd want in his own binder, in person at shows across Northern California and online, every day.",
+    "Chris Collects Co is Chris — a California collector who buys, sells and trades the cards he'd want in his own binder, in person at shows across Northern California and online, every day.",
   storyHeading: "How it started",
   story: [
-    "CPulls began the way most shops do: a binder that got too big. Opening packs on live streams turned into trading at local shows, trading turned into buying collections, and the vault you can shop today grew out of that — one hand-checked card at a time.",
+    "Chris Collects Co began the way most shops do: a binder that got too big. Opening packs on live streams turned into trading at local shows, trading turned into buying collections, and the vault you can shop today grew out of that — one hand-checked card at a time.",
     "It's still a one-person operation on purpose. Every card is inspected, photographed and priced by Chris. Every trade offer and every order confirmation comes from him, not a script. That's slower than a warehouse, and it's the whole point.",
   ],
   photoUrl: null,
-  photoAlt: "Chris of CPulls Cards",
+  photoAlt: "Chris of Chris Collects Co",
   photoCaption: "",
   facts: [
     { title: "Based in California", sub: "Online orders ship nationwide" },

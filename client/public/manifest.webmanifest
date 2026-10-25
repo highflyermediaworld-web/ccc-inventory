@@ -1,7 +1,7 @@
 {
-  "name": "CPulls Cards",
-  "short_name": "CPulls",
-  "description": "Chris Collects Co. — trading card shop, POS, and inventory for CPulls Cards.",
+  "name": "Chris Collects Co",
+  "short_name": "Chris Collects",
+  "description": "Chris Collects Co. — trading card shop, POS, and inventory.",
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",

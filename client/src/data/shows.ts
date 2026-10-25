@@ -1,5 +1,5 @@
 /**
- * Card shows CPulls Cards is vending at.
+ * Card shows Chris Collects Co is vending at.
  *
  * The data lives in shared/shows-data.ts (so the server can read it too);
  * this module adds the date helpers the storefront uses.

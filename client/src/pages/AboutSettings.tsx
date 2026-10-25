@@ -256,7 +256,7 @@ export default function AboutSettings() {
                   </Button>
                 )}
               </div>
-              <Field label="Describe the photo (for screen readers)"><Input value={form.photoAlt} onChange={(e) => patch({ photoAlt: e.target.value })} maxLength={160} placeholder="Chris at the CPulls table" /></Field>
+              <Field label="Describe the photo (for screen readers)"><Input value={form.photoAlt} onChange={(e) => patch({ photoAlt: e.target.value })} maxLength={160} placeholder="Chris at the Chris Collects Co table" /></Field>
               <Field label="Caption (optional)"><Input value={form.photoCaption} onChange={(e) => patch({ photoCaption: e.target.value })} maxLength={160} placeholder="East Bay Card Show, 2026" /></Field>
             </CardContent>
           </Card>

@@ -33,7 +33,7 @@ const LINKS: Array<{ label: string; href: string; testId: string }> = [
 function InfoShell({ title, kicker, intro, children, current }: { title: ReactNode; kicker: string; intro: string; children: ReactNode; current: "faq" | "about" }) {
   useEffect(() => {
     const prev = document.title;
-    document.title = `${current === "faq" ? "FAQ" : "About"} · CPulls Cards`;
+    document.title = `${current === "faq" ? "FAQ" : "About"} · Chris Collects Co`;
     window.scrollTo({ top: 0 });
     return () => { document.title = prev; };
   }, [current]);
@@ -53,12 +53,12 @@ function InfoShell({ title, kicker, intro, children, current }: { title: ReactNo
             </div>
           </div>
         </div>
-        <div className="pc-container h-[72px] flex items-center justify-between gap-4">
-          <a href="#/" className="flex items-center gap-3 shrink-0" aria-label="CPulls Cards home">
+        <div className="pc-container h-[72px] flex items-center justify-between gap-3">
+          <a href="#/" className="flex items-center gap-3 shrink-0" aria-label="Chris Collects Co home">
             <img src="/logo-96.png" alt="" width={44} height={44} className="h-11 w-11 rounded-lg object-cover ring-1 ring-white/15" />
-            <span className="pc-wordmark">CPulls<small>Cards</small></span>
+            <span className="pc-wordmark">Chris Collects<small>Co</small></span>
           </a>
-          <nav className="pc-nav flex items-center gap-0.5" aria-label="Site">
+          <nav className="pc-nav flex items-center gap-0 sm:gap-0.5" aria-label="Site">
             {LINKS.map((l) => (
               <a key={l.href} href={l.href} aria-current={l.href === `#/${current}` ? "page" : undefined} className={l.href === `#/${current}` ? "is-current" : undefined} data-testid={l.testId}>
                 {l.label}
@@ -86,7 +86,7 @@ function InfoShell({ title, kicker, intro, children, current }: { title: ReactNo
           <div>
             <div className="flex items-center gap-3">
               <img src="/logo-96.png" alt="" width={44} height={44} className="h-11 w-11 rounded-lg object-cover ring-1 ring-white/15" />
-              <span className="pc-wordmark">CPulls<small>Cards</small></span>
+              <span className="pc-wordmark">Chris Collects<small>Co</small></span>
             </div>
             <p className="mt-4 text-sm text-white/70 pc-body leading-relaxed max-w-sm">
               A collector-run trading card shop. Pokémon, One Piece, Magic and more — bought, sold and traded directly with Chris.
@@ -101,7 +101,7 @@ function InfoShell({ title, kicker, intro, children, current }: { title: ReactNo
             <ul className="grid gap-2 text-sm pc-body">
               <li><a href="#/">Shop the vault</a></li>
               <li><a href="#/faq">FAQ</a></li>
-              <li><a href="#/about">About CPulls Cards</a></li>
+              <li><a href="#/about">About Chris Collects Co</a></li>
             </ul>
           </div>
           <div>
@@ -115,7 +115,7 @@ function InfoShell({ title, kicker, intro, children, current }: { title: ReactNo
           </div>
         </div>
         <div className="border-t border-white/10">
-          <div className="pc-container py-4 text-xs text-white/60 pc-body">© {new Date().getFullYear()} CPulls Cards · Curated by a collector</div>
+          <div className="pc-container py-4 text-xs text-white/60 pc-body">© {new Date().getFullYear()} Chris Collects Co · Curated by a collector</div>
         </div>
       </footer>
       <ShopChat />
@@ -169,7 +169,7 @@ export function FaqPage() {
       current="faq"
       kicker="Help center"
       title={<>Questions, <em>answered.</em></>}
-      intro="Everything about buying, selling, trading and finding CPulls Cards in person. Can't find it here? DM us and a real person answers."
+      intro="Everything about buying, selling, trading and finding Chris Collects Co in person. Can't find it here? DM us and a real person answers."
     >
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <div className="pc-container py-10 md:py-14 grid gap-10 lg:grid-cols-[220px_1fr]">
@@ -251,7 +251,7 @@ export function AboutPage() {
   return (
     <InfoShell
       current="about"
-      kicker={about.kicker || "About CPulls Cards"}
+      kicker={about.kicker || "About Chris Collects Co"}
       title={<Headline text={about.title} />}
       intro={about.intro}
     >
@@ -272,7 +272,7 @@ export function AboutPage() {
           </div>
           {photo ? (
             <figure className="pc-about-photo order-first lg:order-none" data-testid="about-photo">
-              <img src={photo} alt={about.photoAlt || "CPulls Cards"} loading="lazy" />
+              <img src={photo} alt={about.photoAlt || "Chris Collects Co"} loading="lazy" />
               {about.photoCaption && <figcaption className="pc-body">{about.photoCaption}</figcaption>}
             </figure>
           ) : facts.length > 0 ? (

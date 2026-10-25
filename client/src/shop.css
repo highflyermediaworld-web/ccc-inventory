@@ -142,12 +142,13 @@
 .pc .pc-wordmark {
   font-family: var(--pc-font);
   font-weight: 400;
-  font-size: 1.6rem;
+  font-size: 1.25rem;
   line-height: 0.9;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   color: #fff;
   text-transform: uppercase;
   font-style: italic;
+  white-space: nowrap;
   transform: skewX(-6deg);
   display: inline-block;
 }
@@ -164,11 +165,11 @@
 .pc .pc-nav a,
 .pc .pc-nav button {
   color: rgba(255, 255, 255, 0.92);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 0.5rem 0.6rem;
+  padding: 0.5rem 0.5rem;
   border-radius: 3px;
   background: transparent;
   border: 0;
@@ -1742,4 +1743,24 @@
 @media (max-width: 480px) {
   .pc .pc-chat { right: 8px; left: 8px; width: auto; bottom: 72px; height: min(600px, calc(100dvh - 88px)); }
   .pc .pc-chat-fab { right: 12px; bottom: 12px; }
+}
+
+/* Longer wordmark: give the nav room on laptop widths, restore size on wide screens */
+@media (min-width: 1440px) {
+  .pc .pc-wordmark { font-size: 1.45rem; }
+  .pc .pc-nav a,
+  .pc .pc-nav button { font-size: 13px; padding: 0.5rem 0.6rem; letter-spacing: 0.06em; }
+}
+
+/* Phones: compact wordmark + nav so the info header (Shop · FAQ · About) fits */
+@media (max-width: 639px) {
+  .pc .pc-wordmark { font-size: 1.02rem; }
+  .pc .pc-wordmark small { font-size: 0.6rem; letter-spacing: 0.32em; }
+  .pc .pc-nav a,
+  .pc .pc-nav button { font-size: 12px; padding: 0.5rem 0.4rem; letter-spacing: 0.04em; }
+}
+@media (max-width: 379px) {
+  .pc .pc-wordmark { font-size: 0.9rem; }
+  .pc .pc-nav a,
+  .pc .pc-nav button { padding: 0.5rem 0.3rem; }
 }

@@ -19,7 +19,7 @@ export function Logo({ size = 32, showText = true, className = "" }: LogoProps) 
         <div className="flex flex-col leading-none">
           <span className="text-[13px] font-bold tracking-tight">Chris Collects Co</span>
           <span className="text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
-            CPulls Cards
+            Back office
           </span>
         </div>
       )}

@@ -607,14 +607,14 @@ export default function ShopPage() {
         </div>
         {/* main row */}
         <div className="pc-container h-[72px] flex items-center justify-between gap-4">
-          <a href="#/" className="flex items-center gap-3 shrink-0" aria-label="CPulls Cards home">
+          <a href="#/" className="flex items-center gap-3 shrink-0" aria-label="Chris Collects Co home">
             <img src="/logo-96.png" alt="" width={44} height={44} className="h-11 w-11 rounded-lg object-cover ring-1 ring-white/15" />
             <span className="pc-wordmark">
-              CPulls
-              <small>Cards</small>
+              Chris Collects
+              <small>Co</small>
             </span>
           </a>
-          <nav className="pc-nav hidden lg:flex items-center gap-0.5" aria-label="Shop">
+          <nav className="pc-nav hidden xl:flex items-center gap-0.5" aria-label="Shop">
             {navItems.map((n) => (
               <button key={n.label} onClick={n.onClick} data-testid={`nav-${n.label.replace(/\s+/g, "-").toLowerCase()}`}>
                 {n.label}
@@ -645,7 +645,7 @@ export default function ShopPage() {
             </button>
             <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
               <SheetTrigger asChild>
-                <button className="pc-icon-btn lg:!hidden" aria-label="Open menu" data-testid="button-nav-menu">
+                <button className="pc-icon-btn xl:!hidden" aria-label="Open menu" data-testid="button-nav-menu">
                   <Menu className="h-6 w-6" />
                 </button>
               </SheetTrigger>
@@ -1115,7 +1115,7 @@ export default function ShopPage() {
               </div>
               <h2 className="mt-3 text-[2rem] sm:text-[2.6rem]">Upcoming Shows</h2>
               <p className="pc-sec-sub max-w-[52ch]">
-                Catch CPulls Cards vending around Northern California. Bring your binder: we buy, sell and trade at every table.
+                Catch Chris Collects Co vending around Northern California. Bring your binder: we buy, sell and trade at every table.
               </p>
             </div>
             <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="pc-btn pc-btn-outline" data-testid="link-shows-instagram">
@@ -1215,7 +1215,7 @@ export default function ShopPage() {
           <div className="rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-7 sm:p-10 grid gap-6 lg:grid-cols-[auto_1fr_auto] items-center">
             <div className="h-16 w-16 rounded-2xl bg-red-600 text-white grid place-items-center shrink-0"><BadgeCheck className="h-8 w-8" /></div>
             <div>
-              <span className="pc-pill pc-pill-red">The CPulls promise</span>
+              <span className="pc-pill pc-pill-red">The Chris Collects Co promise</span>
               <h2 className="mt-3 text-[1.6rem] sm:text-[2.1rem] leading-tight">
                 If the card doesn't arrive exactly as described, you get a full refund — no photos, no restocking fees, no questions.
               </h2>
@@ -1239,7 +1239,7 @@ export default function ShopPage() {
                 <span className="pc-pill pc-pill-light"><Check className="h-3.5 w-3.5 text-emerald-600" /> Verified buyers</span>
                 <h2>Loved by Collectors</h2>
               </div>
-              <p className="pc-sec-sub">Real notes from collectors who bought and traded with CPulls.</p>
+              <p className="pc-sec-sub">Real notes from collectors who bought and traded with Chris Collects Co.</p>
             </div>
             <div className="pc-stars" aria-label="5 out of 5 stars">
               {[0, 1, 2, 3, 4].map((i) => <Star key={i} className="h-5 w-5 fill-current" />)}
@@ -1269,7 +1269,7 @@ export default function ShopPage() {
         <div className="pc-container py-12 sm:py-16">
           <div className="text-center">
             <span className="pc-pill pc-pill-dark">Follow us</span>
-            <h2 className="mt-3 text-[2rem] sm:text-[2.4rem]">Join the CPulls Community</h2>
+            <h2 className="mt-3 text-[2rem] sm:text-[2.4rem]">Join the Chris Collects Co Community</h2>
             <p className="pc-sec-sub">Live pulls, new drops and big hits. Don't miss a thing.</p>
           </div>
           <div className="mt-8 grid gap-4 md:grid-cols-3">
@@ -1304,7 +1304,7 @@ export default function ShopPage() {
           <div>
             <div className="flex items-center gap-3">
               <img src="/logo-96.png" alt="" width={44} height={44} className="h-11 w-11 rounded-lg object-cover ring-1 ring-white/15" />
-              <span className="pc-wordmark">CPulls<small>Cards</small></span>
+              <span className="pc-wordmark">Chris Collects<small>Co</small></span>
             </div>
             <p className="mt-4 text-sm text-white/70 pc-body leading-relaxed max-w-sm">
               A collector-run trading card shop. Pokémon, One Piece, Magic and more — bought, sold and traded directly with Chris.
@@ -1321,7 +1321,7 @@ export default function ShopPage() {
                 <li key={n.label}><button onClick={n.onClick} className="text-white/78 hover:text-white">{n.label}</button></li>
               ))}
               <li><a href="#/faq" className="text-white/78 hover:text-white" data-testid="footer-link-faq">FAQ</a></li>
-              <li><a href="#/about" className="text-white/78 hover:text-white" data-testid="footer-link-about">About CPulls Cards</a></li>
+              <li><a href="#/about" className="text-white/78 hover:text-white" data-testid="footer-link-about">About Chris Collects Co</a></li>
             </ul>
           </div>
           <div>
@@ -1336,7 +1336,7 @@ export default function ShopPage() {
         </div>
         <div className="border-t border-white/10">
           <div className="pc-container py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-white/60 pc-body">
-            <span>© {new Date().getFullYear()} CPulls Cards · Curated by a collector</span>
+            <span>© {new Date().getFullYear()} Chris Collects Co · Curated by a collector</span>
             <a href={isAdmin ? "#/admin" : "#/login?next=/admin"} className="!text-white/60 hover:!text-white">{isAdmin ? "Admin dashboard" : "Owner sign in"}</a>
           </div>
         </div>
@@ -1843,7 +1843,7 @@ function SellCalculator() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <span className="pc-calc-kicker">Sell calculator</span>
-          <h3 className="text-xl sm:text-2xl mt-1">What&apos;s my card worth to CPulls?</h3>
+          <h3 className="text-xl sm:text-2xl mt-1">What&apos;s my card worth to Chris Collects Co?</h3>
         </div>
         <span className="pc-calc-badge"><Calculator className="h-5 w-5" /></span>
       </div>
