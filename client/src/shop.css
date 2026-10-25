@@ -467,7 +467,7 @@
   background: #f4f4f6;
   overflow: hidden;
 }
-.pc .pc-product-media > :not(.pc-product-tags) { height: 100%; width: 100%; }
+.pc .pc-product-media > :not(.pc-product-tags):not(.pc-soldout-banner) { height: 100%; width: 100%; }
 .pc .pc-product-tags {
   position: absolute;
   top: 10px;
@@ -872,6 +872,162 @@
 }
 .pc .pc-show-past-name { font-family: var(--pc-ui); font-weight: 700; font-size: 14px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pc .pc-show-past-city { font-size: 12px; color: var(--pc-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+
+/* ---------- out of stock ---------- */
+.pc .pc-product.is-soldout .pc-product-media img,
+.pc .pc-product.is-soldout .pc-product-media > :not(.pc-product-tags):not(.pc-soldout-banner) {
+  filter: grayscale(1) opacity(0.55);
+}
+.pc .pc-product.is-soldout .pc-product-name,
+.pc .pc-product.is-soldout .pc-price { color: var(--pc-ink-2); }
+.pc .pc-product.is-soldout .pc-price { text-decoration: none; }
+.pc .pc-soldout-banner {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  top: 50%;
+  width: auto;
+  height: auto;
+  transform: translateY(-50%) rotate(-12deg);
+  background: var(--pc-black);
+  color: #fff;
+  text-align: center;
+  padding: 0.5rem 0;
+  font-family: var(--pc-ui);
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  border-top: 3px solid var(--pc-red);
+  border-bottom: 3px solid var(--pc-red);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  pointer-events: none;
+  z-index: 2;
+}
+.pc .pc-btn.is-disabled,
+.pc .pc-btn:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+  color: var(--pc-muted);
+  border-color: var(--pc-line);
+  background: var(--pc-paper);
+}
+.pc .pc-btn.is-disabled:hover { background: var(--pc-paper); color: var(--pc-muted); }
+
+/* ---------- sell calculator ---------- */
+.pc .pc-calc {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-top: 4px solid var(--pc-red);
+  border-radius: 8px;
+  background:
+    radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1.5px) 0 0 / 12px 12px,
+    linear-gradient(180deg, #1c1c21 0%, #141417 100%);
+  color: #fff;
+  padding: 1.5rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.pc .pc-calc-kicker {
+  font-family: var(--pc-ui);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--pc-gold);
+}
+.pc .pc-calc-badge {
+  height: 44px;
+  width: 44px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  background: var(--pc-red);
+  color: #fff;
+  flex-shrink: 0;
+}
+.pc .pc-calc-label { color: rgba(255,255,255,0.78); }
+.pc .pc-calc-input {
+  display: flex;
+  align-items: center;
+  height: 52px;
+  margin-top: 0.4rem;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.06);
+  overflow: hidden;
+}
+.pc .pc-calc-input:focus-within { border-color: var(--pc-red); box-shadow: 0 0 0 3px rgba(220,38,38,0.25); }
+.pc .pc-calc-prefix {
+  padding: 0 0.4rem 0 0.9rem;
+  font-family: var(--pc-font);
+  font-size: 1.25rem;
+  color: rgba(255,255,255,0.7);
+}
+.pc .pc-calc-input input {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: #fff;
+  font-family: var(--pc-font);
+  font-size: 1.35rem;
+  padding: 0 0.9rem 0 0.2rem;
+}
+.pc .pc-calc-input input::placeholder { color: rgba(255,255,255,0.35); }
+.pc .pc-calc-input input[type="number"] { padding-left: 0.9rem; -moz-appearance: textfield; }
+.pc .pc-calc-input input::-webkit-outer-spin-button,
+.pc .pc-calc-input input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.pc .pc-calc-preset {
+  font-family: var(--pc-ui);
+  font-weight: 700;
+  font-size: 12px;
+  height: 30px;
+  padding: 0 0.7rem;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: transparent;
+  color: rgba(255,255,255,0.85);
+}
+.pc .pc-calc-preset:hover { border-color: #fff; color: #fff; }
+.pc .pc-calc-preset.is-active { background: #fff; color: var(--pc-ink); border-color: #fff; }
+.pc .pc-calc-out {
+  border-radius: 4px;
+  padding: 0.9rem 1rem;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.pc .pc-calc-out.is-trade {
+  background: linear-gradient(135deg, rgba(220,38,38,0.35), rgba(240,137,43,0.25));
+  border-color: rgba(245,165,36,0.5);
+}
+.pc .pc-calc-out-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--pc-ui);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.75);
+}
+.pc .pc-calc-out-value {
+  font-family: var(--pc-font);
+  font-size: clamp(1.4rem, 3vw, 1.9rem);
+  line-height: 1.1;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+.pc .pc-calc-out.is-trade .pc-calc-out-value { color: #ffd28a; }
+.pc .pc-calc-out-sub { font-size: 12px; color: rgba(255,255,255,0.6); }
 
 /* Dialogs are portaled to <body>; `.pc-dialog` carries the storefront tokens. */
 .pc-dialog {

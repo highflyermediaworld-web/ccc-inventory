@@ -58,6 +58,8 @@ import {
   Clock,
   CalendarDays,
   Tent,
+  Calculator,
+  Banknote,
   Radio,
   BadgeCheck,
 } from "lucide-react";
@@ -73,6 +75,11 @@ type ShopListing = {
   category: string;
   franchise: string;
   qty: number;
+  /** false when sold out / qty 0 — item stays visible with an Out of stock banner */
+  inStock?: boolean;
+  /** TCGplayer sales velocity (copies sold in the last 3 months / per day) */
+  sold3mo?: number | null;
+  soldPerDay?: number | null;
   askingPrice: number;
   marketValue: number | null;
   imageUrl: string | null;
@@ -94,7 +101,7 @@ const PAGE_SIZE = 24;
 // Preview builds can point the storefront at a static inventory snapshot.
 const LISTINGS_URL: string = (import.meta as any).env?.VITE_SHOP_LISTINGS_URL || "/api/shop/listings";
 
-type SortKey = "featured" | "newest" | "price-asc" | "price-desc" | "name";
+type SortKey = "featured" | "bestsellers" | "newest" | "price-asc" | "price-desc" | "name";
 
 // ---------- Helpers ----------
 const GRADE_RE = /^(PSA|CGC|BGS|SGC|TAG|ACE)\s*([\d.]+)/i;
@@ -138,13 +145,44 @@ function relativeTime(unixSeconds: number | null | undefined): string | null {
   return `${Math.floor(mo / 12)} yr ago`;
 }
 
-function byPriceDesc(a: ShopListing, b: ShopListing) {
-  return b.askingPrice - a.askingPrice;
+const inStock = (l: ShopListing) => l.inStock !== false;
+
+/** In-stock items always sort ahead of sold-out ones. */
+function stockFirst(cmp: (a: ShopListing, b: ShopListing) => number) {
+  return (a: ShopListing, b: ShopListing) => {
+    const sa = inStock(a) ? 0 : 1;
+    const sb = inStock(b) ? 0 : 1;
+    return sa !== sb ? sa - sb : cmp(a, b);
+  };
 }
 
-function byNewest(a: ShopListing, b: ShopListing) {
-  return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+const velocity = (l: ShopListing) => Math.max(l.sold3mo ?? 0, (l.soldPerDay ?? 0) * 90);
+const byPriceDesc = stockFirst((a, b) => b.askingPrice - a.askingPrice);
+const byBestSellers = stockFirst((a, b) => velocity(b) - velocity(a) || b.askingPrice - a.askingPrice);
+
+/**
+ * "Featured" ranking: biggest sellers and top-value items first.
+ * Each item gets a percentile rank for price and for sales velocity; the
+ * two are averaged so a hot $20 seller and a $3,000 grail both surface.
+ */
+function rankFeatured(list: ShopListing[]): Map<string, number> {
+  const score = new Map<string, number>();
+  const n = list.length || 1;
+  const byP = [...list].sort((a, b) => a.askingPrice - b.askingPrice);
+  const byV = [...list].sort((a, b) => velocity(a) - velocity(b));
+  const anyVelocity = list.some((l) => velocity(l) > 0);
+  byP.forEach((l, i) => score.set(l.id, (i + 1) / n));
+  if (anyVelocity) {
+    byV.forEach((l, i) => {
+      const v = velocity(l) > 0 ? (i + 1) / n : 0;
+      score.set(l.id, (score.get(l.id) ?? 0) * 0.5 + v * 0.5 + (velocity(l) > 0 ? 0.05 : 0));
+    });
+  }
+  return score;
 }
+const byPriceAsc = stockFirst((a, b) => a.askingPrice - b.askingPrice);
+const byNewest = stockFirst((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+const byName = stockFirst((a, b) => a.name.localeCompare(b.name));
 
 // ---------- Page ----------
 export default function ShopPage() {
@@ -173,6 +211,7 @@ export default function ShopPage() {
 
   // Vault filters
   const [search, setSearch] = useState("");
+  const [hideSoldOut, setHideSoldOut] = useState(false);
   const [franchiseFilter, setFranchiseFilter] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [conditionFilter, setConditionFilter] = useState<string>("all");
@@ -192,17 +231,28 @@ export default function ShopPage() {
   // Reset pagination when filters change
   useEffect(() => {
     setVisible(PAGE_SIZE);
-  }, [search, franchiseFilter, categoryFilter, conditionFilter, minPrice, maxPrice, sort]);
+  }, [search, franchiseFilter, categoryFilter, conditionFilter, minPrice, maxPrice, sort, hideSoldOut]);
 
   // Derived data ---------------------------------------------------------
+  const available = useMemo(() => listings.filter(inStock), [listings]);
+  // "Hot seller" = in-stock items in the top 15% of TCGplayer sales velocity
+  // (and selling at least a copy a week).
+  const hotIds = useMemo(() => {
+    const withV = available.filter((l) => velocity(l) >= 12).sort((a, b) => velocity(b) - velocity(a));
+    const take = Math.max(0, Math.min(withV.length, Math.ceil(available.length * 0.15)));
+    return new Set(withV.slice(0, take).map((l) => l.id));
+  }, [available]);
+  const bestSellers = useMemo(() => available.filter((l) => hotIds.has(l.id)).sort(byBestSellers).slice(0, 12), [available, hotIds]);
+  const soldOutCount = listings.length - available.length;
+
   const franchises = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const l of listings) {
+    for (const l of available) {
       if (!l.franchise || l.franchise === "Other") continue;
       counts.set(l.franchise, (counts.get(l.franchise) ?? 0) + 1);
     }
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }));
-  }, [listings]);
+  }, [available]);
 
   const sealed = useMemo(() => listings.filter((l) => l.category === "Sealed").sort(byPriceDesc), [listings]);
   const slabs = useMemo(() => listings.filter((l) => l.category === "Slab").sort(byPriceDesc), [listings]);
@@ -212,13 +262,13 @@ export default function ShopPage() {
   const pokemon = useMemo(() => listings.filter((l) => l.franchise === "Pokémon").sort(byPriceDesc), [listings]);
   const deals = useMemo(
     () =>
-      listings
+      available
         .filter((l) => l.marketValue != null && l.marketValue > 0 && l.askingPrice < l.marketValue)
         .sort((a, b) => (b.marketValue! - b.askingPrice) / b.marketValue! - (a.marketValue! - a.askingPrice) / a.marketValue!),
-    [listings]
+    [available]
   );
 
-  const topWithPhoto = (arr: ShopListing[]) => arr.find((l) => !!l.imageUrl) ?? arr[0] ?? null;
+  const topWithPhoto = (arr: ShopListing[]) => arr.find((l) => inStock(l) && !!l.imageUrl) ?? arr.find(inStock) ?? null;
   const featureTabs = useMemo(() => {
     const tabs: { key: string; label: string; item: ShopListing | null }[] = [
       { key: "pull", label: "Top Pull", item: topWithPhoto(singles) },
@@ -230,24 +280,25 @@ export default function ShopPage() {
   const [featureKey, setFeatureKey] = useState<string>("pull");
   const feature = featureTabs.find((t) => t.key === featureKey) ?? featureTabs[0] ?? null;
 
-  const latest = newest[0] ?? null;
+  const latest = newest.find(inStock) ?? null;
 
   const stats = useMemo(() => {
-    const totalQty = listings.reduce((sum, l) => sum + (l.qty || 0), 0);
+    const totalQty = available.reduce((sum, l) => sum + (l.qty || 0), 0);
     return {
       totalQty,
       franchiseCount: franchises.length,
-      sealedCount: sealed.length,
-      slabCount: slabs.length,
-      singlesCount: singles.length,
+      sealedCount: sealed.filter(inStock).length,
+      slabCount: slabs.filter(inStock).length,
+      singlesCount: singles.filter(inStock).length,
     };
-  }, [listings, franchises, sealed, slabs, singles]);
+  }, [available, franchises, sealed, slabs, singles]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const min = parseFloat(minPrice);
     const max = parseFloat(maxPrice);
     const out = listings.filter((l) => {
+      if (hideSoldOut && !inStock(l)) return false;
       if (q && !`${l.name} ${l.setName} ${l.rarity ?? ""} ${l.franchise}`.toLowerCase().includes(q)) return false;
       if (franchiseFilter.length && !franchiseFilter.includes(l.franchise)) return false;
       if (categoryFilter !== "all" && l.category !== categoryFilter) return false;
@@ -261,18 +312,25 @@ export default function ShopPage() {
         out.sort(byNewest);
         break;
       case "price-asc":
-        out.sort((a, b) => a.askingPrice - b.askingPrice);
+        out.sort(byPriceAsc);
         break;
       case "price-desc":
-      case "featured":
         out.sort(byPriceDesc);
         break;
+      case "bestsellers":
+        out.sort(byBestSellers);
+        break;
+      case "featured": {
+        const rank = rankFeatured(listings);
+        out.sort(stockFirst((a, b) => (rank.get(b.id) ?? 0) - (rank.get(a.id) ?? 0)));
+        break;
+      }
       case "name":
-        out.sort((a, b) => a.name.localeCompare(b.name));
+        out.sort(byName);
         break;
     }
     return out;
-  }, [listings, search, franchiseFilter, categoryFilter, conditionFilter, minPrice, maxPrice, sort]);
+  }, [listings, search, franchiseFilter, categoryFilter, conditionFilter, minPrice, maxPrice, sort, hideSoldOut]);
 
   const hasAnyListings = listings.length > 0;
   const activeFilterCount =
@@ -281,6 +339,7 @@ export default function ShopPage() {
     (conditionFilter !== "all" ? 1 : 0) +
     (minPrice ? 1 : 0) +
     (maxPrice ? 1 : 0) +
+    (hideSoldOut ? 1 : 0) +
     (search ? 1 : 0);
 
   // Actions -------------------------------------------------------------
@@ -292,6 +351,7 @@ export default function ShopPage() {
     setMinPrice("");
     setMaxPrice("");
     setSort("featured");
+    setHideSoldOut(false);
   }
 
   function toggleFranchise(f: string) {
@@ -642,7 +702,24 @@ export default function ShopPage() {
           onViewAll={() => browse({ sort: "newest" })}
           onBuy={setBuyTarget}
           onTrade={setTradeTarget}
+          hotIds={hotIds}
           showNewTag
+        />
+      )}
+
+      {bestSellers.length >= 4 && (
+        <Shelf
+          tone="paper"
+          pill={<span className="pc-pill pc-pill-red"><Flame className="h-3.5 w-3.5" /> Moving fast</span>}
+          title="Best Sellers"
+          subtitle="The cards and product collectors are buying most right now, by TCGplayer sales volume."
+          items={bestSellers}
+          count={hotIds.size}
+          viewAllLabel="View all best sellers"
+          onViewAll={() => browse({ sort: "bestsellers" })}
+          onBuy={setBuyTarget}
+          onTrade={setTradeTarget}
+          hotIds={hotIds}
         />
       )}
 
@@ -657,6 +734,7 @@ export default function ShopPage() {
           onViewAll={() => browse({ category: "Sealed" })}
           onBuy={setBuyTarget}
           onTrade={setTradeTarget}
+          hotIds={hotIds}
         />
       )}
 
@@ -671,6 +749,7 @@ export default function ShopPage() {
           onViewAll={() => browse({ category: "Slab" })}
           onBuy={setBuyTarget}
           onTrade={setTradeTarget}
+          hotIds={hotIds}
           gold
         />
       )}
@@ -687,6 +766,7 @@ export default function ShopPage() {
           onViewAll={() => browse({ category: "Raw" })}
           onBuy={setBuyTarget}
           onTrade={setTradeTarget}
+          hotIds={hotIds}
         />
       )}
 
@@ -701,6 +781,7 @@ export default function ShopPage() {
           onViewAll={() => browse({ franchise: "One Piece" })}
           onBuy={setBuyTarget}
           onTrade={setTradeTarget}
+          hotIds={hotIds}
         />
       )}
 
@@ -784,7 +865,8 @@ export default function ShopPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="pc">
-                  <SelectItem value="featured">Featured</SelectItem>
+                  <SelectItem value="featured">Featured: top items &amp; best sellers</SelectItem>
+                  <SelectItem value="bestsellers">Best sellers</SelectItem>
                   <SelectItem value="newest">Newest</SelectItem>
                   <SelectItem value="price-asc">Price: low to high</SelectItem>
                   <SelectItem value="price-desc">Price: high to low</SelectItem>
@@ -811,6 +893,16 @@ export default function ShopPage() {
                 </button>
               );
             })}
+            {soldOutCount > 0 && (
+              <button
+                onClick={() => setHideSoldOut((v) => !v)}
+                className={cn("pc-chip", hideSoldOut && "is-active")}
+                aria-pressed={hideSoldOut}
+                data-testid="pill-hide-soldout"
+              >
+                {hideSoldOut ? "Showing in stock only" : "Hide sold out"} <span className="pc-chip-count">{soldOutCount}</span>
+              </button>
+            )}
             {activeFilterCount > 0 && (
               <button onClick={resetFilters} className="pc-chip !border-red-300 !text-red-700" data-testid="button-shop-reset">
                 <X className="h-3.5 w-3.5" /> Clear ({activeFilterCount})
@@ -830,7 +922,7 @@ export default function ShopPage() {
               <>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                   {filtered.slice(0, visible).map((l) => (
-                    <ProductCard key={l.id} listing={l} onBuy={() => setBuyTarget(l)} onTrade={() => setTradeTarget(l)} />
+                    <ProductCard key={l.id} listing={l} onBuy={() => setBuyTarget(l)} onTrade={() => setTradeTarget(l)} hot={hotIds.has(l.id)} />
                   ))}
                 </div>
                 {visible < filtered.length && (
@@ -915,7 +1007,7 @@ export default function ShopPage() {
 
       {/* ============ SELL & TRADE ============ */}
       <section ref={tradeRef} id="trade" className="pc-dark scroll-mt-[72px]">
-        <div className="pc-container py-12 sm:py-16 grid gap-8 lg:grid-cols-[1.1fr_1fr] items-center">
+        <div className="pc-container py-12 sm:py-16 grid gap-8 lg:grid-cols-[1.1fr_1fr] items-start">
           <div>
             <span className="pc-pill pc-pill-red"><ArrowLeftRight className="h-3.5 w-3.5" /> Sell &amp; Trade</span>
             <h2 className="mt-4 text-[2rem] sm:text-[2.6rem]">Buy, Sell &amp; Trade Cards With a Collector</h2>
@@ -936,7 +1028,10 @@ export default function ShopPage() {
               </a>
             </div>
           </div>
-          <div className="grid sm:grid-cols-3 gap-3">
+
+          <SellCalculator />
+
+          <div className="grid sm:grid-cols-3 gap-3 lg:col-span-2">
             {[
               { Icon: ShieldCheck, title: "Every card, verified", body: "Grades, edges and centering inspected in-hand. What you see in the photo is what ships." },
               { Icon: Award, title: "Fair, transparent pricing", body: "Live TCGplayer market data on every listing, refreshed every 30 minutes." },
@@ -1091,6 +1186,89 @@ export default function ShopPage() {
 }
 
 // ---------- Category tile ----------
+const CASH_RATE = 0.7;
+const TRADE_RATE = 0.8;
+
+function SellCalculator() {
+  const [value, setValue] = useState("");
+  const [qty, setQty] = useState(1);
+  const market = Math.max(0, parseFloat(value.replace(/[^0-9.]/g, "")) || 0);
+  const total = market * Math.max(1, qty);
+  const cash = total * CASH_RATE;
+  const trade = total * TRADE_RATE;
+  const has = total > 0;
+  const presets = [10, 25, 50, 100, 250, 500];
+
+  return (
+    <div className="pc-calc" data-testid="sell-calculator">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <span className="pc-calc-kicker">Sell calculator</span>
+          <h3 className="text-xl sm:text-2xl mt-1">What&apos;s my card worth to CPulls?</h3>
+        </div>
+        <span className="pc-calc-badge"><Calculator className="h-5 w-5" /></span>
+      </div>
+      <p className="mt-2 text-sm text-white/70 pc-body">
+        Enter the TCGplayer market value. We pay <b className="text-white">{Math.round(CASH_RATE * 100)}% in cash</b> or <b className="text-white">{Math.round(TRADE_RATE * 100)}% in trade credit</b> toward anything in the vault.
+      </p>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_120px]">
+        <label className="block">
+          <span className="pc-field-label pc-calc-label">Market value per card</span>
+          <div className="pc-calc-input">
+            <span className="pc-calc-prefix">$</span>
+            <input
+              inputMode="decimal"
+              placeholder="0.00"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              aria-label="Market value per card in dollars"
+              data-testid="input-calc-value"
+            />
+          </div>
+        </label>
+        <label className="block">
+          <span className="pc-field-label pc-calc-label">Quantity</span>
+          <div className="pc-calc-input">
+            <input
+              type="number"
+              min={1}
+              max={999}
+              value={qty}
+              onChange={(e) => setQty(Math.max(1, Math.min(999, Number(e.target.value) || 1)))}
+              aria-label="Quantity"
+              data-testid="input-calc-qty"
+            />
+          </div>
+        </label>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {presets.map((p) => (
+          <button key={p} type="button" onClick={() => setValue(String(p))} className={cn("pc-calc-preset", market === p && "is-active")} data-testid={`button-calc-preset-${p}`}>
+            ${p}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-3">
+        <div className="pc-calc-out" data-testid="calc-cash">
+          <span className="pc-calc-out-label"><Banknote className="h-4 w-4" /> Cash offer</span>
+          <span className="pc-calc-out-value">{has ? formatCurrency(cash) : "—"}</span>
+          <span className="pc-calc-out-sub">{Math.round(CASH_RATE * 100)}% of market</span>
+        </div>
+        <div className="pc-calc-out is-trade" data-testid="calc-trade">
+          <span className="pc-calc-out-label"><ArrowLeftRight className="h-4 w-4" /> Trade credit</span>
+          <span className="pc-calc-out-value">{has ? formatCurrency(trade) : "—"}</span>
+          <span className="pc-calc-out-sub">{Math.round(TRADE_RATE * 100)}% of market{has ? ` · +${formatCurrency(trade - cash)} vs cash` : ""}</span>
+        </div>
+      </div>
+      <p className="mt-3 text-[12px] leading-relaxed text-white/55 pc-body">
+        Estimate only. Final offers are based on in-hand condition, authenticity and current TCGplayer market; graded cards and sealed product are quoted individually.
+      </p>
+    </div>
+  );
+}
+
 function ShowCard({ show, next }: { show: CardShow; next?: boolean }) {
   const d = showDateParts(show);
   const where = [show.venue, show.city].filter(Boolean).join(" · ");
@@ -1193,6 +1371,7 @@ function Shelf({
   gold,
   binder,
   showNewTag,
+  hotIds,
 }: {
   tone: "light" | "paper" | "dark";
   pill: React.ReactNode;
@@ -1207,6 +1386,7 @@ function Shelf({
   gold?: boolean;
   binder?: boolean;
   showNewTag?: boolean;
+  hotIds?: Set<string>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [canPrev, setCanPrev] = useState(false);
@@ -1262,7 +1442,7 @@ function Shelf({
           </div>
           <div ref={ref} className="pc-shelf mt-6">
             {items.map((l) => (
-              <ProductCard key={l.id} listing={l} onBuy={() => onBuy(l)} onTrade={() => onTrade(l)} gold={gold} showNewTag={showNewTag} />
+              <ProductCard key={l.id} listing={l} onBuy={() => onBuy(l)} onTrade={() => onTrade(l)} gold={gold} showNewTag={showNewTag} hot={hotIds?.has(l.id)} />
             ))}
           </div>
         </div>
@@ -1278,12 +1458,14 @@ function ProductCard({
   onTrade,
   gold,
   showNewTag,
+  hot,
 }: {
   listing: ShopListing;
   onBuy: () => void;
   onTrade: () => void;
   gold?: boolean;
   showNewTag?: boolean;
+  hot?: boolean;
 }) {
   // Only call it a deal when it's meaningfully under market (≥5% and ≥ $2 off).
   const belowMarket =
@@ -1297,15 +1479,26 @@ function ProductCard({
   const condKey = (listing.condition ?? "").toUpperCase();
   const [imgFailed, setImgFailed] = useState(false);
   const src = imgFailed ? null : resolveUploadUrl(listing.imageUrl);
-  const isNew = showNewTag || (listing.createdAt ? Date.now() / 1000 - listing.createdAt < 7 * 86400 : false);
+  const soldOut = !inStock(listing);
+  const hotSeller = hot || false;
+  const isNew = !soldOut && (showNewTag || (listing.createdAt ? Date.now() / 1000 - listing.createdAt < 7 * 86400 : false));
 
   return (
-    <div data-testid={`card-listing-${listing.id}`} className={cn("pc-product", (gold || isSlab) && "is-gold")}>
+    <div
+      data-testid={`card-listing-${listing.id}`}
+      data-stock={soldOut ? "out" : "in"}
+      className={cn("pc-product", (gold || isSlab) && "is-gold", soldOut && "is-soldout")}
+    >
       <div className="pc-product-media">
         {src ? (
           <img src={src} alt={listing.name} loading="lazy" onError={() => setImgFailed(true)} className="h-full w-full object-contain p-3" />
         ) : (
           <CardThumb imageUrl={null} franchise={listing.franchise} size="lg" className="h-full w-full" />
+        )}
+        {soldOut && (
+          <div className="pc-soldout-banner" role="status" data-testid={`banner-soldout-${listing.id}`}>
+            <span>Out of stock</span>
+          </div>
         )}
         <div className="pc-product-tags">
           <div className="flex flex-col gap-1 items-start">
@@ -1321,7 +1514,8 @@ function ProductCard({
           </div>
           <div className="flex flex-col gap-1 items-end">
             {isNew && <span className="pc-tag pc-tag-new">New</span>}
-            {belowMarket && <span className="pc-tag pc-tag-deal">Deal</span>}
+            {!soldOut && hotSeller && <span className="pc-tag pc-tag-hot">Hot seller</span>}
+            {!soldOut && belowMarket && <span className="pc-tag pc-tag-deal">Deal</span>}
           </div>
         </div>
       </div>
@@ -1335,15 +1529,23 @@ function ProductCard({
         <div className="pc-product-foot">
           <div className="flex items-baseline min-w-0">
             <span className="pc-price" data-testid={`text-price-${listing.id}`}>{formatCurrency(listing.askingPrice)}</span>
-            {belowMarket && <span className="pc-price-was">{formatCurrency(listing.marketValue!)}</span>}
+            {!soldOut && belowMarket && <span className="pc-price-was">{formatCurrency(listing.marketValue!)}</span>}
           </div>
           <div className="pc-product-actions">
-            <button onClick={onBuy} className="pc-btn pc-btn-red" data-testid={`button-buy-${listing.id}`}>
-              <ShoppingBag className="h-4 w-4" /> Buy
-            </button>
-            <button onClick={onTrade} className="pc-btn pc-btn-outline pc-btn-icon" aria-label={`Propose a trade for ${listing.name}`} title="Propose a trade" data-testid={`button-trade-${listing.id}`}>
-              <ArrowLeftRight className="h-4 w-4" />
-            </button>
+            {soldOut ? (
+              <button type="button" className="pc-btn pc-btn-outline is-disabled" disabled aria-disabled="true" data-testid={`button-soldout-${listing.id}`}>
+                Sold out
+              </button>
+            ) : (
+              <>
+                <button onClick={onBuy} className="pc-btn pc-btn-red" data-testid={`button-buy-${listing.id}`}>
+                  <ShoppingBag className="h-4 w-4" /> Buy
+                </button>
+                <button onClick={onTrade} className="pc-btn pc-btn-outline pc-btn-icon" aria-label={`Propose a trade for ${listing.name}`} title="Propose a trade" data-testid={`button-trade-${listing.id}`}>
+                  <ArrowLeftRight className="h-4 w-4" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

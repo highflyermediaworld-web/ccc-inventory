@@ -1208,17 +1208,30 @@ export async function registerRoutes(
   // ===== PUBLIC SHOP =====
   // Public listings feed — only returns YOUR listings (sellerName null)
   // with asking price > 0. Strips out admin-only fields (cost, P/L).
+  const isShopInStock = (i: { status: string; qty: number | null }) =>
+    (i.status === "In Inventory" || i.status === "Listed") && (i.qty ?? 0) > 0;
+
+  // Reject buy/trade requests for items that are no longer available.
+  async function assertShopItemAvailable(itemId: unknown): Promise<string | null> {
+    if (typeof itemId !== "string" || !itemId) return null; // schema validation handles shape
+    const item = await storage.getInventoryItem(itemId);
+    if (!item) return "That item is no longer listed.";
+    if (!isShopInStock(item)) return "Sorry, that item is out of stock.";
+    return null;
+  }
+
   app.get("/api/shop/listings", async (_req, res) => {
     try {
       const inv = await storage.listInventory();
-      // Everything currently in stock is shoppable. We treat any item with
-      // qty > 0 and status in {In Inventory, Listed} as a live listing.
+      // Every priced item stays on the storefront. Items with qty > 0 and
+      // status in {In Inventory, Listed} are buyable; anything else (qty 0,
+      // Sold, Traded) is returned with inStock=false so the shop can show an
+      // "Out of stock" banner instead of hiding it.
       // Price priority: asking → marketValue. Items with neither are skipped.
-      const SHOPPABLE_STATUSES = new Set(["In Inventory", "Listed"]);
+      const SHOP_STATUSES = new Set(["In Inventory", "Listed", "Sold", "Traded"]);
       const filtered = inv
         .filter((i) => {
-          if (!SHOPPABLE_STATUSES.has(i.status)) return false;
-          if ((i.qty ?? 0) <= 0) return false;
+          if (!SHOP_STATUSES.has(i.status)) return false;
           const price =
             (typeof i.asking === "number" && i.asking > 0 ? i.asking : null) ??
             (typeof i.marketValue === "number" && i.marketValue > 0 ? i.marketValue : null);
@@ -1237,6 +1250,9 @@ export async function registerRoutes(
             category: i.category,
             franchise: i.franchise,
             qty: i.qty,
+            inStock: isShopInStock(i),
+            sold3mo: i.tcgpTotalSold3mo ?? null,
+            soldPerDay: i.tcgpAvgDailySold ?? null,
             askingPrice: price,
             marketValue: i.marketValue,
             imageUrl: i.imageUrl,
@@ -1285,6 +1301,8 @@ export async function registerRoutes(
         ...req.body,
         type: "Buy",
       });
+      const unavailable = await assertShopItemAvailable(parsed.itemId);
+      if (unavailable) return res.status(409).json({ message: unavailable });
       const request = await storage.createCustomerRequest(parsed);
       broadcast({ type: "customerRequest:new", payload: request });
       res.status(201).json({ ok: true, requestId: request.id });
@@ -1300,6 +1318,8 @@ export async function registerRoutes(
         ...req.body,
         type: "Trade",
       });
+      const unavailable = await assertShopItemAvailable(parsed.itemId);
+      if (unavailable) return res.status(409).json({ message: unavailable });
       const request = await storage.createCustomerRequest(parsed);
       broadcast({ type: "customerRequest:new", payload: request });
       res.status(201).json({ ok: true, requestId: request.id });
