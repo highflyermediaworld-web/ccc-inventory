@@ -529,6 +529,10 @@ const SPELLING_CORRECTIONS: [RegExp, string][] = [
   [/\bGiratena\b/gi, "Giratina"],
   [/\bArceaus\b/gi, "Arceus"],
   [/\bLatia's\b/gi, "Latias"],
+  [/\.D\.\s+(?=[A-Z])/g, ".D."],
+  [/\(\s*ALT\s*\)/gi, "(Alternate Art)"],
+  [/\(\s*Alt Art\s*\)/gi, "(Alternate Art)"],
+  [/\(\s*AA\s*\)/gi, "(Alternate Art)"],
   [/\bFeraligator\b/gi, "Feraligatr"],
   [/\bPokeball\b/gi, "Poke Ball"],
   [/\bLarrys\b/gi, "Larry's"],
@@ -563,6 +567,33 @@ const SPELLING_CORRECTIONS: [RegExp, string][] = [
 // autocorrect-names endpoint so the inventory's setName column gets cleaned
 // up too. Matching is anchored on whole words so "Shinning Fates" -> "Shining
 // Fates" while a set called "Shining Legends" stays untouched.
+// One Piece set codes -> the set names TCGplayer indexes. Codes themselves
+// never appear in TCGplayer product names, so "OP05 - JP" finds nothing.
+export const ONE_PIECE_SET_CODES: [RegExp, string][] = [
+  [/\bOP-?01\b/gi, "Romance Dawn"],
+  [/\bOP-?02\b/gi, "Paramount War"],
+  [/\bOP-?03\b/gi, "Pillars of Strength"],
+  [/\bOP-?04\b/gi, "Kingdoms of Intrigue"],
+  [/\bOP-?05\b/gi, "Awakening of the New Era"],
+  [/\bOP-?06\b/gi, "Wings of the Captain"],
+  [/\bOP-?07\b/gi, "500 Years in the Future"],
+  [/\bOP-?08\b/gi, "Two Legends"],
+  [/\bOP-?09\b/gi, "Emperors in the New World"],
+  [/\bOP-?10\b/gi, "Royal Blood"],
+  [/\bOP-?11\b/gi, "A Fist of Divine Speed"],
+  [/\bOP-?12\b/gi, "Legacy of the Master"],
+  [/\bOP-?13\b/gi, "Carrying On His Will"],
+  [/\bOP-?14\b/gi, "The Azure Sea's Seven"],
+  [/\bOP-?15\b/gi, "Adventure on Kami's Island"],
+  [/\bEB-?01\b/gi, "Memorial Collection"],
+  [/\bEB-?02\b/gi, "Anime 25th Collection"],
+  [/\bEB-?03\b/gi, "Extra Booster: One Piece Heroines Edition"],
+  [/\bEB-?04\b/gi, "Adventure on Kami's Island"],
+  [/\bPRB-?01\b/gi, "Premium Booster -The Best-"],
+  [/\bPRB-?02\b/gi, "Premium Booster -The Best- Vol. 2"],
+];
+const ONE_PIECE_SET_NAMES = ONE_PIECE_SET_CODES.map(([, n]) => n);
+
 export const SET_NAME_CORRECTIONS: [RegExp, string][] = [
   [/\bShinning\s+Fates\b/gi, "Shining Fates"],
   [/\bShinnying\s+Fates\b/gi, "Shining Fates"],
@@ -585,7 +616,48 @@ export function correctSetName(raw: string | null | undefined): string | null {
   if (!raw) return raw ?? null;
   let n = raw;
   for (const [re, to] of SET_NAME_CORRECTIONS) n = n.replace(re, to);
+  // Bare set codes ("OP05 - JP", "EB03", "OP15 - EB04"): swap the leading code
+  // for the set name so the search has real words to work with.
+  if (/^\s*(OP|EB|PRB)-?\d{2}\b/i.test(n)) {
+    for (const [re, to] of ONE_PIECE_SET_CODES) {
+      if (re.test(n)) { re.lastIndex = 0; n = n.replace(re, to); break; }
+      re.lastIndex = 0;
+    }
+  }
   return n;
+}
+
+// "Nico Robin (107) (Parallel) - Emperors in the New World (OP09)": the set is
+// written into the item name. Pull it out so it's used as the set and not
+// scored as part of the card name.
+function extractEmbeddedSet(rawName: string): { name: string; set: string } | null {
+  for (const setName of ONE_PIECE_SET_NAMES) {
+    const re = new RegExp("\\s*-?\\s*" + setName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*(\\((OP|EB|PRB)-?\\d{2}\\))?", "i");
+    const m = re.exec(rawName);
+    if (m && m.index > 0) {
+      const name = (rawName.slice(0, m.index) + " " + rawName.slice(m.index + m[0].length)).replace(/\s+/g, " ").replace(/\s*-\s*$/, "").trim();
+      if (name) return { name, set: setName };
+    }
+  }
+  return null;
+}
+
+// Marketplace-style titles ("Zoro-Juurou SP OP05-067 R Emperors in the New
+// World OP09 ONE PIECE Card Japanese") won't match anything as-is. Pull out
+// the card name (text before the first card code / rarity letter), and any
+// set name embedded in the title, so a second search can use those instead.
+function simplifyListingTitle(rawName: string): { name: string; set: string | null } | null {
+  let n = rawName.replace(/\b(ONE PIECE|POKEMON|POK\u00c9MON)\b.*$/i, " ").trim();
+  let embeddedSet: string | null = null;
+  for (const setName of ONE_PIECE_SET_NAMES) {
+    const re = new RegExp(setName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    if (re.test(n)) { embeddedSet = setName; n = n.replace(re, " "); break; }
+  }
+  // Cut at the first card code (OP05-067, SV08-123) or lone rarity marker.
+  const m = /\b([A-Z]{1,4}\d{2,3}-\d{3}\b|(?:SR|SEC|UC|R|C|L|P)\b(?=\s|$))/.exec(n);
+  let lead = (m ? n.slice(0, m.index) : n).replace(/\s+/g, " ").trim();
+  if (!lead || lead === rawName.trim()) return null;
+  return { name: lead, set: embeddedSet };
 }
 
 // Apply spelling corrections to a name string and return the corrected version.
@@ -612,6 +684,7 @@ function expandProductName(rawName: string): string {
     [/\bBooster Display Box\b/gi, "Booster Box"],
     [/\bBooster Display\b/gi, "Booster Box"],
     [/\bBooster Packs?\b/gi, "Booster Pack"],
+    [/\bvol\.?\s*(\d+)/gi, "Vol. $1"],
     [/\bSleeved Boosters?\b/gi, "Sleeved Booster Pack"],
     [/\bBB\b/gi, "Booster Box"],
     [/\bUPC\b/gi, "Ultra Premium Collection"],
@@ -714,6 +787,7 @@ function matchScore(queryName: string, candidateName: string): number {
 const GENERIC_SET_TOKENS = new Set([
   "misc", "miscellaneous", "cards", "card", "products", "product", "promo", "promos",
   "pokemon", "tcg", "the", "and", "sealed", "accessories",
+  "one", "piece", "game", // "One Piece Card Game ..." prefix on sealed product names
 ]);
 function sealedTokens(x: string, minLen = 2): Set<string> {
   return new Set(
@@ -722,7 +796,7 @@ function sealedTokens(x: string, minLen = 2): Set<string> {
       .replace(/\b[a-z]{1,4}\d{1,3}(\.\d)?:/g, " ") // "sv08:", "me01:" set-code prefixes
       .replace(/[^a-z0-9 ]+/g, " ")
       .split(/\s+/)
-      .filter((t) => t.length >= minLen && !/^\d{4}$/.test(t) && !GENERIC_SET_TOKENS.has(t))
+      .filter((t) => (t.length >= minLen || /^\d$/.test(t)) && !/^\d{4}$/.test(t) && !GENERIC_SET_TOKENS.has(t))
   );
 }
 function sealedMatchScore(
@@ -739,6 +813,8 @@ function sealedMatchScore(
   );
   const varT = sealedTokens(variantPart, 1);
   if (c.size === 0 || nameT.size === 0) return 0;
+  // A name that's only numbers ("2") carries no product information.
+  if (Array.from(nameT).every((t) => /^\d+$/.test(t))) return 0;
   let nameHits = 0;
   for (const t of nameT) if (c.has(t)) nameHits++;
   let setHits = 0;
@@ -781,23 +857,24 @@ export async function findTcgplayerProductId(
   if (!rawName) return null;
   try {
     const productLine = TCGPLAYER_PRODUCT_LINE_MAP[franchise];
-    const expandedName = expandProductName(rawName);
+    const embedded = extractEmbeddedSet(rawName);
+    const nameForSearch = correctSpelling(embedded ? embedded.name : rawName);
+    const expandedName = expandProductName(nameForSearch);
     // Strip parenthetical descriptors and trailing modifiers from setHint;
     // TCGplayer search returns 0 results when parens are in the query.
-    const cleanSet = correctSetName(setHint)
+    const cleanSet = (embedded ? embedded.set : correctSetName(setHint))
       ?.replace(/\([^)]*\)/g, " ")
       .replace(/\s+-\s+.*$/, "")
       .replace(/\s{2,}/g, " ")
       .trim();
     const sealedItem = String(category || "").toLowerCase() === "sealed";
-    // "(Ultra Ball)", "(Mega Charizard X)" — the variant TCGplayer lists in
-    // [brackets] or after a dash. Searched with the name so the right sibling
-    // product is in the result set, and used to pick between siblings below.
-    const variantHint = sealedItem
-      ? correctSpelling(
-          (rawName.match(/\(([^)]*)\)/g) || []).map((m) => m.slice(1, -1)).join(" ")
-        ).replace(/\b(JP|EN|Japanese|English)\b/gi, " ").replace(/\s+/g, " ").trim()
-      : "";
+    // "(Ultra Ball)", "(Alternate Art)", "(107)" — the variant TCGplayer lists
+    // in [brackets]/(parens). Searched with the name so the right sibling is in
+    // the result set, and used to pick between siblings below. Sealed products
+    // require it to match; singles just prefer the candidate that carries it.
+    const variantHint = correctSpelling(
+      (nameForSearch.match(/\(([^)]*)\)/g) || []).map((m) => m.slice(1, -1)).join(" ")
+    ).replace(/\b(JP|EN|Japanese|English|Girl)\b/gi, " ").replace(/\s+/g, " ").trim();
     const queryParts: string[] = [];
     if (cleanSet) queryParts.push(cleanSet);
     queryParts.push(expandedName);
@@ -827,6 +904,19 @@ export async function findTcgplayerProductId(
     };
     let items: any[] = variantHint ? await runSearch(`${baseQuery} ${variantHint}`) : [];
     if (!items.length) items = await runSearch(baseQuery);
+    // Nothing? Drop the set hint, then try the simplified card name.
+    let scoreName = expandedName;
+    let scoreSet = cleanSet || "";
+    if (!items.length && cleanSet) items = await runSearch(expandedName);
+    if (!items.length) {
+      const simple = simplifyListingTitle(rawName);
+      if (simple) {
+        scoreName = expandProductName(simple.name);
+        scoreSet = simple.set || scoreSet;
+        items = await runSearch(`${scoreSet} ${scoreName}`.trim());
+        if (!items.length && scoreSet) items = await runSearch(scoreName);
+      }
+    }
     if (!items.length) return null;
 
     // Filter by product line if known.
@@ -850,12 +940,30 @@ export async function findTcgplayerProductId(
     // TCGplayer handed us the exact product. For those, score the full
     // "set + product" string against the candidate's "set + product" string
     // with no stopwords, so the set name and the product type both count.
-    const nameOnlyTokens = nameTokens(expandedName).size;
+    const nameOnlyTokens = nameTokens(scoreName).size;
     const scored = pool.map((it: any) => {
       const candName = String(it?.productName || "");
       const candSet = String(it?.setName || "");
-      let score = matchScore(expandedName, candName);
-      const full = sealedMatchScore(cleanSet || "", expandedName, `${candSet} ${candName}`, variantHint);
+      let score = matchScore(scoreName, candName);
+      const full = sealedMatchScore(scoreSet, scoreName, `${candSet} ${candName}`, variantHint);
+      // Singles: prefer the printing from the known set, and the candidate
+      // that carries the same variant ("(Alternate Art)", "(107)").
+      if (!sealedItem && score >= 0.5) {
+        if (scoreSet) {
+          const setT = new Set(Array.from(sealedTokens(scoreSet)).filter((t) => !/^[a-z]{1,4}\d{1,3}[a-z]?$/.test(t)));
+          const cT = sealedTokens(candSet, 1);
+          let hits = 0;
+          for (const t of setT) if (cT.has(t)) hits++;
+          if (setT.size) score += hits / setT.size >= 0.5 ? 0.05 : -0.12;
+        }
+        if (variantHint) {
+          const vT = sealedTokens(variantHint, 1);
+          const cT = sealedTokens(candName, 1);
+          let hits = 0;
+          for (const t of vT) if (cT.has(t)) hits++;
+          if (vT.size) score += 0.2 * (hits / vT.size);
+        }
+      }
       if (sealedItem) {
         // Sealed products are judged by the strict whole-name rule only: the
         // loose single-word overlap lets "Pokeball Tin" hit any product with
@@ -873,6 +981,10 @@ export async function findTcgplayerProductId(
     // Ties (e.g. "Booster Box" vs "Booster Box Case") go to the candidate whose
     // full name is the closest fit, then to TCGplayer's own ranking.
     scored.sort((a, b) => b.score - a.score || b.full - a.full);
+    if (process.env.DEBUG_TCGP) {
+      console.log(`[tcgp:debug] ${JSON.stringify(rawName)} set=${JSON.stringify(scoreSet)} name=${JSON.stringify(scoreName)} variant=${JSON.stringify(variantHint)}`);
+      for (const c of scored.slice(0, 6)) console.log(`   ${c.score.toFixed(2)} ${c.item?.productId} ${c.item?.setName} | ${c.candName}`);
+    }
     const best = scored[0];
     if (!best) return null;
 
