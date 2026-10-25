@@ -1241,6 +1241,7 @@ export async function registerRoutes(
             marketValue: i.marketValue,
             imageUrl: i.imageUrl,
             notes: i.notes,
+            createdAt: i.createdAt ?? null,
           };
         });
       res.json(filtered);
