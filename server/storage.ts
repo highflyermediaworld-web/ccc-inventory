@@ -196,6 +196,7 @@ export async function runMigrations() {
       ["tcgp_avg_daily_sold", "REAL"],
       ["tcgp_history_json", "TEXT"],
       ["tcgp_priced_at", "INTEGER"],
+      ["market_value_source", "TEXT"],
     ];
     for (const [col, type] of tcgpColumns) {
       try {

@@ -35,6 +35,11 @@ import {
   correctSetName,
   isGraded,
   getGradedEstimate,
+  searchTcgplayerProducts,
+  fetchTcgplayerPrintings,
+  tcgplayerProductLineFor,
+  tcgplayerImageUrl,
+  refreshItemPricePoints,
 } from "./pricing";
 import {
   getAutoPricingStatus,
@@ -273,7 +278,8 @@ export async function registerRoutes(
   // in definition order — routes registered first match first.
   const PUBLIC_PREFIXES = [
     "/api/auth/",
-    "/api/shop/", // public storefront: listings, buy, trade, upload
+    "/api/shop/", // public storefront: listings, buy, trade, upload, live price
+    "/api/prices/", // public, rate-limited TCGplayer lookups for the sell calculator
   ];
   app.use("/api", (req, res, next) => {
     // Full req.path here is relative to the "/api" mount: "/inventory", etc.
@@ -855,6 +861,11 @@ export async function registerRoutes(
           (patch as any).totalCost = Math.round(nextQty * nextCpu * 100) / 100;
         }
       }
+      // A hand-edited market value pins the item so the live TCGplayer sync
+      // stops overwriting it. Clearing the value un-pins it.
+      if (patch.marketValue !== undefined) {
+        (patch as any).marketValueSource = patch.marketValue == null ? null : "manual";
+      }
       const item = await storage.updateInventory(req.params.id, patch);
       // If market value changed via manual edit, record a Manual history row
       if (
@@ -1255,6 +1266,9 @@ export async function registerRoutes(
             soldPerDay: i.tcgpAvgDailySold ?? null,
             askingPrice: price,
             marketValue: i.marketValue,
+            tcgpProductId: i.tcgpProductId ?? null,
+            tcgpMarketPrice: i.tcgpMarketPrice ?? null,
+            tcgpPricedAt: i.tcgpPricedAt ?? null,
             imageUrl: i.imageUrl,
             notes: i.notes,
             createdAt: i.createdAt ?? null,
@@ -1263,6 +1277,97 @@ export async function registerRoutes(
       res.json(filtered);
     } catch (err: any) {
       res.status(500).json({ message: err?.message || "Shop load failed" });
+    }
+  });
+
+  // ── Public, real-time TCGplayer prices ──────────────────────────────
+  // Lightweight per-IP limiter so the public lookup can't be used to hammer
+  // TCGplayer through our server. 40 requests per minute per IP.
+  const priceHits = new Map<string, { count: number; resetAt: number }>();
+  function priceRateLimited(req: Request): boolean {
+    const ip =
+      (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ||
+      req.socket.remoteAddress ||
+      "unknown";
+    const now = Date.now();
+    const slot = priceHits.get(ip);
+    if (!slot || slot.resetAt < now) {
+      priceHits.set(ip, { count: 1, resetAt: now + 60_000 });
+      if (priceHits.size > 5000) priceHits.clear();
+      return false;
+    }
+    slot.count += 1;
+    return slot.count > 40;
+  }
+
+  // Search any card/product on TCGplayer and return live market prices.
+  app.get("/api/prices/search", async (req, res) => {
+    if (priceRateLimited(req)) {
+      return res.status(429).json({ message: "Slow down a little — try again in a minute." });
+    }
+    const q = String(req.query.q ?? "").slice(0, 120);
+    const franchise = typeof req.query.franchise === "string" ? req.query.franchise : null;
+    const line =
+      typeof req.query.line === "string" && req.query.line
+        ? req.query.line
+        : tcgplayerProductLineFor(franchise);
+    if (q.trim().length < 2) return res.json({ results: [] });
+    try {
+      const results = await searchTcgplayerProducts(q, line, 12);
+      res.setHeader("Cache-Control", "public, max-age=120");
+      res.json({ query: q, line, results, fetchedAt: Math.floor(Date.now() / 1000) });
+    } catch (err: any) {
+      res.status(502).json({ message: err?.message || "TCGplayer lookup failed" });
+    }
+  });
+
+  // Per-printing (Normal / Holofoil / Reverse…) live price points for one product.
+  app.get("/api/prices/product/:productId", async (req, res) => {
+    if (priceRateLimited(req)) {
+      return res.status(429).json({ message: "Slow down a little — try again in a minute." });
+    }
+    const productId = Math.trunc(Number(req.params.productId));
+    if (!productId) return res.status(400).json({ message: "Invalid product id" });
+    try {
+      const printings = await fetchTcgplayerPrintings(productId);
+      res.setHeader("Cache-Control", "public, max-age=120");
+      res.json({
+        productId,
+        imageUrl: tcgplayerImageUrl(productId),
+        printings,
+        fetchedAt: Math.floor(Date.now() / 1000),
+      });
+    } catch (err: any) {
+      res.status(502).json({ message: err?.message || "TCGplayer lookup failed" });
+    }
+  });
+
+  // Point-of-purchase refresh: re-pull one listing's TCGplayer price if the
+  // stored one is older than 10 minutes, then return the current shop price.
+  app.get("/api/shop/price/:itemId", async (req, res) => {
+    if (priceRateLimited(req)) {
+      return res.status(429).json({ message: "Slow down a little — try again in a minute." });
+    }
+    try {
+      const existing = await storage.getInventoryItem(String(req.params.itemId));
+      if (!existing) return res.status(404).json({ message: "That item is no longer listed." });
+      const { item, refreshed } = await refreshItemPricePoints(existing, 10 * 60);
+      const price =
+        (typeof item.asking === "number" && item.asking > 0 ? item.asking : null) ??
+        (typeof item.marketValue === "number" && item.marketValue > 0 ? item.marketValue : null);
+      res.json({
+        id: item.id,
+        inStock: isShopInStock(item),
+        askingPrice: price,
+        marketValue: item.marketValue ?? null,
+        tcgpProductId: item.tcgpProductId ?? null,
+        tcgpMarketPrice: item.tcgpMarketPrice ?? null,
+        tcgpListedMedian: item.tcgpListedMedian ?? null,
+        tcgpPricedAt: item.tcgpPricedAt ?? null,
+        refreshed,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Price refresh failed" });
     }
   });
 

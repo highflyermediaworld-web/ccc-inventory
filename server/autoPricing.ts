@@ -1,5 +1,5 @@
 // Self-contained recurring price refresh. Runs inside the server process every
-// 30 minutes so the website keeps prices fresh on its own, with no external
+// 15 minutes (AUTO_PRICING_INTERVAL_MIN) so the website keeps prices fresh on its own, with no external
 // cron required. Mirrors the structure of autoImport.ts.
 //
 // Each cycle:
@@ -8,8 +8,9 @@
 //   3. Fetches Price Points (market, median, qty, sellers).
 //   4. For graded slabs (PSA/CGC/BGS/SGC...), runs the AI graded estimate
 //      anchored on the raw TCGplayer price and writes that into marketValue.
-//   5. For raw cards, mirrors the TCGplayer market price into marketValue only
-//      when marketValue is still empty.
+//   5. For raw cards, mirrors the TCGplayer market price into marketValue when
+//      it is empty or still equal to the previously synced TCGplayer price
+//      (i.e. not overridden by hand), so listings track the market.
 //
 // The full cycle is broken into small batches with sleeps in between so it
 // never blocks the event loop and won't slam TCGplayer.
@@ -21,6 +22,7 @@ import {
   isGraded,
   getGradedEstimate,
   fetchMissingImagesBatch,
+  applyFollowedPrice,
 } from "./pricing";
 import { storage } from "./storage";
 import { broadcast } from "./realtime";
@@ -41,7 +43,7 @@ type AutoPricingStatus = {
 
 const status: AutoPricingStatus = {
   enabled: true,
-  intervalMin: 30,
+  intervalMin: 15,
   lastRunAt: null,
   lastRunDurationMs: null,
   lastRunUpdated: 0,
@@ -135,11 +137,10 @@ async function runAutoPricing(): Promise<void> {
                   (patch as any).marketValue = graded.marketValue;
                 }
               }
-            } else if (
-              points.marketPrice != null &&
-              item.marketValue == null
-            ) {
-              (patch as any).marketValue = points.marketPrice;
+            } else {
+              // Raw cards track the live TCGplayer market price unless the
+              // value was pinned by hand in admin (then the manual price wins).
+              await applyFollowedPrice(item, points, patch as any);
             }
             await storage.updateInventory(item.id, patch as any);
             updated++;
@@ -242,7 +243,7 @@ export function startAutoPricing(): void {
   }
 
   const intervalMin = parseInt(
-    process.env.AUTO_PRICING_INTERVAL_MIN ?? "30",
+    process.env.AUTO_PRICING_INTERVAL_MIN ?? "15",
     10
   );
   if (isFinite(intervalMin) && intervalMin >= 5) {

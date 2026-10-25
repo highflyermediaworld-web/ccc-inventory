@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, API_BASE } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,6 +59,7 @@ import {
   CalendarDays,
   Tent,
   Calculator,
+  Loader2,
   Banknote,
   Radio,
   BadgeCheck,
@@ -79,6 +80,9 @@ type ShopListing = {
   inStock?: boolean;
   /** TCGplayer sales velocity (copies sold in the last 3 months / per day) */
   sold3mo?: number | null;
+  tcgpProductId?: number | null;
+  tcgpMarketPrice?: number | null;
+  tcgpPricedAt?: number | null;
   soldPerDay?: number | null;
   askingPrice: number;
   marketValue: number | null;
@@ -100,6 +104,49 @@ const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG", "PSA 10", "PSA 9", "PSA 8", "
 const PAGE_SIZE = 24;
 // Preview builds can point the storefront at a static inventory snapshot.
 const LISTINGS_URL: string = (import.meta as any).env?.VITE_SHOP_LISTINGS_URL || "/api/shop/listings";
+
+// Live TCGplayer lookups (public, rate-limited on the server).
+type PriceHit = {
+  productId: number;
+  name: string;
+  setName: string | null;
+  line: string | null;
+  rarity: string | null;
+  number: string | null;
+  sealed: boolean;
+  marketPrice: number | null;
+  lowestPrice: number | null;
+  imageUrl: string;
+};
+type Printing = { printing: string; marketPrice: number | null; listedMedian: number | null };
+type LivePrice = {
+  id: string;
+  inStock: boolean;
+  askingPrice: number | null;
+  marketValue: number | null;
+  tcgpMarketPrice: number | null;
+  tcgpListedMedian: number | null;
+  tcgpPricedAt: number | null;
+  refreshed: boolean;
+};
+const PRICE_LINES: Array<{ label: string; line: string | null }> = [
+  { label: "All games", line: null },
+  { label: "Pokémon", line: "Pokemon" },
+  { label: "One Piece", line: "One Piece Card Game" },
+  { label: "Magic", line: "Magic: The Gathering" },
+  { label: "Dragon Ball", line: "Dragon Ball Super CCG" },
+  { label: "Yu-Gi-Oh", line: "YuGiOh" },
+  { label: "Riftbound", line: "Riftbound" },
+];
+function agoLabel(unixSec: number | null | undefined): string {
+  if (!unixSec) return "";
+  const mins = Math.max(0, Math.round((Date.now() / 1000 - unixSec) / 60));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 48) return `${hrs} hr ago`;
+  return `${Math.round(hrs / 24)} days ago`;
+}
 
 type SortKey = "featured" | "bestsellers" | "newest" | "price-asc" | "price-desc" | "name";
 
@@ -1189,9 +1236,164 @@ export default function ShopPage() {
 const CASH_RATE = 0.7;
 const TRADE_RATE = 0.8;
 
+function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printing: string | null) => void }) {
+  const [q, setQ] = useState("");
+  const [line, setLine] = useState<string | null>("Pokemon");
+  const [hits, setHits] = useState<PriceHit[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<PriceHit | null>(null);
+  const [printings, setPrintings] = useState<Printing[]>([]);
+  const [printing, setPrinting] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) { setHits([]); setLoading(false); setError(null); return; }
+    setLoading(true);
+    const t = setTimeout(async () => {
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
+      try {
+        const params = new URLSearchParams({ q: term });
+        if (line) params.set("line", line);
+        const res = await fetch(`${API_BASE}/api/prices/search?${params}`, { signal: ac.signal, credentials: "omit" });
+        if (!res.ok) throw new Error(res.status === 429 ? "Too many lookups — give it a minute." : "Lookup failed");
+        const data = await res.json();
+        setHits(Array.isArray(data?.results) ? data.results : []);
+        setError(null);
+      } catch (e: any) {
+        if (e?.name !== "AbortError") { setError(e?.message || "Lookup failed"); setHits([]); }
+      } finally {
+        if (!ac.signal.aborted) setLoading(false);
+      }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [q, line]);
+
+  async function pick(hit: PriceHit) {
+    setPicked(hit);
+    setHits([]);
+    setQ("");
+    setPrintings([]);
+    setPrinting(null);
+    if (hit.marketPrice != null) onPick(hit, hit.marketPrice, null);
+    try {
+      const res = await fetch(`${API_BASE}/api/prices/product/${hit.productId}`, { credentials: "omit" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const list: Printing[] = (data?.printings || []).filter((p: Printing) => p.marketPrice != null);
+      setPrintings(list);
+      if (list.length) {
+        const first = list.find((p) => p.printing === "Normal") || list[0];
+        setPrinting(first.printing);
+        onPick(hit, first.marketPrice!, first.printing);
+      }
+    } catch {
+      /* keep the search-result price */
+    }
+  }
+
+  function choosePrinting(p: Printing) {
+    if (!picked || p.marketPrice == null) return;
+    setPrinting(p.printing);
+    onPick(picked, p.marketPrice, p.printing);
+  }
+
+  const current = printings.find((p) => p.printing === printing) || null;
+  const shownPrice = current?.marketPrice ?? picked?.marketPrice ?? null;
+
+  return (
+    <div className="pc-lookup" data-testid="card-lookup">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="pc-field-label pc-calc-label !mb-0">Look up a card — live TCGplayer price</span>
+        <select
+          className="pc-lookup-line"
+          value={line ?? ""}
+          onChange={(e) => setLine(e.target.value || null)}
+          aria-label="Game"
+          data-testid="select-lookup-line"
+        >
+          {PRICE_LINES.map((l) => (
+            <option key={l.label} value={l.line ?? ""}>{l.label}</option>
+          ))}
+        </select>
+      </div>
+      <div className="pc-calc-input mt-1.5">
+        <span className="pc-calc-prefix"><Search className="h-4 w-4" /></span>
+        <input
+          type="search"
+          placeholder="Card name, number or set… e.g. Charizard ex 223/197"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          aria-label="Search TCGplayer for a card"
+          autoComplete="off"
+          data-testid="input-calc-search"
+        />
+        {loading && <Loader2 className="h-4 w-4 mr-3 animate-spin text-white/60" aria-hidden />}
+      </div>
+      {error && <p className="mt-2 text-[12px] text-amber-200" role="alert">{error}</p>}
+      {!!hits.length && (
+        <ul className="pc-lookup-results" role="listbox" aria-label="Matching cards" data-testid="list-lookup-results">
+          {hits.map((h) => (
+            <li key={h.productId}>
+              <button type="button" className="pc-lookup-row" onClick={() => pick(h)} data-testid={`lookup-hit-${h.productId}`}>
+                <img src={h.imageUrl} alt="" loading="lazy" className="pc-lookup-thumb" />
+                <span className="min-w-0 flex-1">
+                  <span className="pc-lookup-name">{h.name}</span>
+                  <span className="pc-lookup-meta">{[h.setName, h.rarity, h.number ? `#${h.number}` : null].filter(Boolean).join(" · ")}</span>
+                </span>
+                <span className="pc-lookup-price">{h.marketPrice != null ? formatCurrency(h.marketPrice) : "—"}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!hits.length && !loading && q.trim().length >= 2 && !error && (
+        <p className="mt-2 text-[12px] text-white/55" data-testid="lookup-empty">No TCGplayer match — try the card number or switch the game filter.</p>
+      )}
+      {picked && (
+        <div className="pc-lookup-picked" data-testid="lookup-picked">
+          <img src={picked.imageUrl} alt="" className="pc-lookup-thumb is-lg" />
+          <div className="min-w-0 flex-1">
+            <div className="pc-lookup-name">{picked.name}</div>
+            <div className="pc-lookup-meta">{[picked.setName, picked.rarity, picked.number ? `#${picked.number}` : null].filter(Boolean).join(" · ")}</div>
+            <div className="mt-1 text-[12px] text-white/70">
+              TCGplayer market <b className="text-white">{shownPrice != null ? formatCurrency(shownPrice) : "—"}</b>
+              <span className="pc-live-dot" aria-hidden /> live
+            </div>
+            {printings.length > 1 && (
+              <div className="mt-2 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Printing">
+                {printings.map((p) => (
+                  <button
+                    key={p.printing}
+                    type="button"
+                    role="radio"
+                    aria-checked={printing === p.printing}
+                    onClick={() => choosePrinting(p)}
+                    className={cn("pc-calc-preset", printing === p.printing && "is-active")}
+                    data-testid={`lookup-printing-${p.printing.replace(/\s+/g, "-").toLowerCase()}`}
+                  >
+                    {p.printing} · {formatCurrency(p.marketPrice!)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button type="button" className="pc-lookup-clear" onClick={() => { setPicked(null); setPrintings([]); setPrinting(null); }} aria-label="Clear selected card" data-testid="button-lookup-clear">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SellCalculator() {
   const [value, setValue] = useState("");
   const [qty, setQty] = useState(1);
+  const [source, setSource] = useState<string | null>(null);
   const market = Math.max(0, parseFloat(value.replace(/[^0-9.]/g, "")) || 0);
   const total = market * Math.max(1, qty);
   const cash = total * CASH_RATE;
@@ -1209,19 +1411,28 @@ function SellCalculator() {
         <span className="pc-calc-badge"><Calculator className="h-5 w-5" /></span>
       </div>
       <p className="mt-2 text-sm text-white/70 pc-body">
-        Enter the TCGplayer market value. We pay <b className="text-white">{Math.round(CASH_RATE * 100)}% in cash</b> or <b className="text-white">{Math.round(TRADE_RATE * 100)}% in trade credit</b> toward anything in the vault.
+        Look up any card for its live TCGplayer market price, or type a value. We pay <b className="text-white">{Math.round(CASH_RATE * 100)}% in cash</b> or <b className="text-white">{Math.round(TRADE_RATE * 100)}% in trade credit</b> toward anything in the vault.
       </p>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_120px]">
+      <div className="mt-5">
+        <CardLookup
+          onPick={(hit, price, printing) => {
+            setValue(price.toFixed(2));
+            setSource(`${hit.name}${printing && printing !== "Normal" ? ` (${printing})` : ""}`);
+          }}
+        />
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_120px]">
         <label className="block">
-          <span className="pc-field-label pc-calc-label">Market value per card</span>
+          <span className="pc-field-label pc-calc-label">Market value per card{source ? <span className="normal-case tracking-normal text-white/55"> · from {source}</span> : null}</span>
           <div className="pc-calc-input">
             <span className="pc-calc-prefix">$</span>
             <input
               inputMode="decimal"
               placeholder="0.00"
               value={value}
-              onChange={(e) => setValue(e.target.value)}
+              onChange={(e) => { setValue(e.target.value); setSource(null); }}
               aria-label="Market value per card in dollars"
               data-testid="input-calc-value"
             />
@@ -1244,7 +1455,7 @@ function SellCalculator() {
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {presets.map((p) => (
-          <button key={p} type="button" onClick={() => setValue(String(p))} className={cn("pc-calc-preset", market === p && "is-active")} data-testid={`button-calc-preset-${p}`}>
+          <button key={p} type="button" onClick={() => { setValue(String(p)); setSource(null); }} className={cn("pc-calc-preset", market === p && "is-active")} data-testid={`button-calc-preset-${p}`}>
             ${p}
           </button>
         ))}
@@ -1605,6 +1816,28 @@ function BuyDialog({
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [live, setLive] = useState<LivePrice | null>(null);
+
+  // Point-of-purchase refresh: pull the current TCGplayer price for this card.
+  useEffect(() => {
+    let cancelled = false;
+    setLive(null);
+    fetch(`${API_BASE}/api/shop/price/${encodeURIComponent(listing.id)}`, { credentials: "omit" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d && d.id) setLive(d as LivePrice); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [listing.id]);
+  const shownPrice = live?.askingPrice ?? listing.askingPrice;
+  // Surface the live market reference only when it backs up the price (shop
+  // price at or under market) and is plausibly the same product — a mismatched
+  // TCGplayer match shouldn't confuse the shopper.
+  const rawMarket = live?.tcgpMarketPrice ?? listing.tcgpMarketPrice ?? null;
+  const liveMarket =
+    rawMarket != null && rawMarket > 0 && shownPrice > 0 && shownPrice <= rawMarket * 1.05 && rawMarket <= shownPrice * 3
+      ? rawMarket
+      : null;
+  const livePricedAt = live?.tcgpPricedAt ?? listing.tcgpPricedAt ?? null;
 
   const mutation = useMutation({
     mutationFn: async (data: any) => {
@@ -1672,9 +1905,14 @@ function BuyDialog({
                 <div className="text-[11px] text-muted-foreground">
                   {listing.condition || ""}
                 </div>
-                <div className="mt-1 text-base font-bold text-primary tabular-nums">
-                  {formatCurrency(listing.askingPrice)}
+                <div className="mt-1 text-base font-bold text-primary tabular-nums" data-testid="text-buy-price">
+                  {formatCurrency(shownPrice)}
                 </div>
+                {liveMarket != null && (
+                  <div className="text-[11px] text-muted-foreground" data-testid="text-buy-market">
+                    TCGplayer market {formatCurrency(liveMarket)}{livePricedAt ? ` · updated ${agoLabel(livePricedAt)}` : ""}
+                  </div>
+                )}
               </div>
             </div>
             <div className="grid gap-3">
@@ -1761,7 +1999,7 @@ function BuyDialog({
               >
                 {mutation.isPending
                   ? "Sending…"
-                  : `Request to buy for ${formatCurrency(listing.askingPrice * form.quantity)}`}
+                  : `Request to buy for ${formatCurrency(shownPrice * form.quantity)}`}
               </Button>
             </DialogFooter>
           </>

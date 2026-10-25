@@ -981,9 +981,11 @@ export async function fetchTcgplayerPricePoints(
   // 1. pricepoints → marketPrice + listedMedian (pick the Normal printing first,
   //    fall back to any printing that has a marketPrice).
   if (Array.isArray(pricePts)) {
+    const priced = (p: any) => typeof p?.marketPrice === "number" && p.marketPrice > 0;
     const normal =
-      pricePts.find((p: any) => p.printingType === "Normal" && p.marketPrice != null) ||
-      pricePts.find((p: any) => p.marketPrice != null) ||
+      pricePts.find((p: any) => p.printingType === "Normal" && priced(p)) ||
+      pricePts.find((p: any) => priced(p)) ||
+      pricePts.find((p: any) => p.printingType === "Normal") ||
       pricePts[0];
     if (normal) {
       if (typeof normal.marketPrice === "number") result.marketPrice = normal.marketPrice;
@@ -1256,3 +1258,199 @@ export async function refreshAll(): Promise<{
 }
 
 export { sleep };
+
+// ---------------------------------------------------------------------------
+// Public, real-time TCGplayer lookups (used by the storefront sell calculator
+// and the on-demand price refresh). Results are cached briefly in memory so a
+// burst of shoppers typing the same card doesn't fan out to TCGplayer.
+// ---------------------------------------------------------------------------
+export interface TcgplayerSearchHit {
+  productId: number;
+  name: string;
+  setName: string | null;
+  setCode: string | null;
+  line: string | null;
+  rarity: string | null;
+  number: string | null;
+  sealed: boolean;
+  marketPrice: number | null;
+  lowestPrice: number | null;
+  listings: number | null;
+  imageUrl: string;
+}
+
+export interface TcgplayerPrinting {
+  printing: string;
+  marketPrice: number | null;
+  listedMedian: number | null;
+}
+
+const SEARCH_CACHE = new Map<string, { expiresAt: number; hits: TcgplayerSearchHit[] }>();
+const PRINTINGS_CACHE = new Map<number, { expiresAt: number; printings: TcgplayerPrinting[] }>();
+const SEARCH_TTL_MS = 10 * 60 * 1000;
+const PRINTINGS_TTL_MS = 5 * 60 * 1000;
+
+function num(v: any): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function tcgplayerProductLineFor(franchise: string | null | undefined): string | null {
+  if (!franchise) return null;
+  return TCGPLAYER_PRODUCT_LINE_MAP[franchise] ?? null;
+}
+
+export function tcgplayerImageUrl(productId: number, size = 437): string {
+  return `https://product-images.tcgplayer.com/fit-in/${size}x${size}/${productId}.jpg`;
+}
+
+// Free-text product search. `productLine` is TCGplayer's product line name
+// (e.g. "Pokemon"); pass null to search every game.
+export async function searchTcgplayerProducts(
+  rawQuery: string,
+  productLine: string | null = null,
+  size = 12
+): Promise<TcgplayerSearchHit[]> {
+  const query = expandProductName(rawQuery || "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (query.length < 2) return [];
+  const key = `${productLine ?? "*"}|${size}|${query.toLowerCase()}`;
+  const cached = SEARCH_CACHE.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.hits;
+
+  const url = `https://mp-search-api.tcgplayer.com/v1/search/request?q=${encodeURIComponent(query)}&isList=false`;
+  const body: any = {
+    algorithm: "",
+    from: 0,
+    size: Math.min(Math.max(size, 1), 24),
+    filters: { term: {}, range: {}, match: {} },
+    sort: {},
+  };
+  if (productLine) body.filters.term.productLineName = [productLine];
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": UA,
+        Accept: "application/json",
+        Origin: "https://www.tcgplayer.com",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return [];
+    const data: any = await res.json();
+    const items: any[] = data?.results?.[0]?.results ?? [];
+    const hits: TcgplayerSearchHit[] = items
+      .map((it: any) => {
+        const productId = Math.trunc(Number(it?.productId));
+        if (!productId) return null;
+        return {
+          productId,
+          name: String(it?.productName || "").trim(),
+          setName: it?.setName ? String(it.setName) : null,
+          setCode: it?.setCode ? String(it.setCode) : null,
+          line: it?.productLineName ? String(it.productLineName) : null,
+          rarity: it?.rarityName ? String(it.rarityName) : null,
+          number: it?.customAttributes?.number ? String(it.customAttributes.number) : null,
+          sealed: Boolean(it?.sealed),
+          marketPrice: num(it?.marketPrice),
+          lowestPrice: num(it?.lowestPrice),
+          listings: num(it?.totalListings ?? it?.listings),
+          imageUrl: tcgplayerImageUrl(productId, 200),
+        } as TcgplayerSearchHit;
+      })
+      .filter(Boolean) as TcgplayerSearchHit[];
+    SEARCH_CACHE.set(key, { expiresAt: Date.now() + SEARCH_TTL_MS, hits });
+    if (SEARCH_CACHE.size > 500) {
+      const oldest = SEARCH_CACHE.keys().next().value;
+      if (oldest !== undefined) SEARCH_CACHE.delete(oldest);
+    }
+    return hits;
+  } catch (err: any) {
+    console.warn(`[tcgp] search failed for ${JSON.stringify(query)}: ${err?.message || err}`);
+    return [];
+  }
+}
+
+// Per-printing price points (Normal / Holofoil / Reverse Holofoil / 1st Edition…)
+export async function fetchTcgplayerPrintings(productId: number): Promise<TcgplayerPrinting[]> {
+  if (!productId) return [];
+  const cached = PRINTINGS_CACHE.get(productId);
+  if (cached && cached.expiresAt > Date.now()) return cached.printings;
+  const pts = await tcgpFetch(`https://mpapi.tcgplayer.com/v2/product/${productId}/pricepoints`);
+  const printings: TcgplayerPrinting[] = Array.isArray(pts)
+    ? pts
+        .map((p: any) => {
+          const mp = num(p?.marketPrice);
+          const med = num(p?.listedMedianPrice);
+          return {
+            printing: String(p?.printingType || "Normal"),
+            marketPrice: mp != null && mp > 0 ? mp : null,
+            listedMedian: med != null && med > 0 ? med : null,
+          };
+        })
+        .filter((p) => p.marketPrice != null || p.listedMedian != null)
+    : [];
+  PRINTINGS_CACHE.set(productId, { expiresAt: Date.now() + PRINTINGS_TTL_MS, printings });
+  if (PRINTINGS_CACHE.size > 2000) {
+    const oldest = PRINTINGS_CACHE.keys().next().value;
+    if (oldest !== undefined) PRINTINGS_CACHE.delete(oldest);
+  }
+  return printings;
+}
+
+// Should marketValue follow the fresh TCGplayer market price? Yes for raw
+// (ungraded) items unless the owner pinned the value by editing it in admin
+// (marketValueSource === "manual"). Graded slabs keep their graded estimate.
+export function shouldFollowTcgplayer(item: Inventory, points: TcgplayerPricePoints): boolean {
+  if (points.marketPrice == null || points.marketPrice <= 0) return false;
+  if (isGraded(item.condition)) return false;
+  if ((item as any).marketValueSource === "manual" && item.marketValue != null) return false;
+  return true;
+}
+
+// Apply a followed TCGplayer price to a patch and log a history row when the
+// value actually moved (≥ 1 cent). Keeps the admin price chart meaningful.
+export async function applyFollowedPrice(
+  item: Inventory,
+  points: TcgplayerPricePoints,
+  patch: Record<string, any>
+): Promise<void> {
+  if (!shouldFollowTcgplayer(item, points)) return;
+  const next = Math.round(Number(points.marketPrice) * 100) / 100;
+  patch.marketValue = next;
+  patch.marketValueSource = "tcgp";
+  const prev = item.marketValue == null ? null : Number(item.marketValue);
+  if (prev == null || Math.abs(prev - next) >= 0.01) {
+    try {
+      await storage.createPriceHistory({ itemId: item.id, price: next, source: "TCGplayer" });
+    } catch {
+      /* history is best-effort */
+    }
+  }
+}
+
+// Refresh a single item's TCGplayer price points if they're older than
+// `maxAgeSec`. Returns the (possibly updated) item or null when nothing could be
+// matched. Used by the storefront for point-of-purchase prices.
+export async function refreshItemPricePoints(
+  item: Inventory,
+  maxAgeSec = 10 * 60
+): Promise<{ item: Inventory; refreshed: boolean }> {
+  const now = Math.floor(Date.now() / 1000);
+  if (item.tcgpPricedAt && now - item.tcgpPricedAt < maxAgeSec && item.tcgpMarketPrice != null) {
+    return { item, refreshed: false };
+  }
+  let pid = item.tcgpProductId ?? null;
+  if (!pid) pid = await findTcgplayerProductId(item.name, item.setName ?? null, item.franchise);
+  if (!pid) return { item, refreshed: false };
+  const points = await fetchTcgplayerPricePoints(pid);
+  if (!points) return { item, refreshed: false };
+  const patch: Record<string, any> = pricePointsToPatch(points);
+  await applyFollowedPrice(item, points, patch);
+  const updated = await storage.updateInventory(item.id, patch as any);
+  return { item: (updated as Inventory) ?? { ...item, ...patch }, refreshed: true };
+}

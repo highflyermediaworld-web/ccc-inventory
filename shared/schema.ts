@@ -36,6 +36,9 @@ export const inventory = sqliteTable("inventory", {
   tcgpAvgDailySold: real("tcgp_avg_daily_sold"),
   tcgpHistoryJson: text("tcgp_history_json"), // JSON array of {date,marketPrice,low,high,qty}
   tcgpPricedAt: integer("tcgp_priced_at"), // unix seconds of last price refresh
+  // "manual" pins marketValue (set when edited by hand in admin); "tcgp" means
+  // the value is tracking the live TCGplayer market price. Null = not pinned.
+  marketValueSource: text("market_value_source"),
   createdAt: integer("created_at")
     .notNull()
     .$defaultFn(() => Math.floor(Date.now() / 1000)),
