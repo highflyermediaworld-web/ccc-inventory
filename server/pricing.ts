@@ -529,6 +529,9 @@ const SPELLING_CORRECTIONS: [RegExp, string][] = [
   [/\bGiratena\b/gi, "Giratina"],
   [/\bArceaus\b/gi, "Arceus"],
   [/\bLatia's\b/gi, "Latias"],
+  [/\bFeraligator\b/gi, "Feraligatr"],
+  [/\bPokeball\b/gi, "Poke Ball"],
+  [/\bLarrys\b/gi, "Larry's"],
   [/\bLatio's\b/gi, "Latios"],
   [/\bDailga\b/gi, "Dialga"],
   [/\bPalika\b/gi, "Palkia"],
@@ -605,6 +608,8 @@ function expandProductName(rawName: string): string {
     [/\bElite Trainer Box\b/gi, "Elite Trainer Box"],
     [/\bETB\b/gi, "Elite Trainer Box"],
     [/\bBooster Bundle Display\b/gi, "Booster Bundle"],
+    [/\bBooster Box\s*\/\s*Display\b/gi, "Booster Box"],
+    [/\bBooster Display Box\b/gi, "Booster Box"],
     [/\bBooster Display\b/gi, "Booster Box"],
     [/\bBooster Packs?\b/gi, "Booster Pack"],
     [/\bSleeved Boosters?\b/gi, "Sleeved Booster Pack"],
@@ -700,29 +705,59 @@ function matchScore(queryName: string, candidateName: string): number {
   return Math.max(queryCoverage, candidateCoverage);
 }
 
-// Full-string score for sealed product: every word counts (no stopwords), both
-// sides lowercased, set-code prefixes like "SV08:" ignored. Requires the query
-// to be fully covered by the candidate (so "Booster Pack" never matches a
-// "Booster Box"), then penalises extra candidate words lightly so the plain
-// product outranks "... Case" / "Code Card - ..." variants.
-function sealedMatchScore(queryFull: string, candFull: string): number {
-  const tok = (x: string) =>
-    new Set(
-      (x || "")
-        .toLowerCase()
-        .replace(/\b[a-z]{1,4}\d{1,3}(\.\d)?:/g, " ") // "sv08:", "me01:" set-code prefixes
-        .replace(/[^a-z0-9 ]+/g, " ")
-        .split(/\s+/)
-        .filter((t) => t.length >= 2 && !/^\d{4}$/.test(t) && t !== "pokemon" && t !== "tcg" && t !== "the")
-    );
-  const q = tok(queryFull);
-  const c = tok(candFull);
-  if (q.size === 0 || c.size === 0) return 0;
-  let hits = 0;
-  for (const t of q) if (c.has(t)) hits++;
-  const coverage = hits / q.size;
-  if (coverage < 1) return coverage * 0.6; // partial: never clears the 0.5 bar on its own
-  const extra = c.size - hits;
+// Sealed-product score. Every word of the item NAME must appear in the
+// candidate (so "Booster Pack" never matches a "Booster Box", and "Knockout
+// pack" never matches a "2-Pack Blister Pack"). The SET part only confirms the
+// match: generic set labels ("Misc Cards & Products") carry no weight, and a
+// real set name must be at least half present. Extra candidate words are
+// penalised lightly so the plain product outranks "... Case" / "Code Card" variants.
+const GENERIC_SET_TOKENS = new Set([
+  "misc", "miscellaneous", "cards", "card", "products", "product", "promo", "promos",
+  "pokemon", "tcg", "the", "and", "sealed", "accessories",
+]);
+function sealedTokens(x: string, minLen = 2): Set<string> {
+  return new Set(
+    (x || "")
+      .toLowerCase()
+      .replace(/\b[a-z]{1,4}\d{1,3}(\.\d)?:/g, " ") // "sv08:", "me01:" set-code prefixes
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .split(/\s+/)
+      .filter((t) => t.length >= minLen && !/^\d{4}$/.test(t) && !GENERIC_SET_TOKENS.has(t))
+  );
+}
+function sealedMatchScore(
+  setPart: string,
+  namePart: string,
+  candFull: string,
+  variantPart: string = ""
+): number {
+  const c = sealedTokens(candFull, 1);
+  const nameT = sealedTokens(namePart);
+  // Set codes ("OP15", "EB04", "SV08") aren't in TCGplayer product names — drop them.
+  const setT = new Set(
+    Array.from(sealedTokens(setPart)).filter((t) => !/^[a-z]{1,4}\d{1,3}[a-z]?$/.test(t))
+  );
+  const varT = sealedTokens(variantPart, 1);
+  if (c.size === 0 || nameT.size === 0) return 0;
+  let nameHits = 0;
+  for (const t of nameT) if (c.has(t)) nameHits++;
+  let setHits = 0;
+  for (const t of setT) if (c.has(t)) setHits++;
+  let varHits = 0;
+  for (const t of varT) if (c.has(t)) varHits++;
+  const nameCov = nameHits / nameT.size;
+  const setCov = setT.size ? setHits / setT.size : 1;
+  if (nameCov < 1 || setCov < 0.5) {
+    return Math.min(0.45, 0.45 * (nameCov * 0.7 + setCov * 0.3));
+  }
+  // The variant in parens ("Pokeball Tin (Ultra Ball)", "EX Box (Mega
+  // Feraligatr)") decides between sibling products: a candidate that carries
+  // it wins; one that clearly names a different variant is rejected.
+  if (varT.size && varHits < varT.size) {
+    // Candidate is a sibling product with a different (or no) variant.
+    return 0.45;
+  }
+  const extra = c.size - nameHits - setHits - varHits;
   return Math.max(0.5, 1 - extra * 0.08);
 }
 
@@ -740,7 +775,8 @@ function sharesCardNumber(query: string, candidate: string): boolean {
 export async function findTcgplayerProductId(
   rawName: string,
   setHint: string | null,
-  franchise: string
+  franchise: string,
+  category?: string | null
 ): Promise<number | null> {
   if (!rawName) return null;
   try {
@@ -753,31 +789,44 @@ export async function findTcgplayerProductId(
       .replace(/\s+-\s+.*$/, "")
       .replace(/\s{2,}/g, " ")
       .trim();
+    const sealedItem = String(category || "").toLowerCase() === "sealed";
+    // "(Ultra Ball)", "(Mega Charizard X)" — the variant TCGplayer lists in
+    // [brackets] or after a dash. Searched with the name so the right sibling
+    // product is in the result set, and used to pick between siblings below.
+    const variantHint = sealedItem
+      ? correctSpelling(
+          (rawName.match(/\(([^)]*)\)/g) || []).map((m) => m.slice(1, -1)).join(" ")
+        ).replace(/\b(JP|EN|Japanese|English)\b/gi, " ").replace(/\s+/g, " ").trim()
+      : "";
     const queryParts: string[] = [];
     if (cleanSet) queryParts.push(cleanSet);
     queryParts.push(expandedName);
-    const query = queryParts.join(" ");
-    const url = `https://mp-search-api.tcgplayer.com/v1/search/request?q=${encodeURIComponent(query)}&isList=false`;
-    const body = {
-      algorithm: "",
-      from: 0,
-      size: 10,
-      filters: { term: {}, range: {}, match: {} },
-      sort: {},
+    const baseQuery = queryParts.join(" ");
+    const runSearch = async (query: string): Promise<any[]> => {
+      const url = `https://mp-search-api.tcgplayer.com/v1/search/request?q=${encodeURIComponent(query)}&isList=false`;
+      const body = {
+        algorithm: "",
+        from: 0,
+        size: 10,
+        filters: { term: {}, range: {}, match: {} },
+        sort: {},
+      };
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": UA,
+          Accept: "application/json",
+          Origin: "https://www.tcgplayer.com",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return [];
+      const data: any = await res.json();
+      return data?.results?.[0]?.results ?? [];
     };
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": UA,
-        Accept: "application/json",
-        Origin: "https://www.tcgplayer.com",
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) return null;
-    const data: any = await res.json();
-    const items: any[] = data?.results?.[0]?.results ?? [];
+    let items: any[] = variantHint ? await runSearch(`${baseQuery} ${variantHint}`) : [];
+    if (!items.length) items = await runSearch(baseQuery);
     if (!items.length) return null;
 
     // Filter by product line if known.
@@ -806,11 +855,13 @@ export async function findTcgplayerProductId(
       const candName = String(it?.productName || "");
       const candSet = String(it?.setName || "");
       let score = matchScore(expandedName, candName);
-      const full = sealedMatchScore(
-        `${cleanSet || ""} ${expandedName}`,
-        `${candSet} ${candName}`
-      );
-      if (nameOnlyTokens === 0 || score < 0.5) {
+      const full = sealedMatchScore(cleanSet || "", expandedName, `${candSet} ${candName}`, variantHint);
+      if (sealedItem) {
+        // Sealed products are judged by the strict whole-name rule only: the
+        // loose single-word overlap lets "Pokeball Tin" hit any product with
+        // "Pokeball" in it.
+        score = full;
+      } else if (nameOnlyTokens === 0 || score < 0.5) {
         score = Math.max(score, full);
       }
       // Boost when the card number matches exactly (e.g. 185/159 == 185/159).
@@ -846,9 +897,10 @@ export async function findTcgplayerProductId(
 async function getTcgplayerImage(
   rawName: string,
   setHint: string | null,
-  franchise: string
+  franchise: string,
+  category?: string | null
 ): Promise<string | null> {
-  const id = await findTcgplayerProductId(rawName, setHint, franchise);
+  const id = await findTcgplayerProductId(rawName, setHint, franchise, category);
   if (!id) return null;
   return `https://product-images.tcgplayer.com/fit-in/437x437/${id}.jpg`;
 }
@@ -1112,12 +1164,12 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
     const { cleanName, collectorNumber, setCode } = parsePokemonName(rawName);
 
     // Try TCGplayer with cleaned name + set (fast, ~300ms)
-    const tcgpClean = await getTcgplayerImage(cleanName, set, franchise);
+    const tcgpClean = await getTcgplayerImage(cleanName, set, franchise, item.category);
     if (tcgpClean) return tcgpClean;
 
     // Try TCGplayer with raw name as fallback
     if (cleanName !== rawName) {
-      const tcgpRaw = await getTcgplayerImage(rawName, set, franchise);
+      const tcgpRaw = await getTcgplayerImage(rawName, set, franchise, item.category);
       if (tcgpRaw) return tcgpRaw;
     }
 
@@ -1130,12 +1182,12 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
 
   // ---- MTG sealed product: Scryfall doesn't have sealed images. Try TCGplayer. ----
   if (franchise === "Magic The Gathering" && isSealedProduct(item)) {
-    const tcgp = await getTcgplayerImage(rawName, set, franchise);
+    const tcgp = await getTcgplayerImage(rawName, set, franchise, item.category);
     if (tcgp) return tcgp;
   }
 
   // ---- TCGplayer search (works for ALL franchises + sealed product) ----
-  const tcgpAll = await getTcgplayerImage(rawName, set, franchise);
+  const tcgpAll = await getTcgplayerImage(rawName, set, franchise, item.category);
   if (tcgpAll) return tcgpAll;
 
   // Claude fallback removed from bulk path — it hallucinates URLs and is slow.
@@ -1148,6 +1200,33 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
 // batch plus the remaining work, so the client can loop. Each successful
 // lookup is persisted to the DB before the next iteration, so progress
 // survives server restarts.
+// One-time cleanup: auto-matched photos that the audit on 2026-10-25 found to
+// be the wrong TCGplayer product (variant in parens was ignored). Items whose
+// photo points at one of these products — and that weren't matched to it by
+// pricing — get the photo cleared so the backfill re-resolves them with the
+// stricter matcher. Safe to remove after one deploy.
+const KNOWN_BAD_AUTO_IMAGE_IDS = new Set([
+  671249, 489343, 683264, 723301, 691923, 666908, 712093, 672733, 690172,
+]);
+let badImageSweepDone = false;
+export async function sweepKnownBadAutoImages(): Promise<number> {
+  if (badImageSweepDone) return 0;
+  badImageSweepDone = true;
+  const items = await storage.listInventory();
+  let cleared = 0;
+  for (const i of items) {
+    const m = /product-images\.tcgplayer\.com\/[^?]*\/(\d+)\.jpg/.exec(i.imageUrl || "");
+    if (!m) continue;
+    const pid = Number(m[1]);
+    if (!KNOWN_BAD_AUTO_IMAGE_IDS.has(pid)) continue;
+    if (Number((i as any).tcgpProductId) === pid) continue;
+    await storage.updateInventory(i.id, { imageUrl: null } as any);
+    cleared++;
+  }
+  if (cleared) console.log(`[pricing] cleared ${cleared} known-bad auto-matched photos for re-fetch`);
+  return cleared;
+}
+
 // Items we already searched for and couldn't match are retried at most once
 // per cooldown window (in-memory; a restart simply retries everything once).
 const imageAttemptAt = new Map<string, number>();
@@ -1546,7 +1625,7 @@ export async function refreshItemPricePoints(
     return { item, refreshed: false };
   }
   let pid = item.tcgpProductId ?? null;
-  if (!pid) pid = await findTcgplayerProductId(item.name, item.setName ?? null, item.franchise);
+  if (!pid) pid = await findTcgplayerProductId(item.name, item.setName ?? null, item.franchise, item.category);
   if (!pid) return { item, refreshed: false };
   const points = await fetchTcgplayerPricePoints(pid);
   if (!points) return { item, refreshed: false };

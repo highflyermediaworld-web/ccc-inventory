@@ -522,7 +522,8 @@ export async function registerRoutes(
         productId = await findTcgplayerProductId(
           item.name,
           item.setName ?? null,
-          item.franchise
+          item.franchise,
+          item.category
         );
       }
       // Graded slabs: if there's no TCGplayer match (or no price points), still
@@ -647,7 +648,8 @@ export async function registerRoutes(
                 pid = await findTcgplayerProductId(
                   item.name,
                   item.setName ?? null,
-                  item.franchise
+                  item.franchise,
+                  item.category
                 );
               }
               if (!pid) return null;
