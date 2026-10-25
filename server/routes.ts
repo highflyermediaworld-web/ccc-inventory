@@ -52,6 +52,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { aiHealth } from "./ai";
+import { applyManualImages } from "./manualImages";
 import { registerStorefrontRoutes } from "./storefront";
 import {
   requireAuth,
@@ -110,8 +111,9 @@ export async function registerRoutes(
 ): Promise<Server> {
   // ===== Uploads (scan photos) =====
   app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "30d" }));
-  // Move any base64 photos still sitting in the database onto the disk.
-  void migrateDataUrlImages();
+  // Move any base64 photos still sitting in the database onto the disk,
+  // then attach the hand-picked catalog photos to items that have none.
+  void migrateDataUrlImages().then(() => applyManualImages());
 
   // ===== Storefront content (About page editor) + shop assistant =====
   registerStorefrontRoutes(app, UPLOADS_DIR);
