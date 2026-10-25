@@ -7,7 +7,8 @@
  *
  *   AI_PROVIDER=gemini|openai|anthropic   explicit override (optional)
  *   GEMINI_API_KEY     → Google Gemini   (free tier available, no card needed)
- *   OPENAI_API_KEY     → OpenAI
+ *   OPENAI_API_KEY     → OpenAI, or any OpenAI-compatible API via OPENAI_BASE_URL
+ *                         (e.g. Groq free tier, OpenRouter)
  *   ANTHROPIC_API_KEY  → Anthropic (original integration)
  *
  * Without an override the first configured key in that order wins.
@@ -28,8 +29,12 @@ export class AiError extends Error {
   }
 }
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+// Any OpenAI-compatible endpoint works here (Groq, OpenRouter, Cloudflare
+// Workers AI…): set OPENAI_BASE_URL to its /v1 root and OPENAI_MODEL to a
+// vision-capable model name.
+const OPENAI_BASE_URL = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
 // Anthropic real model id (the underscored aliases only work via Perplexity's gateway).
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
 
@@ -92,10 +97,13 @@ async function geminiText(prompt: string, maxTokens: number, image?: AiImage): P
       temperature: 0,
       // 2.5-series models spend "thinking" tokens out of the same budget, so
       // give them headroom and turn thinking off for these short JSON tasks.
-      maxOutputTokens: Math.max(maxTokens, 1024),
+      maxOutputTokens: Math.max(maxTokens, 2048),
     },
   };
+  // Card reads are short JSON extractions — keep thinking minimal to cut the
+  // (output-priced) thinking tokens. 2.5-series uses a budget, 3+ uses a level.
   if (/^gemini-2\.5/.test(GEMINI_MODEL)) body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  else body.generationConfig.thinkingConfig = { thinkingLevel: process.env.GEMINI_THINKING_LEVEL || "low" };
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`,
     {
@@ -127,7 +135,7 @@ async function openaiText(prompt: string, maxTokens: number, image?: AiImage): P
     content.push({ type: "image_url", image_url: { url: `data:${mediaType};base64,${data}`, detail: "high" } });
   }
   content.push({ type: "text", text: prompt });
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
     body: JSON.stringify({

@@ -1421,6 +1421,16 @@ export async function registerRoutes(
   }
   const normNumber = (v: string | null | undefined) =>
     String(v ?? "").split("/")[0].trim().replace(/^0+(?=\d)/, "").toLowerCase();
+  // "Charizard ex - 223/197 (Special Illustration Rare)" → "charizard ex";
+  // "SV03: Obsidian Flames" → "obsidian flames".
+  const normName = (v: string | null | undefined) =>
+    String(v ?? "")
+      .toLowerCase()
+      .replace(/\s*\([^)]*\)\s*$/, "")
+      .replace(/\s+-\s+[\w/]+\s*$/, "")
+      .replace(/^[a-z0-9]{2,6}:\s+/, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
 
   app.post("/api/prices/scan", async (req, res) => {
     if (scanRateLimited(req)) {
@@ -1449,27 +1459,44 @@ export async function registerRoutes(
 
       const line = tcgplayerProductLineFor(identified.franchise);
       const num = normNumber(identified.number);
+      const identName = normName(name);
+      const identSet = normName(identified.set);
+
+      // Most specific query first; keep searching until something matches on
+      // both card name and number (or we run out of phrasings). Every hit
+      // found along the way stays in the pool so the customer can still pick.
       const attempts: Array<{ q: string; line: string | null }> = [];
-      if (num) attempts.push({ q: `${name} ${num}`, line });
       if (identified.set) attempts.push({ q: `${name} ${identified.set}`, line });
+      if (num) attempts.push({ q: `${name} ${num}`, line });
       attempts.push({ q: name, line });
       if (line) attempts.push({ q: name, line: null });
 
-      let results: Awaited<ReturnType<typeof searchTcgplayerProducts>> = [];
+      type Hit = Awaited<ReturnType<typeof searchTcgplayerProducts>>[number];
+      const score = (h: Hit) => {
+        const hName = normName(h.name);
+        const hSet = normName(h.setName);
+        const nameMatch = hName === identName ? 4 : hName.includes(identName) || identName.includes(hName) ? 1 : 0;
+        const numMatch = num && normNumber(h.number) === num ? 2 : 0;
+        const setMatch = identSet ? (hSet === identSet ? 2 : hSet.includes(identSet) || identSet.includes(hSet) ? 1 : 0) : 0;
+        return nameMatch + numMatch + setMatch;
+      };
+      const confident = (h: Hit) => normName(h.name) === identName && (!num || normNumber(h.number) === num);
+
+      const pool = new Map<number, Hit>();
       let used: { q: string; line: string | null } | null = null;
       for (const a of attempts) {
         const hits = await searchTcgplayerProducts(a.q, a.line, 12);
-        if (hits.length) { results = hits; used = a; break; }
+        for (const h of hits) if (!pool.has(h.productId)) pool.set(h.productId, h);
+        if (hits.length && !used) used = a;
+        if (Array.from(pool.values()).some(confident)) break;
       }
-      // Exact card-number matches first, then same-set matches.
-      const setLc = identified.set.toLowerCase();
-      const score = (h: (typeof results)[number]) =>
-        (num && normNumber(h.number) === num ? 2 : 0) +
-        (setLc && String(h.setName ?? "").toLowerCase().includes(setLc) ? 1 : 0);
-      results = [...results].sort((a, b) => score(b) - score(a));
+      const results = Array.from(pool.values()).sort((a, b) => score(b) - score(a)).slice(0, 12);
       const top = results[0];
+      const second = results[1];
+      // Auto-select only when the best hit matches on name AND number (or is
+      // the lone exact-name hit) and nothing else ties it.
       const autoPick =
-        top && ((num && normNumber(top.number) === num) || (!num && results.length === 1))
+        top && confident(top) && (!second || score(second) < score(top))
           ? top.productId
           : null;
       res.json({
