@@ -1204,33 +1204,6 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
 // batch plus the remaining work, so the client can loop. Each successful
 // lookup is persisted to the DB before the next iteration, so progress
 // survives server restarts.
-// One-time cleanup: auto-matched photos that the audit on 2026-10-25 found to
-// be the wrong TCGplayer product (variant in parens was ignored). Items whose
-// photo points at one of these products — and that weren't matched to it by
-// pricing — get the photo cleared so the backfill re-resolves them with the
-// stricter matcher. Safe to remove after one deploy.
-const KNOWN_BAD_AUTO_IMAGE_IDS = new Set([
-  671249, 489343, 683264, 723301, 691923, 666908, 712093, 672733, 690172, 181267,
-]);
-let badImageSweepDone = false;
-export async function sweepKnownBadAutoImages(): Promise<number> {
-  if (badImageSweepDone) return 0;
-  badImageSweepDone = true;
-  const items = await storage.listInventory();
-  let cleared = 0;
-  for (const i of items) {
-    const m = /product-images\.tcgplayer\.com\/[^?]*\/(\d+)\.jpg/.exec(i.imageUrl || "");
-    if (!m) continue;
-    const pid = Number(m[1]);
-    if (!KNOWN_BAD_AUTO_IMAGE_IDS.has(pid)) continue;
-    if (Number((i as any).tcgpProductId) === pid) continue;
-    await storage.updateInventory(i.id, { imageUrl: null } as any);
-    cleared++;
-  }
-  if (cleared) console.log(`[pricing] cleared ${cleared} known-bad auto-matched photos for re-fetch`);
-  return cleared;
-}
-
 // Items we already searched for and couldn't match are retried at most once
 // per cooldown window (in-memory; a restart simply retries everything once).
 const imageAttemptAt = new Map<string, number>();
