@@ -29,7 +29,10 @@ export class AiError extends Error {
   }
 }
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+// Flash-Lite reads cards as accurately as Flash in our tests at about half the
+// latency (0.8–2 s vs 2.7–5.6 s) and a fraction of the price; override with
+// GEMINI_MODEL if you ever want the bigger model.
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 // Any OpenAI-compatible endpoint works here (Groq, OpenRouter, Cloudflare
 // Workers AI…): set OPENAI_BASE_URL to its /v1 root and OPENAI_MODEL to a

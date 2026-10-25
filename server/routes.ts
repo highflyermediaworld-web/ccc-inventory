@@ -1482,14 +1482,17 @@ export async function registerRoutes(
       };
       const confident = (h: Hit) => normName(h.name) === identName && (!num || normNumber(h.number) === num);
 
+      // Fire every phrasing at once (each is ~0.4–0.7 s) and merge in priority
+      // order, so matching costs one round-trip instead of up to four.
       const pool = new Map<number, Hit>();
-      let used: { q: string; line: string | null } | null = null;
-      for (const a of attempts) {
-        const hits = await searchTcgplayerProducts(a.q, a.line, 12);
+      const settled = await Promise.all(
+        attempts.map((a) => searchTcgplayerProducts(a.q, a.line, 12).catch(() => [] as Hit[])),
+      );
+      for (const hits of settled) {
         for (const h of hits) if (!pool.has(h.productId)) pool.set(h.productId, h);
-        if (hits.length && !used) used = a;
-        if (Array.from(pool.values()).some(confident)) break;
       }
+      const firstHitIdx = settled.findIndex((hits) => hits.length > 0);
+      const used = firstHitIdx >= 0 ? attempts[firstHitIdx] : null;
       const results = Array.from(pool.values()).sort((a, b) => score(b) - score(a)).slice(0, 12);
       const top = results[0];
       const second = results[1];

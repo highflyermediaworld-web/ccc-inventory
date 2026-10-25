@@ -1325,8 +1325,9 @@ export default function ShopPage() {
 const CASH_RATE = 0.7;
 const TRADE_RATE = 0.8;
 
-// Shrink a camera photo before upload (long side ≤ 1280px, JPEG) so a 12 MP
-// shot becomes ~150–300 KB instead of several MB.
+// Shrink a camera photo before upload (long side ≤ 1024px, JPEG) so a 12 MP
+// shot becomes ~100–200 KB instead of several MB — a card's name and number
+// are still perfectly legible at this size, and the upload + AI read are faster.
 async function downscalePhoto(file: File): Promise<string> {
   const url = URL.createObjectURL(file);
   try {
@@ -1336,7 +1337,7 @@ async function downscalePhoto(file: File): Promise<string> {
       el.onerror = () => reject(new Error("Couldn't read that photo"));
       el.src = url;
     });
-    const MAX = 1280;
+    const MAX = 1024;
     const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
     const w = Math.max(1, Math.round(img.naturalWidth * scale));
     const h = Math.max(1, Math.round(img.naturalHeight * scale));
@@ -1346,7 +1347,7 @@ async function downscalePhoto(file: File): Promise<string> {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Couldn't process that photo");
     ctx.drawImage(img, 0, 0, w, h);
-    return canvas.toDataURL("image/jpeg", 0.85);
+    return canvas.toDataURL("image/jpeg", 0.8);
   } finally {
     URL.revokeObjectURL(url);
   }
@@ -1530,7 +1531,7 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
         <div className={cn("pc-scan-note", scan.status === "error" && "is-error")} role={scan.status === "error" ? "alert" : "status"} data-testid="scan-status">
           {scan.status !== "working" && scan.preview && <img src={scan.preview} alt="" className="pc-scan-thumb" />}
           <div className="min-w-0 flex-1">
-            {scan.status === "working" && <span>Reading your card…</span>}
+            {scan.status === "working" && <span>Reading your card… <span className="text-white/60">usually 2–3 seconds</span></span>}
             {scan.status === "done" && (
               <>
                 <span className="block">Scanned: <b className="text-white">{scan.label}</b>{scan.matched ? " — matched on TCGplayer." : " — pick the right match below."}</span>
