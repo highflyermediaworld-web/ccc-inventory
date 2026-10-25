@@ -18,6 +18,7 @@ import Trades from "@/pages/Trades";
 import Transactions from "@/pages/Transactions";
 import Scan from "@/pages/Scan";
 import Shop from "@/pages/Shop";
+import { FaqPage, AboutPage } from "@/pages/Info";
 import Requests from "@/pages/Requests";
 import Users from "@/pages/Users";
 import AutoImport from "@/pages/AutoImport";
@@ -80,6 +81,8 @@ function AppRouter() {
   return (
     <Switch>
       <Route path="/" component={Shop} />
+      <Route path="/faq" component={FaqPage} />
+      <Route path="/about" component={AboutPage} />
       <Route component={NotFound} />
     </Switch>
   );

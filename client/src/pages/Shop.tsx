@@ -581,6 +581,9 @@ export default function ShopPage() {
               <span className="inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> Orders ship within 48 hours</span>
             </div>
             <div className="flex items-center gap-1">
+              <a href="#/faq" className="pc-strip-link" data-testid="link-faq">FAQ</a>
+              <a href="#/about" className="pc-strip-link" data-testid="link-about">About</a>
+              <span className="mx-1 h-4 w-px bg-white/20" aria-hidden />
               <a href={TIKTOK_URL} target="_blank" rel="noopener noreferrer" aria-label={`${BRAND_HANDLE} on TikTok`} className="pc-icon-btn !h-8 !w-8"><SiTiktok className="h-3.5 w-3.5" /></a>
               <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" aria-label={`${BRAND_HANDLE} on Instagram`} className="pc-icon-btn !h-8 !w-8"><SiInstagram className="h-3.5 w-3.5" /></a>
             </div>
@@ -643,6 +646,12 @@ export default function ShopPage() {
                     >
                       {n.label} <ChevronRight className="h-5 w-5 text-neutral-400" />
                     </button>
+                  ))}
+                  <div className="my-2 h-px bg-black/10" aria-hidden />
+                  {[{ label: "FAQ", href: "#/faq" }, { label: "About", href: "#/about" }].map((l) => (
+                    <a key={l.href} href={l.href} onClick={() => setMobileNavOpen(false)} className="pc-font text-left text-lg font-semibold py-3 px-3 rounded-lg hover:bg-black/5 flex items-center justify-between" data-testid={`drawer-link-${l.label.toLowerCase()}`}>
+                      {l.label} <ChevronRight className="h-5 w-5 text-neutral-400" />
+                    </a>
                   ))}
                 </div>
                 <div className="mt-8 flex gap-2">
@@ -740,7 +749,7 @@ export default function ShopPage() {
                 </div>
               )}
               <div className="mt-auto pt-6 text-xs text-white/60 pc-body">
-                Live TCGplayer market pricing · updated every 30 minutes
+                Live TCGplayer market pricing · refreshes while you browse
               </div>
             </div>
           </div>
@@ -1171,7 +1180,7 @@ export default function ShopPage() {
           <div className="grid sm:grid-cols-3 gap-3 lg:col-span-2">
             {[
               { Icon: ShieldCheck, title: "Every card, verified", body: "Grades, edges and centering inspected in-hand. What you see in the photo is what ships." },
-              { Icon: Award, title: "Fair, transparent pricing", body: "Live TCGplayer market data on every listing, refreshed every 30 minutes." },
+              { Icon: Award, title: "Fair, transparent pricing", body: "Live TCGplayer market data on every listing, refreshed in real time while you browse." },
               { Icon: Truck, title: "Shipped in 48 hours", body: "Toploader, team bag and bubble mailer minimum. High-value cards ship insured with tracking." },
             ].map(({ Icon, title, body }) => (
               <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
@@ -1295,6 +1304,8 @@ export default function ShopPage() {
               {navItems.map((n) => (
                 <li key={n.label}><button onClick={n.onClick} className="text-white/78 hover:text-white">{n.label}</button></li>
               ))}
+              <li><a href="#/faq" className="text-white/78 hover:text-white" data-testid="footer-link-faq">FAQ</a></li>
+              <li><a href="#/about" className="text-white/78 hover:text-white" data-testid="footer-link-about">About CPulls Cards</a></li>
             </ul>
           </div>
           <div>
@@ -1463,7 +1474,7 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
     setCam({ status: "Starting camera…", misses: 0, busy: false });
   }
 
-  // Grab the area inside the guide frame from the live video as a 1024px JPEG.
+  // Grab the area inside the guide frame from the live video as a 960px JPEG.
   function captureFrame(): string | null {
     const video = videoRef.current;
     const guide = guideRef.current;
@@ -1480,13 +1491,13 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
     const sh = Math.min(video.videoHeight - sy, (gr.height * (1 + 2 * pad)) / scale);
     if (sw < 40 || sh < 40) return null;
     const out = document.createElement("canvas");
-    const k = Math.min(1, 1024 / Math.max(sw, sh));
+    const k = Math.min(1, 960 / Math.max(sw, sh));
     out.width = Math.round(sw * k);
     out.height = Math.round(sh * k);
     const ctx = out.getContext("2d");
     if (!ctx) return null;
     ctx.drawImage(video, sx, sy, sw, sh, 0, 0, out.width, out.height);
-    return out.toDataURL("image/jpeg", 0.8);
+    return out.toDataURL("image/jpeg", 0.76);
   }
 
   useEffect(() => {
@@ -1525,11 +1536,14 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
           let diff = 0;
           for (let i = 0; i < px.length; i += 4) diff += Math.abs(px[i] - state.prev[i]) + Math.abs(px[i + 1] - state.prev[i + 1]);
           const mean = diff / (px.length / 4);
-          state.steady = mean < 9 ? state.steady + 1 : 0;
+          state.steady = mean < 12 ? state.steady + 1 : 0;
         }
         state.prev = px.slice();
         const now = Date.now();
-        if (state.steady < 2 || now - state.lastShot < 2500 || state.misses >= 6) return;
+        // First attempt fires after a single steady frame; retries wait for two so a
+        // customer re-positioning the card isn't photographed mid-move.
+        const need = state.misses === 0 ? 1 : 2;
+        if (state.steady < need || now - state.lastShot < 1200 || state.misses >= 6) return;
         const shot = captureFrame();
         if (!shot) return;
         state.inFlight = true;
@@ -1550,7 +1564,7 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
             ? "Read the card but found no TCGplayer match — try again or type it."
             : "Couldn't read it yet — fill the frame, avoid glare, hold still.";
         setCam((c) => (c ? { ...c, status: hint, misses: state.misses, busy: false } : c));
-      }, 450);
+      }, 280);
     })();
 
     return () => { cancelled = true; };

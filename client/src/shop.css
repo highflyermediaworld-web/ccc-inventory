@@ -1362,3 +1362,177 @@
 .pc-cam .pc-cam-btn.is-primary { background: var(--pc-red); border-color: var(--pc-red); }
 .pc-cam .pc-cam-btn:disabled { opacity: 0.6; }
 .pc-cam .pc-cam-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* ============ INFO PAGES (FAQ / About) ============ */
+.pc .pc-strip-link {
+  font-family: var(--pc-ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+  padding: 0.3rem 0.55rem;
+  text-decoration: none;
+  border-radius: 2px;
+}
+.pc .pc-strip-link:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
+.pc .pc-nav a.is-current { color: #fff; box-shadow: inset 0 -2px 0 var(--pc-red); }
+.pc .pc-info-hero {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 3px solid transparent;
+  border-image: var(--pc-foil) 1;
+}
+.pc .pc-info-hero::after {
+  content: "";
+  position: absolute;
+  right: -8%;
+  top: -40%;
+  width: 46%;
+  height: 180%;
+  background: linear-gradient(115deg, rgba(220, 38, 38, 0.28), rgba(220, 38, 38, 0) 70%);
+  transform: skewX(-14deg);
+  pointer-events: none;
+}
+.pc .pc-info-title {
+  position: relative;
+  font-size: clamp(2rem, 4.6vw, 3.4rem);
+  line-height: 1.02;
+  max-width: 18ch;
+}
+.pc .pc-info-title em { font-style: normal; color: #f5a524; }
+.pc .pc-info-intro {
+  position: relative;
+  font-family: var(--pc-body);
+  font-size: 17px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.82);
+  max-width: 60ch;
+}
+.pc .pc-faq-toc { position: sticky; top: 128px; align-self: start; }
+.pc .pc-faq-toc ul { margin-top: 0.6rem; display: grid; gap: 2px; }
+.pc .pc-faq-toc a {
+  display: block;
+  font-family: var(--pc-ui);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pc-ink-2);
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--pc-line);
+  text-decoration: none;
+}
+.pc .pc-faq-toc a:hover { color: var(--pc-ink); border-left-color: var(--pc-red); background: #fff; }
+@media (max-width: 1023px) {
+  .pc .pc-faq-toc { position: static; }
+  .pc .pc-faq-toc ul { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pc .pc-faq-toc a { border: 1px solid var(--pc-line); background: #fff; padding: 0.45rem 0.8rem; }
+  .pc .pc-faq-toc .pc-btn { display: none; }
+}
+.pc .pc-faq-list { display: grid; gap: 6px; }
+.pc .pc-faq {
+  background: #fff;
+  border: 1px solid var(--pc-line);
+  border-left: 4px solid var(--pc-line);
+  transition: border-color 120ms ease;
+}
+.pc .pc-faq[open] { border-left-color: var(--pc-red); }
+.pc .pc-faq summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  font-family: var(--pc-font);
+  font-weight: 600;
+  font-size: 17px;
+  color: var(--pc-ink);
+}
+.pc .pc-faq summary::-webkit-details-marker { display: none; }
+.pc .pc-faq summary:hover { background: #fafafb; }
+.pc .pc-faq summary:focus-visible { outline: 2px solid var(--pc-red); outline-offset: -2px; }
+.pc .pc-faq summary svg { color: var(--pc-muted); transition: transform 160ms ease; }
+.pc .pc-faq[open] summary svg { transform: rotate(180deg); }
+.pc .pc-faq-answer {
+  padding: 0 1.1rem 1.1rem;
+  font-size: 15.5px;
+  line-height: 1.65;
+  color: var(--pc-ink-2);
+  max-width: 70ch;
+}
+.pc .pc-faq-answer b { color: var(--pc-ink); font-weight: 700; }
+.pc .pc-faq-answer a { color: var(--pc-red-2); text-decoration: underline; text-underline-offset: 2px; }
+.pc .pc-info-callout {
+  background: var(--pc-black);
+  color: #fff;
+  padding: 1.6rem 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  border-left: 6px solid var(--pc-red);
+}
+.pc .pc-info-callout h2 { font-size: 1.5rem; }
+.pc .pc-info-callout p { margin-top: 0.3rem; color: rgba(255, 255, 255, 0.78); font-size: 15px; max-width: 52ch; }
+.pc .pc-info-prose p { font-size: 16.5px; line-height: 1.7; color: var(--pc-ink-2); }
+.pc .pc-info-prose p + p { margin-top: 1rem; }
+.pc .pc-info-facts { display: grid; gap: 6px; }
+.pc .pc-info-facts li {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  background: #fff;
+  border: 1px solid var(--pc-line);
+  padding: 0.95rem 1.1rem;
+}
+.pc .pc-info-facts svg { color: var(--pc-red); margin-top: 2px; flex-shrink: 0; }
+.pc .pc-info-facts b { display: block; font-family: var(--pc-font); font-size: 16px; color: var(--pc-ink); }
+.pc .pc-info-facts span { display: block; font-family: var(--pc-body); font-size: 14px; color: var(--pc-muted); margin-top: 2px; }
+.pc .pc-info-card { background: #fff; border: 1px solid var(--pc-line); border-top: 4px solid var(--pc-red); padding: 1.3rem 1.25rem; }
+.pc .pc-info-card-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; background: var(--pc-black); color: #fff; }
+.pc .pc-info-card h3 { margin-top: 0.9rem; font-size: 1.2rem; }
+.pc .pc-info-card p { margin-top: 0.4rem; font-size: 15px; line-height: 1.6; color: var(--pc-ink-2); }
+.pc .pc-info-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.pc .pc-info-tags li {
+  font-family: var(--pc-ui);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.5rem 0.85rem;
+  background: #fff;
+  border: 1px solid var(--pc-line);
+  color: var(--pc-ink);
+}
+.pc .pc-info-steps { display: grid; gap: 6px; counter-reset: step; }
+.pc .pc-info-steps li {
+  counter-increment: step;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  background: #fff;
+  border: 1px solid var(--pc-line);
+  padding: 0.9rem 1rem;
+  font-family: var(--pc-body);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--pc-ink-2);
+}
+.pc .pc-info-steps li::before {
+  content: counter(step);
+  font-family: var(--pc-ui);
+  font-weight: 800;
+  font-size: 12px;
+  color: #fff;
+  background: var(--pc-red);
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.pc .pc-info-steps svg { color: var(--pc-red); flex-shrink: 0; margin-top: 3px; }
+.pc .pc-info-steps b { color: var(--pc-ink); font-weight: 700; }
