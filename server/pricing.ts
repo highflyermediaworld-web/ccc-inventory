@@ -1161,7 +1161,11 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
   // TCGplayer is the fastest, most reliable image source for Pokemon (sealed
   // AND singles). Try it FIRST and use cleaned name (strip number suffixes).
   if (franchise === "Pok\u00e9mon") {
-    const { cleanName, collectorNumber, setCode } = parsePokemonName(rawName);
+    const parsed = parsePokemonName(rawName);
+    // The singles cleaner strips the trailing "(Ultra Ball)" variant, which is
+    // exactly what tells sealed products apart — keep the raw name for those.
+    const cleanName = isSealedProduct(item) ? rawName : parsed.cleanName;
+    const { collectorNumber, setCode } = parsed;
 
     // Try TCGplayer with cleaned name + set (fast, ~300ms)
     const tcgpClean = await getTcgplayerImage(cleanName, set, franchise, item.category);
@@ -1206,7 +1210,7 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
 // pricing — get the photo cleared so the backfill re-resolves them with the
 // stricter matcher. Safe to remove after one deploy.
 const KNOWN_BAD_AUTO_IMAGE_IDS = new Set([
-  671249, 489343, 683264, 723301, 691923, 666908, 712093, 672733, 690172,
+  671249, 489343, 683264, 723301, 691923, 666908, 712093, 672733, 690172, 181267,
 ]);
 let badImageSweepDone = false;
 export async function sweepKnownBadAutoImages(): Promise<number> {
