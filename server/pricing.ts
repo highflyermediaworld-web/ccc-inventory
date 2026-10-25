@@ -1287,8 +1287,8 @@ export interface TcgplayerPrinting {
 
 const SEARCH_CACHE = new Map<string, { expiresAt: number; hits: TcgplayerSearchHit[] }>();
 const PRINTINGS_CACHE = new Map<number, { expiresAt: number; printings: TcgplayerPrinting[] }>();
-const SEARCH_TTL_MS = 10 * 60 * 1000;
-const PRINTINGS_TTL_MS = 5 * 60 * 1000;
+const SEARCH_TTL_MS = 2 * 60 * 1000;
+const PRINTINGS_TTL_MS = 60 * 1000;
 
 function num(v: any): number | null {
   const n = Number(v);
@@ -1409,6 +1409,17 @@ export function shouldFollowTcgplayer(item: Inventory, points: TcgplayerPricePoi
   if (points.marketPrice == null || points.marketPrice <= 0) return false;
   if (isGraded(item.condition)) return false;
   if ((item as any).marketValueSource === "manual" && item.marketValue != null) return false;
+  // Mismatch guard: if a pre-existing (non-synced) value is wildly different
+  // from the matched product's price, the TCGplayer match is probably wrong.
+  // Leave the value alone so a bad match can't rewrite a real price.
+  const prev = item.marketValue == null ? null : Number(item.marketValue);
+  if (prev != null && prev > 0 && (item as any).marketValueSource !== "tcgp") {
+    const ratio = Number(points.marketPrice) / prev;
+    if (ratio > 4 || ratio < 0.25) {
+      console.warn(`[tcgp] ${item.id} skipped follow: market $${points.marketPrice} vs stored $${prev} (likely mismatch)`);
+      return false;
+    }
+  }
   return true;
 }
 
@@ -1431,6 +1442,37 @@ export async function applyFollowedPrice(
       /* history is best-effort */
     }
   }
+}
+
+// Refresh up to `ids.length` items concurrently (bounded) — used by the
+// storefront to keep whatever is on screen current.
+export async function refreshManyPricePoints(
+  ids: string[],
+  maxAgeSec = 90,
+  concurrency = 6
+): Promise<Inventory[]> {
+  const out: Inventory[] = [];
+  const queue = [...new Set(ids)].slice(0, 24);
+  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+    while (queue.length) {
+      const id = queue.shift()!;
+      try {
+        const existing = await storage.getInventoryItem(id);
+        if (!existing) continue;
+        const { item } = await Promise.race([
+          refreshItemPricePoints(existing, maxAgeSec),
+          new Promise<{ item: Inventory; refreshed: boolean }>((resolve) =>
+            setTimeout(() => resolve({ item: existing, refreshed: false }), 6000)
+          ),
+        ]);
+        out.push(item);
+      } catch {
+        /* skip */
+      }
+    }
+  });
+  await Promise.all(workers);
+  return out;
 }
 
 // Refresh a single item's TCGplayer price points if they're older than

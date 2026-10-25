@@ -1,5 +1,6 @@
 // Self-contained recurring price refresh. Runs inside the server process every
-// 15 minutes (AUTO_PRICING_INTERVAL_MIN) so the website keeps prices fresh on its own, with no external
+// 5 minutes (AUTO_PRICING_INTERVAL_MIN; floor 5) — the storefront additionally
+// re-pulls whatever is on a shopper's screen, so prices are effectively live. so the website keeps prices fresh on its own, with no external
 // cron required. Mirrors the structure of autoImport.ts.
 //
 // Each cycle:
@@ -43,7 +44,7 @@ type AutoPricingStatus = {
 
 const status: AutoPricingStatus = {
   enabled: true,
-  intervalMin: 15,
+  intervalMin: 5,
   lastRunAt: null,
   lastRunDurationMs: null,
   lastRunUpdated: 0,
@@ -60,7 +61,7 @@ let timer: NodeJS.Timeout | null = null;
 const BATCH_SIZE = 8;
 const PER_ITEM_TIMEOUT_MS = 8000;
 const GRADED_TIMEOUT_MS = 12000;
-const SLEEP_BETWEEN_BATCHES_MS = 1500;
+const SLEEP_BETWEEN_BATCHES_MS = 1000;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -90,7 +91,9 @@ async function runAutoPricing(): Promise<void> {
     for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
       const batch = candidates.slice(i, i + BATCH_SIZE);
 
-      for (const item of batch) {
+      // Items in a batch are processed in parallel so a full cycle fits
+      // comfortably inside the 5-minute interval.
+      await Promise.all(batch.map(async (item) => {
         try {
           const points = await Promise.race<any>([
             (async () => {
@@ -182,7 +185,7 @@ async function runAutoPricing(): Promise<void> {
           );
           failed++;
         }
-      }
+      }));
 
       // Yield between batches so live requests stay responsive.
       await sleep(SLEEP_BETWEEN_BATCHES_MS);
@@ -243,7 +246,7 @@ export function startAutoPricing(): void {
   }
 
   const intervalMin = parseInt(
-    process.env.AUTO_PRICING_INTERVAL_MIN ?? "15",
+    process.env.AUTO_PRICING_INTERVAL_MIN ?? "5",
     10
   );
   if (isFinite(intervalMin) && intervalMin >= 5) {

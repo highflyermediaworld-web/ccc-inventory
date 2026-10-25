@@ -40,6 +40,7 @@ import {
   tcgplayerProductLineFor,
   tcgplayerImageUrl,
   refreshItemPricePoints,
+  refreshManyPricePoints,
 } from "./pricing";
 import {
   getAutoPricingStatus,
@@ -1351,7 +1352,7 @@ export async function registerRoutes(
     try {
       const existing = await storage.getInventoryItem(String(req.params.itemId));
       if (!existing) return res.status(404).json({ message: "That item is no longer listed." });
-      const { item, refreshed } = await refreshItemPricePoints(existing, 10 * 60);
+      const { item, refreshed } = await refreshItemPricePoints(existing, 60);
       const price =
         (typeof item.asking === "number" && item.asking > 0 ? item.asking : null) ??
         (typeof item.marketValue === "number" && item.marketValue > 0 ? item.marketValue : null);
@@ -1366,6 +1367,35 @@ export async function registerRoutes(
         tcgpPricedAt: item.tcgpPricedAt ?? null,
         refreshed,
       });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Price refresh failed" });
+    }
+  });
+
+  // Real-time refresh for the cards currently on a shopper's screen (≤ 24).
+  // Anything priced in the last 90 s is served from the DB; the rest is
+  // re-pulled from TCGplayer in parallel and persisted.
+  app.post("/api/shop/prices", async (req, res) => {
+    if (priceRateLimited(req)) {
+      return res.status(429).json({ message: "Slow down a little — try again in a minute." });
+    }
+    try {
+      const ids = Array.isArray(req.body?.ids)
+        ? (req.body.ids as unknown[]).filter((x): x is string => typeof x === "string" && x.length <= 40).slice(0, 24)
+        : [];
+      if (!ids.length) return res.json({ prices: [], fetchedAt: Math.floor(Date.now() / 1000) });
+      const items = await refreshManyPricePoints(ids, 90);
+      const prices = items.map((item) => ({
+        id: item.id,
+        inStock: isShopInStock(item),
+        askingPrice:
+          (typeof item.asking === "number" && item.asking > 0 ? item.asking : null) ??
+          (typeof item.marketValue === "number" && item.marketValue > 0 ? item.marketValue : null),
+        marketValue: item.marketValue ?? null,
+        tcgpMarketPrice: item.tcgpMarketPrice ?? null,
+        tcgpPricedAt: item.tcgpPricedAt ?? null,
+      }));
+      res.json({ prices, fetchedAt: Math.floor(Date.now() / 1000) });
     } catch (err: any) {
       res.status(500).json({ message: err?.message || "Price refresh failed" });
     }

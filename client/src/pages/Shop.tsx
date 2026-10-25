@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, API_BASE } from "@/lib/queryClient";
+import { apiRequest, API_BASE, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -282,6 +282,7 @@ export default function ShopPage() {
 
   // Derived data ---------------------------------------------------------
   const available = useMemo(() => listings.filter(inStock), [listings]);
+
   // "Hot seller" = in-stock items in the top 15% of TCGplayer sales velocity
   // (and selling at least a copy a week).
   const hotIds = useMemo(() => {
@@ -340,6 +341,53 @@ export default function ShopPage() {
     };
   }, [available, franchises, sealed, slabs, singles]);
 
+  // ---- Real-time prices for whatever is on screen ----
+  // Every time the visible slice changes (and every 60 s while the tab is in
+  // the foreground) ask the server to re-pull those cards from TCGplayer and
+  // merge the fresh prices into the listings cache in place.
+  const [pricesAt, setPricesAt] = useState<number | null>(null);
+  const visibleIdsRef = useRef<string[]>([]);
+  const lastRunRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
+  const refreshVisible = useCallback(async (force = false) => {
+    const ids = visibleIdsRef.current;
+    if (!ids.length || document.visibilityState === "hidden") return;
+    const key = ids.join(",");
+    if (!force && lastRunRef.current.key === key && Date.now() - lastRunRef.current.at < 30_000) return;
+    lastRunRef.current = { key, at: Date.now() };
+    try {
+      const res = await fetch(`${API_BASE}/api/shop/prices`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "omit",
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const fresh: LivePrice[] = Array.isArray(data?.prices) ? data.prices : [];
+      if (!fresh.length) return;
+      const byId = new Map(fresh.map((p) => [p.id, p]));
+      queryClient.setQueryData<ShopListing[]>([LISTINGS_URL], (prev) =>
+        prev
+          ? prev.map((l) => {
+              const p = byId.get(l.id);
+              if (!p) return l;
+              return {
+                ...l,
+                askingPrice: p.askingPrice ?? l.askingPrice,
+                marketValue: p.marketValue ?? l.marketValue,
+                tcgpMarketPrice: p.tcgpMarketPrice,
+                tcgpPricedAt: p.tcgpPricedAt,
+                inStock: p.inStock,
+              };
+            })
+          : prev
+      );
+      setPricesAt(Date.now());
+    } catch {
+      /* offline / preview — keep cached prices */
+    }
+  }, []);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const min = parseFloat(minPrice);
@@ -378,6 +426,19 @@ export default function ShopPage() {
     }
     return out;
   }, [listings, search, franchiseFilter, categoryFilter, conditionFilter, minPrice, maxPrice, sort, hideSoldOut]);
+
+  const visibleKey = filtered.slice(0, visible).map((l) => l.id).join(",");
+  useEffect(() => {
+    visibleIdsRef.current = visibleKey ? visibleKey.split(",").slice(0, 24) : [];
+    const t = setTimeout(() => refreshVisible(false), 800);
+    return () => clearTimeout(t);
+  }, [visibleKey, refreshVisible]);
+  useEffect(() => {
+    const iv = setInterval(() => refreshVisible(true), 60_000);
+    const onVis = () => { if (document.visibilityState === "visible") refreshVisible(true); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
+  }, [refreshVisible]);
 
   const hasAnyListings = listings.length > 0;
   const activeFilterCount =
@@ -845,8 +906,15 @@ export default function ShopPage() {
                 {hasAnyListings ? `${listings.length.toLocaleString()} listings across ${stats.franchiseCount} games. Live market pricing on every card.` : "Inventory is loading."}
               </p>
             </div>
-            <div className="text-sm text-neutral-600 pc-body" data-testid="text-vault-count">
-              Showing <b className="pc-font text-base text-neutral-900">{Math.min(visible, filtered.length)}</b> of <b className="pc-font text-base text-neutral-900">{filtered.length}</b>
+            <div className="text-sm text-neutral-600 pc-body text-right">
+              <div data-testid="text-vault-count">
+                Showing <b className="pc-font text-base text-neutral-900">{Math.min(visible, filtered.length)}</b> of <b className="pc-font text-base text-neutral-900">{filtered.length}</b>
+              </div>
+              {pricesAt && (
+                <div className="pc-live-prices" data-testid="text-live-prices">
+                  <span className="pc-live-dot" aria-hidden /> Live TCGplayer prices · synced {agoLabel(Math.floor(pricesAt / 1000))}
+                </div>
+              )}
             </div>
           </div>
 
