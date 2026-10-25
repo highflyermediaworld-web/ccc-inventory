@@ -1394,7 +1394,9 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
         body: JSON.stringify({ imageBase64: preview, mediaType: "image/jpeg" }),
       });
       if (!res.ok) {
-        throw new Error(res.status === 429 ? "Too many scans — give it a minute." : "Couldn't read the card — try a clearer, straight-on photo.");
+        if (res.status === 429) throw new Error("Too many scans — give it a minute.");
+        if (res.status === 503) throw new Error("Card scanner is temporarily unavailable — type the card name below instead.");
+        throw new Error("Couldn't read the card — try a clearer, straight-on photo.");
       }
       const data = await res.json();
       const results: PriceHit[] = Array.isArray(data?.results) ? data.results : [];

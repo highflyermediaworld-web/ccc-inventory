@@ -1481,7 +1481,13 @@ export async function registerRoutes(
         fetchedAt: Math.floor(Date.now() / 1000),
       });
     } catch (err: any) {
-      console.error("prices/scan error:", err);
+      console.error("prices/scan error:", err?.status, err?.message || err);
+      // Vision provider problems (billing, auth, rate limits, outages) are not
+      // the customer's fault — say so plainly instead of blaming the photo.
+      const upstream = Number(err?.status);
+      if (upstream && upstream !== 500) {
+        return res.status(503).json({ message: "Card scanner is temporarily unavailable — type the card name below instead.", code: "scanner_unavailable" });
+      }
       res.status(502).json({ message: err?.message || "Scan failed" });
     }
   });
