@@ -89,6 +89,12 @@ function handleEvent(evt: Event) {
     case "customerRequest:update":
       queryClient.invalidateQueries({ queryKey: ["/api/requests"] });
       break;
+    case "shows:update":
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/shows"] });
+      break;
+    case "live:update":
+      queryClient.invalidateQueries({ queryKey: ["/api/live"] });
+      break;
     default:
       break;
   }

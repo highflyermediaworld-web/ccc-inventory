@@ -19,9 +19,14 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
-      - key: ADMIN_USERNAME
+      # First-boot logins (seeded once; manage afterwards in Admin → Team & logins)
+      - key: ADMIN_INITIAL_USERNAME
         sync: false
-      - key: ADMIN_PASSWORD
+      - key: ADMIN_INITIAL_PASSWORD
+        sync: false
+      - key: IT_INITIAL_USERNAME
+        sync: false
+      - key: IT_INITIAL_PASSWORD
         sync: false
       - key: ADMIN_INVITE_CODE
         sync: false

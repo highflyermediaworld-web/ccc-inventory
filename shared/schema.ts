@@ -169,7 +169,7 @@ export const users = sqliteTable("users", {
   username: text("username").notNull().unique(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
-  role: text("role").notNull().default("admin"), // 'admin' | 'staff' (future)
+  role: text("role").notNull().default("owner"), // 'owner' | 'it' (legacy rows: 'admin' = owner)
   createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
 });
 

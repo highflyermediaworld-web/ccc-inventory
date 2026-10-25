@@ -19,6 +19,8 @@ import Transactions from "@/pages/Transactions";
 import Scan from "@/pages/Scan";
 import Shop from "@/pages/Shop";
 import { FaqPage, AboutPage } from "@/pages/Info";
+import ShopSettings from "@/pages/ShopSettings";
+import SystemHealth from "@/pages/SystemHealth";
 import Requests from "@/pages/Requests";
 import Users from "@/pages/Users";
 import AutoImport from "@/pages/AutoImport";
@@ -57,6 +59,8 @@ function AdminShell() {
           <Route path="/admin/live" component={AdminLive} />
           <Route path="/admin/intake" component={Intake} />
           <Route path="/admin/payments" component={Payments} />
+          <Route path="/admin/shop-settings" component={ShopSettings} />
+          <Route path="/admin/system" component={SystemHealth} />
           <Route component={NotFound} />
         </Switch>
       </AppLayout>

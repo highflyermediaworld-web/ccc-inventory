@@ -27,28 +27,77 @@ import {
   LogOut,
   UserCircle,
   ExternalLink,
+  Settings2,
+  Activity,
 } from "lucide-react";
+import { roleLabel } from "@shared/roles";
 import { cn } from "@/lib/utils";
 import { useRealtimeStatus } from "@/lib/realtime";
 
-const NAV = [
-  { path: "/admin", label: "Dashboard", icon: LayoutDashboard, testId: "nav-dashboard" },
-  { path: "/admin/inventory", label: "Inventory", icon: Package, testId: "nav-inventory" },
-  { path: "/admin/scan", label: "Scan", icon: ScanLine, testId: "nav-scan" },
-  { path: "/admin/intake", label: "Buy / Trade In", icon: HandCoins, testId: "nav-intake" },
-  { path: "/admin/payments", label: "Payments", icon: CreditCard, testId: "nav-payments" },
-  { path: "/admin/marketplace", label: "Marketplace", icon: Store, testId: "nav-marketplace" },
-  { path: "/admin/trades", label: "Trades", icon: ArrowLeftRight, testId: "nav-trades" },
-  { path: "/admin/transactions", label: "Transactions", icon: Receipt, testId: "nav-transactions" },
-  { path: "/admin/requests", label: "Requests", icon: Inbox, testId: "nav-requests" },
-  { path: "/admin/users", label: "Admin Users", icon: UsersIcon, testId: "nav-users" },
-  { path: "/admin/auto-import", label: "Auto-import", icon: FileSpreadsheet, testId: "nav-auto-import" },
-  { path: "/admin/live", label: "Live stream", icon: Radio, testId: "nav-live" },
+type NavItem = { path: string; label: string; icon: typeof LayoutDashboard; testId: string };
+type NavSection = { id: string; title: string; items: NavItem[] };
+
+// Admin sections. Every role sees every section (Owner and IT both have full
+// access); the role only changes who can manage Owner logins.
+export const NAV_SECTIONS: NavSection[] = [
+  {
+    id: "operations",
+    title: "Operations",
+    items: [
+      { path: "/admin", label: "Dashboard", icon: LayoutDashboard, testId: "nav-dashboard" },
+      { path: "/admin/inventory", label: "Inventory", icon: Package, testId: "nav-inventory" },
+      { path: "/admin/scan", label: "Scan", icon: ScanLine, testId: "nav-scan" },
+      { path: "/admin/requests", label: "Requests", icon: Inbox, testId: "nav-requests" },
+    ],
+  },
+  {
+    id: "buying-selling",
+    title: "Buying & Selling",
+    items: [
+      { path: "/admin/intake", label: "Buy / Trade In", icon: HandCoins, testId: "nav-intake" },
+      { path: "/admin/payments", label: "Payments", icon: CreditCard, testId: "nav-payments" },
+      { path: "/admin/marketplace", label: "Marketplace", icon: Store, testId: "nav-marketplace" },
+      { path: "/admin/trades", label: "Trades", icon: ArrowLeftRight, testId: "nav-trades" },
+      { path: "/admin/transactions", label: "Transactions", icon: Receipt, testId: "nav-transactions" },
+    ],
+  },
+  {
+    id: "storefront",
+    title: "Storefront",
+    items: [
+      { path: "/admin/live", label: "Live stream", icon: Radio, testId: "nav-live" },
+      { path: "/admin/shop-settings", label: "Shop settings", icon: Settings2, testId: "nav-shop-settings" },
+    ],
+  },
+  {
+    id: "system",
+    title: "System",
+    items: [
+      { path: "/admin/users", label: "Team & logins", icon: UsersIcon, testId: "nav-users" },
+      { path: "/admin/auto-import", label: "Auto-import", icon: FileSpreadsheet, testId: "nav-auto-import" },
+      { path: "/admin/system", label: "System health", icon: Activity, testId: "nav-system" },
+    ],
+  },
 ];
+
+export const NAV = NAV_SECTIONS.flatMap((s) => s.items);
+
+function RoleTag({ role, className }: { role?: string | null; className?: string }) {
+  return (
+    <span
+      className={cn("text-[9px] uppercase tracking-[0.16em] text-[hsl(var(--brand-gold-bright))] font-bold", className)}
+      data-testid="text-current-role"
+    >
+      {roleLabel(role)}
+    </span>
+  );
+}
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Close the mobile drawer whenever the route changes (back button, deep links).
+  useEffect(() => { setMobileOpen(false); }, [location]);
   const { theme, toggle } = useTheme();
   const { user, logout } = useAuth();
 
@@ -99,8 +148,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </span>
           <ExternalLink className="h-3 w-3 opacity-60" />
         </Link>
-        <nav className="flex-1 p-3 space-y-0.5">
-          {NAV.map((item) => {
+        <nav className="flex-1 p-3 space-y-4 overflow-y-auto" aria-label="Admin sections">
+          {NAV_SECTIONS.map((section) => (
+          <div key={section.id} data-testid={`nav-section-${section.id}`}>
+            <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--brand-gold-bright))]/80">
+              {section.title}
+            </div>
+            <div className="space-y-0.5">
+          {section.items.map((item) => {
             const active = location === item.path;
             const Icon = item.icon;
             const isRequests = item.path === "/admin/requests";
@@ -110,7 +165,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 href={item.path}
                 data-testid={item.testId}
                 className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  "flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                   active
                     ? "bg-sidebar-accent text-sidebar-primary"
                     : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
@@ -138,6 +193,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
+            </div>
+          </div>
+          ))}
         </nav>
         <div className="p-3 border-t border-sidebar-border">
           <button
@@ -164,9 +222,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 >
                   {user.username}
                 </span>
-                <span className="ml-auto text-[9px] uppercase tracking-[0.16em] text-[hsl(var(--brand-gold-bright))] font-bold">
-                  Admin
-                </span>
+                <RoleTag role={user.role} className="ml-auto" />
               </div>
               <button
                 onClick={handleSignOut}
@@ -186,7 +242,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <SocialLinks size="sm" variant="ghost" />
           </div>
           <div className="px-3 py-2 flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/70">
-            <span>v1.0 · Collector</span>
+            <span>v1.1 · Collector</span>
             <ConnectionDot />
           </div>
         </div>
@@ -237,8 +293,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </span>
             <ExternalLink className="h-3.5 w-3.5 opacity-60" />
           </Link>
-          <nav className="p-4 space-y-1">
-            {NAV.map((item) => {
+          <nav className="p-4 space-y-4" aria-label="Admin sections">
+            {NAV_SECTIONS.map((section) => (
+            <div key={section.id}>
+              <div className="px-4 pb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--brand-gold-bright))]/80">
+                {section.title}
+              </div>
+            {section.items.map((item) => {
               const active = location === item.path;
               const Icon = item.icon;
               const isRequests = item.path === "/admin/requests";
@@ -247,7 +308,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   key={item.path}
                   href={item.path}
                   className={cn(
-                    "flex items-center gap-3 rounded-md px-4 py-3 text-base font-medium",
+                    "flex items-center gap-3 rounded-md px-4 py-2.5 text-base font-medium",
                     active
                       ? "bg-sidebar-accent text-sidebar-primary"
                       : "text-sidebar-foreground/80"
@@ -263,6 +324,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </Link>
               );
             })}
+            </div>
+            ))}
           </nav>
           <div className="px-4 pt-4 pb-6 border-t border-sidebar-border mt-4 space-y-3">
             {user && (
@@ -270,9 +333,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <div className="flex items-center gap-2 min-w-0">
                   <UserCircle className="h-4 w-4 shrink-0 text-[hsl(var(--brand-gold-bright))]" />
                   <span className="truncate text-sm font-semibold">{user.username}</span>
-                  <span className="ml-auto text-[9px] uppercase tracking-[0.16em] text-[hsl(var(--brand-gold-bright))] font-bold">
-                    Admin
-                  </span>
+                  <RoleTag role={user.role} className="ml-auto" />
                 </div>
                 <button
                   onClick={handleSignOut}

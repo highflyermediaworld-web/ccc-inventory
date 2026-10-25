@@ -18,7 +18,7 @@ export type AuthUser = {
 type AuthState = {
   user: AuthUser | null;
   isLoading: boolean;
-  login: (identifier: string, password: string) => Promise<AuthUser>;
+  login: (identifier: string, password: string, role?: "owner" | "it") => Promise<AuthUser>;
   signup: (
     username: string,
     email: string,
@@ -57,10 +57,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh();
   }, [refresh]);
 
-  const login = useCallback(async (identifier: string, password: string) => {
+  const login = useCallback(async (identifier: string, password: string, role?: "owner" | "it") => {
     const res = await apiRequest("POST", "/api/auth/login", {
       identifier,
       password,
+      ...(role ? { role } : {}),
     });
     const data = await res.json();
     setUser(data.user);

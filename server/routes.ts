@@ -13,6 +13,7 @@ import {
   transactions,
   trades,
 } from "@shared/schema";
+import { normalizeRole, roleLabel, isOwner } from "@shared/roles";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { registerScanRoutes, identifyCardFromImage } from "./scan";
@@ -50,8 +51,10 @@ import { broadcast } from "./realtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
+import { aiHealth } from "./ai";
 import {
   requireAuth,
+  requireOwner,
   hashPassword,
   verifyPassword,
   cookieOptions,
@@ -121,57 +124,72 @@ export async function registerRoutes(
     }
   });
 
-  // ── Admin credentials (env var — same pattern as Montalvo) ──
-  // Owner can change ADMIN_USERNAME / ADMIN_PASSWORD in Render at any time;
-  // login matches against env vars first, then upserts the user row so existing
-  // session infrastructure keeps working.
-  const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "Cpullscards";
-  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "cpulls2026";
+  // ── Login ──
+  // Accounts live in the users table (seeded from ADMIN_INITIAL_* / IT_INITIAL_*
+  // on first boot, managed afterwards in Admin → Team & logins). An optional
+  // ADMIN_USERNAME + ADMIN_PASSWORD pair in the environment acts as a break-glass
+  // Owner login; there is deliberately no built-in default.
+  const ENV_ADMIN_USERNAME = (process.env.ADMIN_USERNAME ?? "").trim();
+  const ENV_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "";
+  const loginAttempts = new Map<string, { n: number; until: number }>();
+  const LOGIN_WINDOW_MS = 10 * 60 * 1000;
+  const LOGIN_MAX = 12;
+  function loginThrottled(ip: string): boolean {
+    const now = Date.now();
+    const rec = loginAttempts.get(ip);
+    if (!rec || rec.until < now) { loginAttempts.set(ip, { n: 1, until: now + LOGIN_WINDOW_MS }); return false; }
+    rec.n += 1;
+    return rec.n > LOGIN_MAX;
+  }
 
   app.post("/api/auth/login", async (req, res) => {
     try {
+      const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() || req.ip || "?";
+      if (loginThrottled(ip)) return res.status(429).json({ message: "Too many attempts — wait a few minutes and try again" });
       const schema = z.object({
         identifier: z.string().trim().min(1),
         password: z.string().min(1),
+        role: z.enum(["owner", "it"]).optional(), // which door was picked on the login page
       });
-      const { identifier, password } = schema.parse(req.body);
+      const { identifier, password, role: wanted } = schema.parse(req.body);
 
-      // Env-var admin path: matches username (case-insensitive) + password.
       const matchesEnvAdmin =
-        identifier.toLowerCase() === ADMIN_USERNAME.toLowerCase() &&
-        password === ADMIN_PASSWORD;
+        !!ENV_ADMIN_USERNAME && !!ENV_ADMIN_PASSWORD &&
+        identifier.toLowerCase() === ENV_ADMIN_USERNAME.toLowerCase() &&
+        password === ENV_ADMIN_PASSWORD;
+
+      let user = matchesEnvAdmin
+        ? ((await storage.getUserByUsernameOrEmail(ENV_ADMIN_USERNAME)) ??
+           (await storage.getUserByUsernameOrEmail(`${ENV_ADMIN_USERNAME}@cpulls.cards`.toLowerCase())))
+        : await storage.getUserByUsernameOrEmail(identifier);
 
       if (matchesEnvAdmin) {
-        const email = `${ADMIN_USERNAME}@cpulls.cards`.toLowerCase();
-        let user =
-          (await storage.getUserByUsernameOrEmail(ADMIN_USERNAME)) ??
-          (await storage.getUserByUsernameOrEmail(email));
-        const passwordHash = await hashPassword(ADMIN_PASSWORD);
+        const passwordHash = await hashPassword(ENV_ADMIN_PASSWORD);
         if (!user) {
-          user = await storage.createUser({
-            username: ADMIN_USERNAME,
-            email,
-            passwordHash,
-          });
+          user = await storage.createUser({ username: ENV_ADMIN_USERNAME, email: `${ENV_ADMIN_USERNAME}@cpulls.cards`.toLowerCase(), passwordHash, role: "owner" });
         } else {
-          // Keep stored hash in sync so old sessions that reach requireAuth still work
           await storage.updateUserPassword(user.id, passwordHash);
         }
-        const session = await storage.createSession(user.id, SESSION_TTL_SECONDS);
-        res.cookie(SESSION_COOKIE, session.id, cookieOptions());
-        const { passwordHash: _omit, ...pub } = user;
-        return res.json({ user: pub });
+      } else {
+        if (!user) return res.status(401).json({ message: "Invalid credentials" });
+        const ok = await verifyPassword(password, user.passwordHash);
+        if (!ok) return res.status(401).json({ message: "Invalid credentials" });
       }
 
-      // Fallback: existing DB-stored user lookup
-      const user = await storage.getUserByUsernameOrEmail(identifier);
-      if (!user) return res.status(401).json({ message: "Invalid credentials" });
-      const ok = await verifyPassword(password, user.passwordHash);
-      if (!ok) return res.status(401).json({ message: "Invalid credentials" });
+      const actual = normalizeRole(user.role);
+      if (wanted && wanted !== actual) {
+        return res.status(403).json({
+          code: "wrong_role",
+          role: actual,
+          message: `This is an ${roleLabel(actual)} login — switch to the ${roleLabel(actual)} tab to sign in.`,
+        });
+      }
+
+      loginAttempts.delete(ip);
       const session = await storage.createSession(user.id, SESSION_TTL_SECONDS);
       res.cookie(SESSION_COOKIE, session.id, cookieOptions());
       const { passwordHash: _omit, ...pub } = user;
-      res.json({ user: pub });
+      res.json({ user: { ...pub, role: actual } });
     } catch (err: any) {
       res.status(400).json({ message: err?.message || "Login failed" });
     }
@@ -199,7 +217,7 @@ export async function registerRoutes(
       const rows = await storage.listUsers();
       const pub = rows.map((u: any) => {
         const { passwordHash: _omit, ...rest } = u;
-        return rest;
+        return { ...rest, role: normalizeRole(u.role) };
       });
       res.json({ users: pub });
     } catch (err: any) {
@@ -213,8 +231,13 @@ export async function registerRoutes(
         username: z.string().trim().min(2).max(64),
         password: z.string().min(8, "At least 8 characters"),
         email: z.string().trim().email().optional(),
+        role: z.enum(["owner", "it"]).default("it"),
       });
       const parsed = schema.parse(req.body);
+      const me = (req as any).user;
+      if (parsed.role === "owner" && !isOwner(me?.role)) {
+        return res.status(403).json({ message: "Only an Owner can create Owner logins" });
+      }
       const username = parsed.username;
       const email = (parsed.email ?? `${username}@cpulls.cards`).toLowerCase();
 
@@ -224,9 +247,9 @@ export async function registerRoutes(
       if (existsEmail) return res.status(409).json({ message: "Email already registered" });
 
       const passwordHash = await hashPassword(parsed.password);
-      const user = await storage.createUser({ username, email, passwordHash });
+      const user = await storage.createUser({ username, email, passwordHash, role: parsed.role });
       const { passwordHash: _omit, ...pub } = user;
-      res.status(201).json({ user: pub });
+      res.status(201).json({ user: { ...pub, role: normalizeRole(user.role) } });
     } catch (err: any) {
       if (err?.issues) {
         return res.status(400).json({ message: err.issues[0]?.message || "Invalid input" });
@@ -243,6 +266,10 @@ export async function registerRoutes(
       const { password } = schema.parse(req.body);
       const user = await storage.getUserById(id);
       if (!user) return res.status(404).json({ message: "User not found" });
+      const me = (req as any).user;
+      if (isOwner(user.role) && !isOwner(me?.role) && me?.id !== id) {
+        return res.status(403).json({ message: "Only an Owner can reset an Owner login" });
+      }
       const passwordHash = await hashPassword(password);
       await storage.updateUserPassword(id, passwordHash);
       // Invalidate all sessions for that user so they have to sign in again
@@ -262,14 +289,119 @@ export async function registerRoutes(
       if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid id" });
       const me = (req as any).user;
       if (me?.id === id) return res.status(400).json({ message: "Cannot delete the currently signed-in account" });
-      const total = await storage.countUsers();
-      if (total <= 1) return res.status(400).json({ message: "At least one admin must remain" });
+      const target = await storage.getUserById(id);
+      if (!target) return res.status(404).json({ message: "User not found" });
+      if (isOwner(target.role) && !isOwner(me?.role)) {
+        return res.status(403).json({ message: "Only an Owner can remove an Owner login" });
+      }
+      const all = await storage.listUsers();
+      if (all.length <= 1) return res.status(400).json({ message: "At least one login must remain" });
+      if (isOwner(target.role) && all.filter((u) => isOwner(u.role)).length <= 1) {
+        return res.status(400).json({ message: "At least one Owner login must remain" });
+      }
       await storage.deleteSessionsForUser(id);
       await storage.deleteUser(id);
       res.json({ ok: true });
     } catch (err: any) {
       res.status(400).json({ message: err?.message || "Failed to delete user" });
     }
+  });
+
+  // Change a login's role. Owner only; the last Owner can't be demoted.
+  app.patch("/api/admin/users/:id/role", requireAuth, requireOwner, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid id" });
+      const { role } = z.object({ role: z.enum(["owner", "it"]) }).parse(req.body);
+      const target = await storage.getUserById(id);
+      if (!target) return res.status(404).json({ message: "User not found" });
+      if (isOwner(target.role) && role !== "owner") {
+        const owners = (await storage.listUsers()).filter((u) => isOwner(u.role));
+        if (owners.length <= 1) return res.status(400).json({ message: "At least one Owner login must remain" });
+      }
+      await storage.updateUserRole(id, role);
+      res.json({ ok: true, role });
+    } catch (err: any) {
+      if (err?.issues) return res.status(400).json({ message: err.issues[0]?.message || "Invalid input" });
+      res.status(400).json({ message: err?.message || "Failed to change role" });
+    }
+  });
+
+  // ===== SHOP SETTINGS: upcoming shows =====
+  // Shows are stored as JSON in app_settings ("shop_shows"). When nothing has
+  // been saved yet the storefront falls back to its built-in list.
+  const showSchema = z.object({
+    name: z.string().trim().min(1).max(120),
+    start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Start date must be YYYY-MM-DD"),
+    end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal("")),
+    hours: z.string().trim().max(120).optional(),
+    venue: z.string().trim().max(160).optional(),
+    city: z.string().trim().min(1).max(80),
+    host: z.string().trim().max(60).optional(),
+    url: z.string().trim().max(300).optional(),
+    note: z.string().trim().max(200).optional(),
+  });
+  app.get("/api/shop/shows", async (_req, res) => {
+    try {
+      const raw = await storage.getSetting("shop_shows");
+      if (!raw) return res.json({ source: "default", shows: null });
+      res.json({ source: "settings", shows: JSON.parse(raw) });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Failed to load shows" });
+    }
+  });
+  app.put("/api/admin/shop/shows", requireAuth, async (req, res) => {
+    try {
+      const shows = z.array(showSchema).max(60).parse(req.body?.shows ?? []);
+      const clean = shows.map((sh) => Object.fromEntries(Object.entries({ ...sh, host: sh.host?.replace(/^@+/, "") }).filter(([, v]) => v !== "" && v !== undefined)));
+      await storage.setSetting("shop_shows", JSON.stringify(clean));
+      broadcast({ type: "shows:update", payload: {} });
+      res.json({ ok: true, count: clean.length });
+    } catch (err: any) {
+      if (err?.issues) return res.status(400).json({ message: err.issues[0]?.message || "Invalid show" });
+      res.status(400).json({ message: err?.message || "Failed to save shows" });
+    }
+  });
+  app.delete("/api/admin/shop/shows", requireAuth, async (_req, res) => {
+    try {
+      await storage.setSetting("shop_shows", "");
+      broadcast({ type: "shows:update", payload: {} });
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(400).json({ message: err?.message || "Failed to reset shows" });
+    }
+  });
+
+  // ===== SYSTEM HEALTH (admin) =====
+  app.get("/api/system/health", requireAuth, async (_req, res) => {
+    const startedAt = Date.now();
+    const out: any = {
+      now: new Date().toISOString(),
+      uptimeSec: Math.round(process.uptime()),
+      node: process.version,
+      env: process.env.NODE_ENV || "development",
+      commit: (process.env.RENDER_GIT_COMMIT || "").slice(0, 7) || null,
+      database: { ok: false, driver: process.env.TURSO_DATABASE_URL ? "turso" : "sqlite", users: 0, inventory: 0, requests: 0 },
+      scanner: null as any,
+      pricing: null as any,
+      keys: {
+        gemini: !!process.env.GEMINI_API_KEY,
+        openai: !!process.env.OPENAI_API_KEY,
+        anthropic: !!process.env.ANTHROPIC_API_KEY,
+        inviteCode: !!(process.env.ADMIN_INVITE_CODE ?? "").trim(),
+        breakGlassLogin: !!(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD),
+      },
+    };
+    try {
+      const [users, inv, reqs] = await Promise.all([storage.listUsers(), storage.listInventory(), storage.listCustomerRequests()]);
+      out.database = { ...out.database, ok: true, users: users.length, inventory: inv.length, requests: (reqs as any[]).length, owners: users.filter((u) => isOwner(u.role)).length, it: users.filter((u) => !isOwner(u.role)).length };
+    } catch (err: any) {
+      out.database.error = err?.message || String(err);
+    }
+    try { out.scanner = await aiHealth(); } catch (err: any) { out.scanner = { ok: false, error: err?.message || String(err) }; }
+    try { out.pricing = getAutoPricingStatus(); } catch (err: any) { out.pricing = { error: err?.message || String(err) }; }
+    out.responseMs = Date.now() - startedAt;
+    res.json(out);
   });
 
 

@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/Logo";
-import { Loader2, AlertCircle, ArrowLeft } from "lucide-react";
+import { Loader2, AlertCircle, ArrowLeft, Crown, Wrench } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+type Door = "owner" | "it";
+const DOORS: { id: Door; label: string; hint: string; Icon: typeof Crown }[] = [
+  { id: "owner", label: "Owner", hint: "Shop owners · full access", Icon: Crown },
+  { id: "it", label: "IT", hint: "Technical staff · full access", Icon: Wrench },
+];
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -16,6 +23,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [door, setDoor] = useState<Door>(() => {
+    try { return (localStorage.getItem("ccc_login_door") as Door) === "it" ? "it" : "owner"; } catch { return "owner"; }
+  });
+  function pickDoor(d: Door) {
+    setDoor(d);
+    setError(null);
+    try { localStorage.setItem("ccc_login_door", d); } catch { /* ignore */ }
+  }
 
   const { data: status } = useQuery<{ userCount: number; signupEnabled: boolean }>({
     queryKey: ["/api/auth/status"],
@@ -41,7 +56,7 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(identifier.trim(), password);
+      await login(identifier.trim(), password, door);
       setLocation(nextPath);
     } catch (err: any) {
       const msg = (err?.message ?? "").replace(/^\d+:\s*/, "");
@@ -88,7 +103,7 @@ export default function LoginPage() {
             <Logo size={36} />
           </div>
           <div className="text-[10px] uppercase tracking-[0.24em] text-gold font-semibold text-center mb-1">
-            Owner Portal
+            Admin Portal
           </div>
           <h1
             className="serif text-3xl font-medium tracking-tight text-center leading-none mb-2"
@@ -96,9 +111,36 @@ export default function LoginPage() {
           >
             Sign in
           </h1>
-          <p className="text-xs text-muted-foreground text-center mb-6">
-            Admin access for CPulls Cards
+          <p className="text-xs text-muted-foreground text-center mb-5">
+            CPulls Cards back office
           </p>
+
+          <div className="grid grid-cols-2 gap-1.5 mb-5" role="tablist" aria-label="Login type">
+            {DOORS.map(({ id, label, hint, Icon }) => {
+              const active = door === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => pickDoor(id)}
+                  data-testid={`door-${id}`}
+                  className={cn(
+                    "flex flex-col items-start gap-0.5 border px-3 py-2.5 text-left transition-colors",
+                    active
+                      ? "border-[hsl(var(--brand-gold)/0.7)] bg-[hsl(var(--brand-gold)/0.1)] text-foreground"
+                      : "border-border bg-background/40 text-muted-foreground hover:border-[hsl(var(--brand-gold)/0.4)] hover:text-foreground"
+                  )}
+                >
+                  <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
+                    <Icon className={cn("h-3.5 w-3.5", active ? "text-gold-bright" : "")} /> {label}
+                  </span>
+                  <span className="text-[10px] leading-tight">{hint}</span>
+                </button>
+              );
+            })}
+          </div>
 
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-1.5">
@@ -149,7 +191,7 @@ export default function LoginPage() {
                   Signing in…
                 </>
               ) : (
-                "Sign in"
+                `Sign in as ${door === "it" ? "IT" : "Owner"}`
               )}
             </Button>
           </form>

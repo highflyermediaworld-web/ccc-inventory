@@ -124,11 +124,11 @@ function parseLocal(iso: string, endOfDay = false): Date {
 
 const NOW_OVERRIDE = (import.meta as any).env?.VITE_SHOWS_NOW as string | undefined;
 
-export function splitShows(now: Date = NOW_OVERRIDE ? parseLocal(NOW_OVERRIDE) : new Date()) {
-  const upcoming = SHOWS.filter((s) => parseLocal(s.end ?? s.start, true) >= now).sort(
+export function splitShows(now: Date = NOW_OVERRIDE ? parseLocal(NOW_OVERRIDE) : new Date(), list: CardShow[] = SHOWS) {
+  const upcoming = list.filter((s) => parseLocal(s.end || s.start, true) >= now).sort(
     (a, b) => a.start.localeCompare(b.start),
   );
-  const past = SHOWS.filter((s) => parseLocal(s.end ?? s.start, true) < now).sort(
+  const past = list.filter((s) => parseLocal(s.end || s.start, true) < now).sort(
     (a, b) => b.start.localeCompare(a.start),
   );
   return { upcoming, past };

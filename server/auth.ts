@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
+import { normalizeRole } from "@shared/roles";
 
 export const SESSION_TTL_SECONDS = 60 * 60 * 24; // 24h
 export const SESSION_COOKIE = "ccc_session";
@@ -71,7 +72,17 @@ export async function requireAuth(
     id: user.id,
     username: user.username,
     email: user.email,
-    role: user.role,
+    role: normalizeRole(user.role),
   };
+  next();
+}
+
+/** Owner-only gate. Use after requireAuth. */
+export function requireOwner(req: Request, res: Response, next: NextFunction): void {
+  const role = (req as any).user?.role;
+  if (normalizeRole(role) !== "owner") {
+    res.status(403).json({ message: "Owner login required" });
+    return;
+  }
   next();
 }

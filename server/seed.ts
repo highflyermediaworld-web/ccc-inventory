@@ -413,8 +413,9 @@ export async function runSeed() {
           username: seedUsername,
           email,
           passwordHash,
+          role: "owner",
         });
-        console.log(`[seed] created initial admin user: ${seedUsername}`);
+        console.log(`[seed] created initial Owner login: ${seedUsername}`);
       } else if (resetFlag) {
         const existing =
           (await storage.getUserByUsernameOrEmail(seedUsername)) ??
@@ -434,6 +435,23 @@ export async function runSeed() {
     }
   } catch (err) {
     console.error("[seed] initial-admin seed failed:", err);
+  }
+
+  // Optional IT login from IT_INITIAL_USERNAME + IT_INITIAL_PASSWORD. Created
+  // once if that username doesn't exist yet; never resets an existing account.
+  try {
+    const itUser = (process.env.IT_INITIAL_USERNAME ?? "").trim();
+    const itPass = process.env.IT_INITIAL_PASSWORD ?? "";
+    if (itUser && itPass) {
+      const email = `${itUser}@cpulls.cards`.toLowerCase();
+      const existing = (await storage.getUserByUsernameOrEmail(itUser)) ?? (await storage.getUserByUsernameOrEmail(email));
+      if (!existing) {
+        await storage.createUser({ username: itUser, email, passwordHash: await hashPassword(itPass), role: "it" });
+        console.log(`[seed] created initial IT login: ${itUser}`);
+      }
+    }
+  } catch (err) {
+    console.error("[seed] initial IT seed failed:", err);
   }
 
   // Mock incoming trades
@@ -457,7 +475,6 @@ export async function runSeed() {
   }
 
   // Seed default live-stream settings only if no values are set yet
-  const { storage } = await import("./storage");
   if (!(await storage.getSetting("live_handle"))) {
     await storage.setSetting("live_platform", "tiktok");
     await storage.setSetting("live_handle", "cpulls.cards");

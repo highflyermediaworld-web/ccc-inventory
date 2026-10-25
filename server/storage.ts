@@ -269,7 +269,8 @@ export interface IStorage {
   ): Promise<CustomerRequest | undefined>;
 
   // Auth
-  createUser(data: { username: string; email: string; passwordHash: string }): Promise<User>;
+  createUser(data: { username: string; email: string; passwordHash: string; role?: string }): Promise<User>;
+  updateUserRole(id: number, role: string): Promise<void>;
   getUserByUsernameOrEmail(identifier: string): Promise<User | undefined>;
   getUserById(id: number): Promise<User | undefined>;
   updateUserPassword(id: number, passwordHash: string): Promise<void>;
@@ -469,6 +470,7 @@ export class DatabaseStorage implements IStorage {
     username: string;
     email: string;
     passwordHash: string;
+    role?: string;
   }): Promise<User> {
     const result = await db
       .insert(users)
@@ -476,9 +478,14 @@ export class DatabaseStorage implements IStorage {
         username: data.username,
         email: data.email,
         passwordHash: data.passwordHash,
+        role: data.role ?? "owner",
       })
       .returning();
     return result[0] as User;
+  }
+
+  async updateUserRole(id: number, role: string): Promise<void> {
+    await db.update(users).set({ role }).where(eq(users.id, id)).run();
   }
 
   async getUserByUsernameOrEmail(identifier: string): Promise<User | undefined> {

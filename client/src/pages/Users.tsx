@@ -27,7 +27,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
-import { UserPlus, KeyRound, Trash2, ShieldCheck } from "lucide-react";
+import { UserPlus, KeyRound, Trash2, ShieldCheck, Crown, Wrench } from "lucide-react";
+import { isOwner, roleLabel, type Role } from "@shared/roles";
+import { cn } from "@/lib/utils";
 
 type AdminUser = {
   id: number;
@@ -54,6 +56,8 @@ export default function UsersPage() {
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newEmail, setNewEmail] = useState("");
+  const [newRole, setNewRole] = useState<Role>("it");
+  const meOwner = isOwner(me?.role);
 
   // Reset form
   const [resetPwd, setResetPwd] = useState("");
@@ -62,20 +66,21 @@ export default function UsersPage() {
     queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
 
   const createMutation = useMutation({
-    mutationFn: async (body: { username: string; password: string; email?: string }) => {
+    mutationFn: async (body: { username: string; password: string; email?: string; role: Role }) => {
       return apiRequest("POST", "/api/admin/users", body);
     },
     onSuccess: () => {
-      toast({ title: "Admin created", description: `${newUsername} can now sign in.` });
+      toast({ title: `${roleLabel(newRole)} login created`, description: `${newUsername} can now sign in on the ${roleLabel(newRole)} tab.` });
       setCreateOpen(false);
       setNewUsername("");
       setNewPassword("");
       setNewEmail("");
+      setNewRole("it");
       invalidate();
     },
     onError: (err: any) => {
       toast({
-        title: "Couldn't create admin",
+        title: "Couldn't create login",
         description: err?.message ?? "Try again",
         variant: "destructive",
       });
@@ -104,16 +109,27 @@ export default function UsersPage() {
     },
   });
 
+  const roleMutation = useMutation({
+    mutationFn: async ({ id, role }: { id: number; role: Role }) => apiRequest("PATCH", `/api/admin/users/${id}/role`, { role }),
+    onSuccess: (_r, v) => {
+      toast({ title: `Role changed to ${roleLabel(v.role)}` });
+      invalidate();
+    },
+    onError: (err: any) => {
+      toast({ title: "Couldn't change role", description: err?.message ?? "Try again", variant: "destructive" });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => apiRequest("DELETE", `/api/admin/users/${id}`),
     onSuccess: () => {
-      toast({ title: "Admin removed" });
+      toast({ title: "Login removed" });
       setDeleteTarget(null);
       invalidate();
     },
     onError: (err: any) => {
       toast({
-        title: "Couldn't remove admin",
+        title: "Couldn't remove login",
         description: err?.message ?? "Try again",
         variant: "destructive",
       });
@@ -123,25 +139,52 @@ export default function UsersPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Access"
-        title="Admin Users"
-        description="Add or remove people who can sign in to the admin app."
+        eyebrow="System"
+        title="Team & logins"
+        description="Owner and IT logins for the back office. Both roles have full access; only an Owner can add, re-role or remove Owner logins."
         actions={
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
               <Button data-testid="button-create-admin">
                 <UserPlus className="size-4 mr-2" />
-                Add Admin
+                Add login
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Create admin user</DialogTitle>
+                <DialogTitle>Create a login</DialogTitle>
                 <DialogDescription>
-                  They can sign in at /login with the username and password you set.
+                  They sign in at /login with the username and password you set, on the matching tab.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <Label>Role</Label>
+                  <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Role">
+                    {([
+                      { id: "owner" as Role, label: "Owner", hint: "Shop owner · manages all logins", Icon: Crown, disabled: !meOwner },
+                      { id: "it" as Role, label: "IT", hint: "Technical staff · full access", Icon: Wrench, disabled: false },
+                    ]).map(({ id, label, hint, Icon, disabled }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="radio"
+                        aria-checked={newRole === id}
+                        disabled={disabled}
+                        onClick={() => setNewRole(id)}
+                        data-testid={`role-option-${id}`}
+                        title={disabled ? "Only an Owner can create Owner logins" : undefined}
+                        className={cn(
+                          "flex flex-col items-start gap-0.5 border px-3 py-2 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                          newRole === id ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"
+                        )}
+                      >
+                        <span className="inline-flex items-center gap-1.5 text-sm font-semibold"><Icon className="h-3.5 w-3.5" /> {label}</span>
+                        <span className="text-[11px] text-muted-foreground leading-tight">{hint}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="new-username">Username</Label>
                   <Input
@@ -191,6 +234,7 @@ export default function UsersPage() {
                       username: newUsername.trim(),
                       password: newPassword,
                       email: newEmail.trim() || undefined,
+                      role: newRole,
                     })
                   }
                   disabled={
@@ -200,7 +244,7 @@ export default function UsersPage() {
                   }
                   data-testid="button-confirm-create-admin"
                 >
-                  {createMutation.isPending ? "Creating…" : "Create admin"}
+                  {createMutation.isPending ? "Creating…" : `Create ${roleLabel(newRole)} login`}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -223,14 +267,14 @@ export default function UsersPage() {
             {isLoading && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                  Loading admins…
+                  Loading logins…
                 </td>
               </tr>
             )}
             {!isLoading && users.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                  No admins yet.
+                  No logins yet.
                 </td>
               </tr>
             )}
@@ -256,7 +300,26 @@ export default function UsersPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
-                  <td className="px-4 py-3 text-muted-foreground capitalize">{u.role}</td>
+                  <td className="px-4 py-3">
+                    {meOwner && !isMe ? (
+                      <select
+                        value={isOwner(u.role) ? "owner" : "it"}
+                        onChange={(e) => roleMutation.mutate({ id: u.id, role: e.target.value as Role })}
+                        disabled={roleMutation.isPending}
+                        aria-label={`Role for ${u.username}`}
+                        className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                        data-testid={`select-role-${u.id}`}
+                      >
+                        <option value="owner">Owner</option>
+                        <option value="it">IT</option>
+                      </select>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em]" data-testid={`text-role-${u.id}`}>
+                        {isOwner(u.role) ? <Crown className="size-3.5 text-primary" /> : <Wrench className="size-3.5 text-muted-foreground" />}
+                        {roleLabel(u.role)}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {formatDateTime(u.createdAt)}
                   </td>
@@ -268,6 +331,8 @@ export default function UsersPage() {
                         setResetTarget(u);
                         setResetPwd("");
                       }}
+                      disabled={!meOwner && isOwner(u.role) && !isMe}
+                      title={!meOwner && isOwner(u.role) && !isMe ? "Only an Owner can reset an Owner login" : undefined}
                       data-testid={`button-reset-${u.id}`}
                     >
                       <KeyRound className="size-4 mr-1.5" />
@@ -278,7 +343,8 @@ export default function UsersPage() {
                       variant="ghost"
                       className="text-destructive hover:text-destructive"
                       onClick={() => setDeleteTarget(u)}
-                      disabled={isMe}
+                      disabled={isMe || (!meOwner && isOwner(u.role))}
+                      title={!meOwner && isOwner(u.role) ? "Only an Owner can remove an Owner login" : undefined}
                       data-testid={`button-delete-${u.id}`}
                     >
                       <Trash2 className="size-4 mr-1.5" />
@@ -348,7 +414,7 @@ export default function UsersPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove this admin?</AlertDialogTitle>
+            <AlertDialogTitle>Remove this login?</AlertDialogTitle>
             <AlertDialogDescription>
               {deleteTarget?.username} will lose access immediately. This cannot be undone.
             </AlertDialogDescription>
@@ -359,7 +425,7 @@ export default function UsersPage() {
               onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
               data-testid="button-confirm-delete"
             >
-              {deleteMutation.isPending ? "Removing…" : "Remove admin"}
+              {deleteMutation.isPending ? "Removing…" : "Remove login"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

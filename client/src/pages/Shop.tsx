@@ -526,7 +526,22 @@ export default function ShopPage() {
     { label: "Shows", onClick: scrollToShows },
     { label: "Sell & Trade", onClick: () => { setMobileNavOpen(false); scrollToTrade(); } },
   ];
-  const { upcoming: upcomingShows, past: pastShows } = useMemo(() => splitShows(), []);
+  // Shows: admin-managed list (Admin → Shop settings) with the built-in list as fallback.
+  const { data: remoteShows } = useQuery<CardShow[] | null>({
+    queryKey: ["/api/shop/shows", "shop"],
+    queryFn: async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/shop/shows`, { credentials: "omit" });
+        if (!res.ok) return null;
+        const j = await res.json();
+        return Array.isArray(j?.shows) ? (j.shows as CardShow[]) : null;
+      } catch {
+        return null;
+      }
+    },
+    staleTime: 5 * 60_000,
+  });
+  const { upcoming: upcomingShows, past: pastShows } = useMemo(() => splitShows(undefined, remoteShows ?? undefined), [remoteShows]);
 
   const liveUrl = live?.url || TIKTOK_URL;
   const livePlatform = (live?.platform || "tiktok").toLowerCase();

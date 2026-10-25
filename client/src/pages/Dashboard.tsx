@@ -8,6 +8,8 @@ import { CategoryBadge, FranchiseBadge } from "@/components/Badges";
 import { formatCurrency, formatNumber, formatPercent, pnlClass, formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
+import { roleLabel } from "@shared/roles";
 import { RefreshCw } from "lucide-react";
 import {
   PieChart,
@@ -70,6 +72,7 @@ function KpiCard({ label, value, sub, subClass, icon: Icon, accent }: KpiCardPro
 }
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const { data: inventory = [], isLoading } = useQuery<Inventory[]>({
     queryKey: ["/api/inventory"],
@@ -163,8 +166,8 @@ export default function Dashboard() {
   return (
     <div className="p-4 md:p-8 max-w-[1500px]">
       <PageHeader
-        eyebrow="Command Center"
-        title="Portfolio overview"
+        eyebrow={`Command Center · ${roleLabel(user?.role)} view`}
+        title={`Welcome back${user?.username ? `, ${user.username}` : ""}`}
         description={`${totalItems} items across ${franchises.length} franchises. Unrealized G/L ${formatCurrency(unrealized)}.`}
         actions={
           <Button

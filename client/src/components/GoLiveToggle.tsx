@@ -113,7 +113,7 @@ export function GoLiveToggle() {
                   isLive ? "text-white/60" : "text-muted-foreground",
                 ].join(" ")}
               >
-                {platformLabel} \u00b7 @{data.handle.replace(/^@/, "")}
+                {platformLabel} · @{data.handle.replace(/^@/, "")}
               </span>
             </div>
             <span
