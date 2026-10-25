@@ -11,6 +11,12 @@ services:
         sync: false
       - key: TURSO_AUTH_TOKEN
         sync: false
+      # AI scanner / estimates: set ONE of these (first configured wins:
+      # Gemini → OpenAI → Anthropic). Override with AI_PROVIDER if needed.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: ADMIN_USERNAME

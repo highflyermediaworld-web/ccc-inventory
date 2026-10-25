@@ -1,6 +1,6 @@
 import { storage } from "./storage";
 import type { Inventory } from "@shared/schema";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiText } from "./ai";
 
 // ===================================================================
 // Pricing feed module
@@ -294,9 +294,6 @@ function firstPriceFrom(obj: any, key: string): number | null {
 }
 
 // --- Claude fallback (same signature as /api/scan/price) ---------------------
-const anthropic = new Anthropic();
-// Anthropic real model id (the underscored aliases only work via Perplexity's gateway).
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
 
 export async function getClaudeEstimate(opts: {
   name: string;
@@ -309,12 +306,7 @@ export async function getClaudeEstimate(opts: {
   if (!name && !set) return null;
   const prompt = `Estimate current secondary-market value in USD for this trading card / product. Reason from general TCG market knowledge (eBay sold, TCGPlayer, etc.). Return ONLY valid JSON:\n{ "marketValue": number (USD), "disclaimer": string }\nDetails:\n- Name: ${name}\n- Set: ${set}\n- Franchise: ${franchise}\n- Rarity: ${rarity}\n- Condition: ${condition || "NM"}\n\nIf uncertain, return a best-guess number and make the disclaimer clearly call out the uncertainty. Always include the disclaimer string. Never return null for marketValue \u2014 use 0 if completely unknown.`;
   try {
-    const msg = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 250,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const text = msg.content.find((b: any) => b.type === "text")?.text ?? "";
+    const text = await aiText(prompt, { maxTokens: 250 });
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
     const parsed = JSON.parse(jsonMatch[0]);
@@ -361,12 +353,7 @@ export async function getGradedEstimate(opts: {
       : "";
   const prompt = `Estimate the current secondary-market value in USD for this GRADED slab. Use eBay sold comps, PWCC, TCGplayer graded listings, and general grading premium knowledge. The condition string already encodes the grading company and grade. Return ONLY valid JSON:\n{ "marketValue": number (USD), "disclaimer": string }\nDetails:\n- Name: ${name}\n- Set: ${set}\n- Franchise: ${franchise}\n- Rarity: ${rarity}\n- Grade: ${condition}${anchor}\n\nApply a realistic grade premium over the raw price (PSA 10 is typically 2x-6x raw for modern cards, higher for chase cards; PSA 9 ~1.2x-2x; CGC/BGS slightly less than equivalent PSA). If uncertain, return a best-guess number and clearly call out the uncertainty in the disclaimer. Always include the disclaimer string. Never return null for marketValue — use 0 if completely unknown.`;
   try {
-    const msg = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 300,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const text = msg.content.find((b: any) => b.type === "text")?.text ?? "";
+    const text = await aiText(prompt, { maxTokens: 300 });
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
     const parsed = JSON.parse(jsonMatch[0]);

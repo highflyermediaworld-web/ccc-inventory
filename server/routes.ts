@@ -1485,7 +1485,7 @@ export async function registerRoutes(
       // Vision provider problems (billing, auth, rate limits, outages) are not
       // the customer's fault — say so plainly instead of blaming the photo.
       const upstream = Number(err?.status);
-      if (upstream && upstream !== 500) {
+      if (err?.name === "AiError" || (upstream && upstream !== 500)) {
         return res.status(503).json({ message: "Card scanner is temporarily unavailable — type the card name below instead.", code: "scanner_unavailable" });
       }
       res.status(502).json({ message: err?.message || "Scan failed" });

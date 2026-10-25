@@ -1,10 +1,6 @@
 import type { Express } from "express";
-import Anthropic from "@anthropic-ai/sdk";
 import { tryRealSourcesOnly } from "./pricing";
-
-const anthropic = new Anthropic();
-// Anthropic real model id (the underscored aliases only work via Perplexity's gateway).
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
+import { aiText, aiHealth } from "./ai";
 
 /**
  * Robustly extract the first JSON object/array from model output.
@@ -58,13 +54,6 @@ function parseJSON<T = any>(raw: string): T | null {
   return null;
 }
 
-function extractText(msg: Anthropic.Messages.Message): string {
-  for (const block of msg.content) {
-    if (block.type === "text") return block.text;
-  }
-  return "";
-}
-
 export async function identifyCardFromImage(
   imageBase64: string,
   mediaType: string,
@@ -102,35 +91,10 @@ If you cannot identify the card, return {"confidence":0,"name":"","set":"","numb
     try { return JSON.parse(process.env.SCAN_IDENTIFY_STUB); } catch { /* fall through */ }
   }
 
-  const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
-  const validMediaType = (
-    ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mediaType)
-      ? mediaType
-      : "image/jpeg"
-  ) as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
-
-  const msg = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 512,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: validMediaType,
-              data: cleanBase64,
-            },
-          },
-          { type: "text", text: prompt },
-        ],
-      },
-    ],
+  const text = await aiText(prompt, {
+    maxTokens: 512,
+    image: { base64: imageBase64, mediaType },
   });
-
-  const text = extractText(msg);
   const parsed = parseJSON<any>(text);
   return (
     parsed ?? {
@@ -146,6 +110,11 @@ If you cannot identify the card, return {"confidence":0,"name":"","set":"","numb
 }
 
 export function registerScanRoutes(app: Express) {
+  // --- Which AI provider is active and is it answering? (admin only) ---
+  app.get("/api/scan/health", async (_req, res) => {
+    res.json(await aiHealth());
+  });
+
   // --- IDENTIFY single image ---
   app.post("/api/scan/identify", async (req, res) => {
     try {
@@ -247,12 +216,7 @@ If unknown, set confidence:0.
 PAGE TEXT:
 ${pageText || "(could not fetch — reason unknown)"}`;
 
-        const msg = await anthropic.messages.create({
-          model: MODEL,
-          max_tokens: 512,
-          messages: [{ role: "user", content: prompt }],
-        });
-        const text = extractText(msg);
+        const text = await aiText(prompt, { maxTokens: 512 });
         const parsed = parseJSON<any>(text) ?? { confidence: 0 };
         return res.json({ kind: "slab", ...parsed, sourceUrl: code });
       }
@@ -267,12 +231,7 @@ ${pageText || "(could not fetch — reason unknown)"}`;
   "confidence": number 0 to 1
 }
 If unknown, set confidence:0.`;
-      const msg = await anthropic.messages.create({
-        model: MODEL,
-        max_tokens: 300,
-        messages: [{ role: "user", content: prompt }],
-      });
-      const text = extractText(msg);
+      const text = await aiText(prompt, { maxTokens: 300 });
       const parsed = parseJSON<any>(text) ?? { confidence: 0 };
       res.json({ kind: "upc", code, ...parsed });
     } catch (err: any) {
@@ -292,12 +251,7 @@ If unknown, set confidence:0.`;
   { "name": string, "set": string, "franchise": one of ["Pokémon","One Piece","Magic The Gathering","DBZ","League of Legends","Union Arena","Other"], "rarity": string, "category": one of ["Sealed","Raw","Slab"] }
 ]
 Focus on popular / well-known cards. If nothing obvious, return [].`;
-      const msg = await anthropic.messages.create({
-        model: MODEL,
-        max_tokens: 700,
-        messages: [{ role: "user", content: prompt }],
-      });
-      const text = extractText(msg);
+      const text = await aiText(prompt, { maxTokens: 700 });
       const parsed = parseJSON<any>(text);
       const suggestions = Array.isArray(parsed) ? parsed.slice(0, 8) : [];
       res.json({ suggestions });
@@ -344,12 +298,7 @@ Details:
 - Condition: ${condition ?? "NM"}
 
 If uncertain, return a best-guess number and make the disclaimer clearly call out the uncertainty. Always include the disclaimer string. Never return null for marketValue — use 0 if completely unknown.`;
-      const msg = await anthropic.messages.create({
-        model: MODEL,
-        max_tokens: 250,
-        messages: [{ role: "user", content: prompt }],
-      });
-      const text = extractText(msg);
+      const text = await aiText(prompt, { maxTokens: 250 });
       const parsed = parseJSON<any>(text) ?? {
         marketValue: 0,
         disclaimer: "Unable to estimate.",
