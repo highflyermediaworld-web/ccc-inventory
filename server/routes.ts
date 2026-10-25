@@ -1417,7 +1417,7 @@ export async function registerRoutes(
       return false;
     }
     slot.count += 1;
-    return slot.count > 12;
+    return slot.count > 24;
   }
   const normNumber = (v: string | null | undefined) =>
     String(v ?? "").split("/")[0].trim().replace(/^0+(?=\d)/, "").toLowerCase();

@@ -28,6 +28,7 @@ import { formatCurrency } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { createPortal } from "react-dom";
 import { splitShows, showDateParts, type CardShow } from "@/data/shows";
 import { SiTiktok, SiInstagram } from "react-icons/si";
 import {
@@ -1379,15 +1380,13 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [scan, setScan] = useState<ScanState>({ status: "idle" });
 
-  async function onScanFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    let preview: string | null = null;
+  type ScanOutcome = "matched" | "ambiguous" | "unreadable" | "nomatch" | "error";
+
+  // One scan round-trip: photo → identify → TCGplayer matches → calculator.
+  // `quiet` (live camera) keeps the UI calm on misses so the camera can retry.
+  async function runScan(preview: string, quiet = false): Promise<ScanOutcome> {
     try {
-      preview = await downscalePhoto(file);
-      setScan({ status: "working", preview });
-      setPicked(null); setPrintings([]); setPrinting(null); setHits([]); setQ(""); setError(null);
+      if (!quiet) setScan({ status: "working", preview });
       const res = await fetch(`${API_BASE}/api/prices/scan`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1403,21 +1402,175 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
       const results: PriceHit[] = Array.isArray(data?.results) ? data.results : [];
       const ident = data?.identified ?? {};
       const label = [ident.name, ident.number ? `#${ident.number}` : null, ident.set || null].filter(Boolean).join(" · ");
-      if (!results.length) {
-        setScan({ status: "error", preview, message: ident?.name ? `Read it as “${label}” but found no TCGplayer match — try typing it below.` : "Couldn't read the card — try a clearer, straight-on photo." });
-        return;
+      if (!ident?.name || Number(ident.confidence) < 0.5) {
+        if (!quiet) setScan({ status: "error", preview, message: "Couldn't read the card — try a clearer, straight-on photo." });
+        return "unreadable";
       }
+      if (!results.length) {
+        if (!quiet) setScan({ status: "error", preview, message: `Read it as “${label}” but found no TCGplayer match — try typing it below.` });
+        return "nomatch";
+      }
+      setPicked(null); setPrintings([]); setPrinting(null); setQ(""); setError(null);
       const auto = data?.autoPick ? results.find((h) => h.productId === data.autoPick) : null;
       if (auto) {
         void pick(auto);
         setScan({ status: "done", preview, label, alt: results.filter((h) => h.productId !== auto.productId), matched: true });
-      } else {
-        setHits(results);
-        setScan({ status: "done", preview, label, alt: [], matched: false });
+        return "matched";
       }
+      setHits(results);
+      setScan({ status: "done", preview, label, alt: [], matched: false });
+      return "ambiguous";
     } catch (err: any) {
       setScan({ status: "error", preview, message: err?.message || "Scan failed" });
+      return "error";
     }
+  }
+
+  async function onScanFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    closeCamera();
+    try {
+      const preview = await downscalePhoto(file);
+      setPicked(null); setPrintings([]); setPrinting(null); setHits([]); setQ(""); setError(null);
+      await runScan(preview);
+    } catch (err: any) {
+      setScan({ status: "error", preview: null, message: err?.message || "Couldn't read that photo" });
+    }
+  }
+
+  // ── Live camera: recognizes the card automatically once it's held steady ──
+  const [cam, setCam] = useState<{ status: string; misses: number; busy: boolean } | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const guideRef = useRef<HTMLDivElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const camRef = useRef<{ timer: number | null; prev: Uint8ClampedArray | null; steady: number; lastShot: number; inFlight: boolean; misses: number; closed: boolean }>({ timer: null, prev: null, steady: 0, lastShot: 0, inFlight: false, misses: 0, closed: false });
+  const canUseCamera = typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
+
+  function closeCamera() {
+    camRef.current.closed = true;
+    if (camRef.current.timer) window.clearInterval(camRef.current.timer);
+    camRef.current.timer = null;
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setCam(null);
+  }
+
+  function openScanner() {
+    if (!canUseCamera) { fileRef.current?.click(); return; }
+    camRef.current = { timer: null, prev: null, steady: 0, lastShot: 0, inFlight: false, misses: 0, closed: false };
+    setCam({ status: "Starting camera…", misses: 0, busy: false });
+  }
+
+  // Grab the area inside the guide frame from the live video as a 1024px JPEG.
+  function captureFrame(): string | null {
+    const video = videoRef.current;
+    const guide = guideRef.current;
+    if (!video || !guide || !video.videoWidth) return null;
+    const vr = video.getBoundingClientRect();
+    const gr = guide.getBoundingClientRect();
+    const scale = Math.max(vr.width / video.videoWidth, vr.height / video.videoHeight); // object-fit: cover
+    const offX = (vr.width - video.videoWidth * scale) / 2;
+    const offY = (vr.height - video.videoHeight * scale) / 2;
+    const pad = 0.06;
+    const sx = Math.max(0, (gr.left - vr.left - offX) / scale - gr.width * pad / scale);
+    const sy = Math.max(0, (gr.top - vr.top - offY) / scale - gr.height * pad / scale);
+    const sw = Math.min(video.videoWidth - sx, (gr.width * (1 + 2 * pad)) / scale);
+    const sh = Math.min(video.videoHeight - sy, (gr.height * (1 + 2 * pad)) / scale);
+    if (sw < 40 || sh < 40) return null;
+    const out = document.createElement("canvas");
+    const k = Math.min(1, 1024 / Math.max(sw, sh));
+    out.width = Math.round(sw * k);
+    out.height = Math.round(sh * k);
+    const ctx = out.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, out.width, out.height);
+    return out.toDataURL("image/jpeg", 0.8);
+  }
+
+  useEffect(() => {
+    if (!cam) return;
+    let cancelled = false;
+    const state = camRef.current;
+    const probe = document.createElement("canvas");
+    probe.width = 64; probe.height = 48;
+    const pctx = probe.getContext("2d", { willReadFrequently: true });
+
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false,
+        });
+        if (cancelled || state.closed) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (video) { video.srcObject = stream; await video.play().catch(() => {}); }
+        setCam((c) => (c ? { ...c, status: "Hold the card inside the frame" } : c));
+      } catch {
+        if (cancelled) return;
+        closeCamera();
+        fileRef.current?.click();
+        return;
+      }
+
+      state.timer = window.setInterval(async () => {
+        const video = videoRef.current;
+        if (!video || !pctx || !video.videoWidth || state.inFlight || state.closed) return;
+        // Motion check: a steady frame = the customer is holding the card still.
+        pctx.drawImage(video, 0, 0, probe.width, probe.height);
+        const px = pctx.getImageData(0, 0, probe.width, probe.height).data;
+        if (state.prev) {
+          let diff = 0;
+          for (let i = 0; i < px.length; i += 4) diff += Math.abs(px[i] - state.prev[i]) + Math.abs(px[i + 1] - state.prev[i + 1]);
+          const mean = diff / (px.length / 4);
+          state.steady = mean < 9 ? state.steady + 1 : 0;
+        }
+        state.prev = px.slice();
+        const now = Date.now();
+        if (state.steady < 2 || now - state.lastShot < 2500 || state.misses >= 6) return;
+        const shot = captureFrame();
+        if (!shot) return;
+        state.inFlight = true;
+        state.lastShot = now;
+        setCam((c) => (c ? { ...c, status: "Reading…", busy: true } : c));
+        const outcome = await runScan(shot, true);
+        state.inFlight = false;
+        if (state.closed) return;
+        if (outcome === "matched" || outcome === "ambiguous" || outcome === "error") {
+          closeCamera();
+          return;
+        }
+        state.misses += 1;
+        state.steady = 0;
+        const hint = state.misses >= 6
+          ? "Having trouble — tap Take photo, or upload a picture."
+          : outcome === "nomatch"
+            ? "Read the card but found no TCGplayer match — try again or type it."
+            : "Couldn't read it yet — fill the frame, avoid glare, hold still.";
+        setCam((c) => (c ? { ...c, status: hint, misses: state.misses, busy: false } : c));
+      }, 450);
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cam !== null]);
+
+  useEffect(() => () => closeCamera(), []); // stop the camera if the section unmounts
+
+  async function manualCapture() {
+    const state = camRef.current;
+    if (state.inFlight) return;
+    const shot = captureFrame();
+    if (!shot) return;
+    state.inFlight = true;
+    setCam((c) => (c ? { ...c, status: "Reading…", busy: true } : c));
+    const outcome = await runScan(shot, true);
+    state.inFlight = false;
+    if (outcome === "matched" || outcome === "ambiguous" || outcome === "error") { closeCamera(); return; }
+    state.misses += 1;
+    setCam((c) => (c ? { ...c, status: outcome === "nomatch" ? "Read the card but found no TCGplayer match — try again or type it." : "Couldn't read it — fill the frame, avoid glare, try again.", misses: state.misses, busy: false } : c));
   }
 
   useEffect(() => {
@@ -1508,8 +1661,8 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
         <button
           type="button"
           className="pc-scan-btn"
-          onClick={() => fileRef.current?.click()}
-          disabled={scan.status === "working"}
+          onClick={openScanner}
+          disabled={scan.status === "working" || cam !== null}
           aria-label="Scan a card with your camera"
           data-testid="button-scan-card"
         >
@@ -1527,6 +1680,34 @@ function CardLookup({ onPick }: { onPick: (hit: PriceHit, price: number, printin
           data-testid="input-scan-file"
         />
       </div>
+      {cam && createPortal(
+        <div className="pc pc-cam" role="dialog" aria-modal="true" aria-label="Live card scanner" data-testid="scanner-overlay">
+          <video ref={videoRef} className="pc-cam-video" playsInline muted autoPlay data-testid="video-scanner" />
+          <div className="pc-cam-shade" aria-hidden />
+          <div ref={guideRef} className={cn("pc-cam-guide", cam.busy && "is-busy")} aria-hidden>
+            <i /><i /><i /><i />
+          </div>
+          <button type="button" className="pc-cam-close" onClick={closeCamera} aria-label="Close scanner" data-testid="button-scanner-close">
+            <X className="h-5 w-5" />
+          </button>
+          <div className="pc-cam-bar">
+            <p className="pc-cam-status" role="status" aria-live="polite" data-testid="text-scanner-status">
+              {cam.busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+              <span>{cam.status}</span>
+            </p>
+            <p className="pc-cam-hint">Recognizes the card automatically — no button needed.</p>
+            <div className="pc-cam-actions">
+              <button type="button" className="pc-cam-btn is-primary" onClick={manualCapture} disabled={cam.busy} data-testid="button-scanner-capture">
+                <Camera className="h-4 w-4" aria-hidden /> Take photo
+              </button>
+              <button type="button" className="pc-cam-btn" onClick={() => fileRef.current?.click()} disabled={cam.busy} data-testid="button-scanner-upload">
+                Upload a picture
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
       {scan.status !== "idle" && (
         <div className={cn("pc-scan-note", scan.status === "error" && "is-error")} role={scan.status === "error" ? "alert" : "status"} data-testid="scan-status">
           {scan.status !== "working" && scan.preview && <img src={scan.preview} alt="" className="pc-scan-thumb" />}
