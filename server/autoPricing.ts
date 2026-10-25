@@ -22,7 +22,7 @@ import {
   pricePointsToPatch,
   isGraded,
   getGradedEstimate,
-  fetchMissingImagesBatch,
+  sweepDeadImageUrls, fetchMissingImagesBatch,
   applyFollowedPrice,
 } from "./pricing";
 import { storage } from "./storage";
@@ -197,6 +197,7 @@ async function runAutoPricing(): Promise<void> {
     // cap of items in one cycle.
     let imagesUpdated = 0;
     try {
+      await sweepDeadImageUrls().catch((e) => console.error("[autoPricing] image verify sweep failed", e));
       let offset = 0;
       const MAX_IMAGE_BATCHES = 30; // ~450 items/cycle ceiling
       for (let b = 0; b < MAX_IMAGE_BATCHES; b++) {

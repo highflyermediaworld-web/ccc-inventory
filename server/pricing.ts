@@ -1140,6 +1140,34 @@ function isSealedProduct(item: Inventory): boolean {
 //   2. Pokemon -> pokemontcg.io with cleaned name + collector number
 //   3. Sealed Pokemon products -> set logo from pokemontcg.io
 //   4. Other franchises -> ask Claude for a public image URL
+// Does this image URL actually load? TCGplayer sometimes lists a product before
+// it has a photo (the CDN answers 404 with JSON), and third-party links go
+// stale. Cheap HEAD check, cached for an hour so bulk passes don't repeat it.
+const IMAGE_OK_CACHE = new Map<string, { ok: boolean; at: number }>();
+export async function imageUrlLoads(url: string | null | undefined): Promise<boolean> {
+  if (!url) return false;
+  if (url.startsWith("data:") || url.startsWith("/")) return true; // uploaded / local
+  const hit = IMAGE_OK_CACHE.get(url);
+  if (hit && Date.now() - hit.at < 60 * 60 * 1000) return hit.ok;
+  let ok = false;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 6000);
+    let res = await fetch(url, { method: "HEAD", headers: { "User-Agent": UA }, signal: ctrl.signal, redirect: "follow" });
+    if (res.status === 405 || res.status === 403) {
+      res = await fetch(url, { method: "GET", headers: { "User-Agent": UA, Range: "bytes=0-0" }, signal: ctrl.signal, redirect: "follow" });
+    }
+    clearTimeout(t);
+    const ct = res.headers.get("content-type") || "";
+    ok = res.ok && (ct.startsWith("image/") || ct === "application/octet-stream" || ct === "");
+  } catch {
+    // Network hiccup: don't poison the cache, treat as unknown-but-usable.
+    return true;
+  }
+  IMAGE_OK_CACHE.set(url, { ok, at: Date.now() });
+  return ok;
+}
+
 export async function fetchImageOnly(item: Inventory): Promise<string | null> {
   const rawName = item.name;
   const set = item.setName ?? null;
@@ -1148,13 +1176,15 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
   // ---- Already matched on TCGplayer by the pricing pass? Use that product's image. ----
   const knownId = Number((item as any).tcgpProductId);
   if (Number.isFinite(knownId) && knownId > 0) {
-    return tcgplayerImageUrl(knownId);
+    const u = tcgplayerImageUrl(knownId);
+    if (await imageUrlLoads(u)) return u;
+    // Product exists but has no photo yet — fall through to the other sources.
   }
 
   // ---- MTG ----
   if (franchise === "Magic The Gathering") {
     const r = await getScryfallPrice(rawName, set);
-    if (r?.imageUrl) return r.imageUrl;
+    if (r?.imageUrl && (await imageUrlLoads(r.imageUrl))) return r.imageUrl;
   }
 
   // ---- Pokemon ----
@@ -1169,30 +1199,30 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
 
     // Try TCGplayer with cleaned name + set (fast, ~300ms)
     const tcgpClean = await getTcgplayerImage(cleanName, set, franchise, item.category);
-    if (tcgpClean) return tcgpClean;
+    if (tcgpClean && (await imageUrlLoads(tcgpClean))) return tcgpClean;
 
     // Try TCGplayer with raw name as fallback
     if (cleanName !== rawName) {
       const tcgpRaw = await getTcgplayerImage(rawName, set, franchise, item.category);
-      if (tcgpRaw) return tcgpRaw;
+      if (tcgpRaw && (await imageUrlLoads(tcgpRaw))) return tcgpRaw;
     }
 
     // Last resort for sealed: set logo from pokemontcg.io
     if (isSealedProduct(item)) {
       const logo = await getPokemonSetLogo(set);
-      if (logo) return logo;
+      if (logo && (await imageUrlLoads(logo))) return logo;
     }
   }
 
   // ---- MTG sealed product: Scryfall doesn't have sealed images. Try TCGplayer. ----
   if (franchise === "Magic The Gathering" && isSealedProduct(item)) {
     const tcgp = await getTcgplayerImage(rawName, set, franchise, item.category);
-    if (tcgp) return tcgp;
+    if (tcgp && (await imageUrlLoads(tcgp))) return tcgp;
   }
 
   // ---- TCGplayer search (works for ALL franchises + sealed product) ----
   const tcgpAll = await getTcgplayerImage(rawName, set, franchise, item.category);
-  if (tcgpAll) return tcgpAll;
+  if (tcgpAll && (await imageUrlLoads(tcgpAll))) return tcgpAll;
 
   // Claude fallback removed from bulk path — it hallucinates URLs and is slow.
   // Real sources above cover the vast majority of items.
@@ -1204,6 +1234,31 @@ export async function fetchImageOnly(item: Inventory): Promise<string | null> {
 // batch plus the remaining work, so the client can loop. Each successful
 // lookup is persisted to the DB before the next iteration, so progress
 // survives server restarts.
+// Verify saved remote photos actually load and clear the dead ones so the
+// backfill re-resolves them. Guarded by a setting so it runs once per version.
+const IMAGE_VERIFY_SWEEP_KEY = "image_verify_sweep_v1";
+export async function sweepDeadImageUrls(): Promise<number> {
+  const done = await storage.getSetting(IMAGE_VERIFY_SWEEP_KEY);
+  if (done) return 0;
+  await storage.setSetting(IMAGE_VERIFY_SWEEP_KEY, String(Date.now()));
+  const items = (await storage.listInventory()).filter(
+    (i) => i.imageUrl && /^https?:\/\//.test(i.imageUrl)
+  );
+  let cleared = 0;
+  const CONCURRENCY = 6;
+  for (let k = 0; k < items.length; k += CONCURRENCY) {
+    await Promise.all(
+      items.slice(k, k + CONCURRENCY).map(async (i) => {
+        if (await imageUrlLoads(i.imageUrl)) return;
+        await storage.updateInventory(i.id, { imageUrl: null } as any);
+        cleared++;
+      })
+    );
+  }
+  console.log(`[pricing] image verify sweep: checked ${items.length}, cleared ${cleared} dead photo links`);
+  return cleared;
+}
+
 // Items we already searched for and couldn't match are retried at most once
 // per cooldown window (in-memory; a restart simply retries everything once).
 const imageAttemptAt = new Map<string, number>();
