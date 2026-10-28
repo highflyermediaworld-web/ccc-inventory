@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { SHOWS as DEFAULT_SHOWS, splitShows, type CardShow } from "@/data/shows";
-import { Tent, Plus, Trash2, ArrowUp, ArrowDown, RotateCcw, Save, ExternalLink, Calculator, Radio, BookUser, MessageSquare } from "lucide-react";
+import { Tent, Plus, Trash2, ArrowUp, ArrowDown, RotateCcw, Save, ExternalLink, Calculator, Radio, BookUser, MessageSquare, Wallet } from "lucide-react";
+import { PAYMENT_OPTIONS } from "@/data/payments";
 import { Link } from "wouter";
 
 type ShowsResponse = { source: "default" | "settings"; shows: CardShow[] | null };
@@ -94,7 +95,16 @@ export default function ShopSettings() {
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <Card data-testid="card-ways-to-pay">
+          <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Wallet className="size-4 text-gold" /> Ways to pay</CardTitle></CardHeader>
+          <CardContent className="text-sm text-muted-foreground space-y-1">
+            {PAYMENT_OPTIONS.map((p) => (
+              <div key={p.id} className="flex justify-between gap-3"><span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5" style={{ background: p.color }} aria-hidden />{p.name}</span><b className="text-foreground truncate max-w-[55%] text-right">{p.handle}</b></div>
+            ))}
+            <p className="pt-1 text-xs">Shown on the storefront and in the register. Edit in client/src/data/payments.ts.</p>
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Calculator className="size-4 text-gold" /> Sell &amp; Trade offers</CardTitle></CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-1">

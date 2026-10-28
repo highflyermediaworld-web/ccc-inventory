@@ -25,7 +25,10 @@ import {
   Loader2,
   Check,
   Camera,
+  QrCode,
 } from "lucide-react";
+import { PayCodeDialog } from "@/components/PayCodeDialog";
+import { paymentByRegisterValue } from "@/data/payments";
 import { RegisterScanner, type ScanDraft } from "@/components/RegisterScanner";
 import type { Inventory } from "@shared/schema";
 import { formatCurrency } from "@/lib/format";
@@ -106,6 +109,8 @@ function SellTab() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [counterparty, setCounterparty] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Cash");
+  const [payCodeOpen, setPayCodeOpen] = useState(false);
+  const payOption = paymentByRegisterValue(paymentMethod);
   const [discountStr, setDiscountStr] = useState("");
   const [taxStr, setTaxStr] = useState("");
   const [notes, setNotes] = useState("");
@@ -449,6 +454,21 @@ function SellTab() {
                 </span>
               </div>
             </div>
+
+            {payOption && (
+              <Button
+                variant="outline"
+                className="w-full min-h-11"
+                disabled={total <= 0}
+                onClick={() => setPayCodeOpen(true)}
+                data-testid="button-show-pay-code"
+              >
+                <QrCode className="h-4 w-4 mr-2" /> Show {payOption.name} code to customer
+              </Button>
+            )}
+            {payOption && (
+              <PayCodeDialog open={payCodeOpen} onOpenChange={setPayCodeOpen} option={payOption} amount={total} />
+            )}
 
             <Button
               size="lg"

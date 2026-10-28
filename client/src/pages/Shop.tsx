@@ -23,6 +23,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { CardThumb } from "@/components/CardThumb";
 import { ShopChat } from "@/components/ShopChat";
+import { PaymentOptionCards, PaymentChips } from "@/components/PaymentOptions";
 import { BRAND_HANDLE, TIKTOK_URL, INSTAGRAM_URL } from "@/components/SocialLinks";
 import { resolveUploadUrl, thumbSrcSet } from "@/lib/uploads";
 import { formatCurrency } from "@/lib/format";
@@ -1211,6 +1212,24 @@ export default function ShopPage() {
         </div>
       </section>
 
+      {/* ============ WAYS TO PAY ============ */}
+      <section id="pay" className="pc-paper-bg scroll-mt-[72px]" data-testid="section-pay">
+        <div className="pc-container py-12 sm:py-16">
+          <div className="pc-sec-title">
+            <h2>Ways to Pay</h2>
+          </div>
+          <p className="pc-sec-sub">
+            Once Chris confirms your card is in hand, pay with whichever app you already use. Tap to open it on your phone, or scan the code from another device.
+          </p>
+          <div className="mt-6">
+            <PaymentOptionCards />
+          </div>
+          <p className="mt-4 text-xs text-neutral-500 pc-body">
+            Please wait for the confirmation message before sending payment, and include the card name in the note. In person at shows: cash, Apple Cash, or tap to pay with any credit or debit card.
+          </p>
+        </div>
+      </section>
+
       {/* ============ GUARANTEE ============ */}
       <section id="promise" className="bg-white scroll-mt-[72px]">
         <div className="pc-container py-12 sm:py-16">
@@ -1322,6 +1341,7 @@ export default function ShopPage() {
               {navItems.map((n) => (
                 <li key={n.label}><button onClick={n.onClick} className="text-white/78 hover:text-white">{n.label}</button></li>
               ))}
+              <li><button onClick={() => document.getElementById("pay")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="text-white/78 hover:text-white" data-testid="footer-link-pay">Ways to pay</button></li>
               <li><a href="#/faq" className="text-white/78 hover:text-white" data-testid="footer-link-faq">FAQ</a></li>
               <li><a href="#/about" className="text-white/78 hover:text-white" data-testid="footer-link-about">About Chris Collects Co</a></li>
             </ul>
@@ -2486,6 +2506,7 @@ function BuyDialog({
                 : "Chris will reach out to confirm and arrange payment. Usually within 24 hours."
             }
             onClose={() => onOpenChange(false)}
+            payAmount={shownPrice * form.quantity}
           />
         )}
       </DialogContent>
@@ -2803,11 +2824,14 @@ function SuccessPane({
   description,
   preferredContact,
   onClose,
+  payAmount,
 }: {
   title: string;
   description: string;
   preferredContact: string;
   onClose: () => void;
+  /** When set, shows the ways-to-pay chips for this amount (Buy requests). */
+  payAmount?: number;
 }) {
   return (
     <div className="py-6 text-center space-y-4">
@@ -2822,6 +2846,13 @@ function SuccessPane({
         <p className="text-xs text-muted-foreground mt-3">
           Chris will reach out via <span className="font-semibold">{preferredContact}</span>.
         </p>
+        {payAmount ? (
+          <div className="mt-4 rounded-md border border-border bg-muted/40 p-3 text-left">
+            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground mb-2 text-center">Ways to pay once confirmed</div>
+            <PaymentChips amount={payAmount} />
+            <p className="text-[11px] text-muted-foreground mt-2 text-center">Zelle · Venmo · Cash App · PayPal — or cash at a show. Wait for Chris's confirmation before sending.</p>
+          </div>
+        ) : null}
       </div>
       <Button onClick={onClose} data-testid="button-success-close">
         Close
