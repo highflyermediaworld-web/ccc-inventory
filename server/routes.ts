@@ -2053,7 +2053,7 @@ export async function registerRoutes(
           .min(1),
         counterparty: z.string().optional().nullable(),
         paymentMethod: z
-          .enum(["Cash", "Venmo", "Zelle", "CashApp", "Other"])
+          .enum(["Cash", "Zelle", "Venmo", "CashApp", "PayPal", "AppleCash", "Card", "Other"])
           .default("Cash"),
         discount: z.number().optional().default(0),
         tax: z.number().optional().default(0),
@@ -2155,7 +2155,7 @@ export async function registerRoutes(
           .optional()
           .default("none"),
         bootMethod: z
-          .enum(["Cash", "Venmo", "Zelle", "CashApp", "Other"])
+          .enum(["Cash", "Zelle", "Venmo", "CashApp", "PayPal", "AppleCash", "Card", "Other"])
           .optional()
           .default("Cash"),
         notes: z.string().optional().nullable(),

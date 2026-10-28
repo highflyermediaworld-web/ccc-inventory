@@ -147,6 +147,7 @@ export async function runMigrations() {
         offer_description TEXT,
         offer_image_urls TEXT,
         message TEXT,
+        payment_method TEXT,
         admin_note TEXT,
         status TEXT NOT NULL DEFAULT 'New',
         created_at INTEGER NOT NULL
@@ -206,6 +207,12 @@ export async function runMigrations() {
       } catch {
         // column already exists — ignore
       }
+    }
+
+    try {
+      await client.execute(`ALTER TABLE customer_requests ADD COLUMN payment_method TEXT`);
+    } catch {
+      // column already exists — ignore
     }
 
     console.log("[db] Migrations complete");

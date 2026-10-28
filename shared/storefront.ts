@@ -23,6 +23,19 @@ export const GAMES = ["Pokémon", "One Piece", "Magic: The Gathering", "Dragon B
 /*  FAQ                                                                */
 /* ------------------------------------------------------------------ */
 
+// Ways a customer can pay once Chris confirms an order. Shown on the
+// storefront, offered as a preference in the Buy form, and used by the POS.
+export const PAYMENT_METHODS = [
+  "Zelle",
+  "Venmo",
+  "Cash App",
+  "PayPal",
+  "Apple Cash",
+  "Credit / debit card (tap)",
+] as const;
+export type PaymentMethodName = (typeof PAYMENT_METHODS)[number];
+export const PAYMENT_METHODS_SENTENCE = "Zelle, Venmo, Cash App, PayPal, Apple Cash, or credit / debit card (tap to pay in person)";
+
 export type FaqItem = { q: string; a: string };
 export type FaqGroup = { id: "buying" | "shipping" | "selling" | "shows"; title: string; items: FaqItem[] };
 
@@ -34,6 +47,10 @@ export const FAQ_GROUPS: FaqGroup[] = [
       {
         q: "How do I buy a card?",
         a: "Find the card in the vault, tap **Buy**, and leave your name and how you'd like to be contacted. Chris confirms the card is still in hand and reaches out, usually within 24 hours, to arrange payment and shipping.",
+      },
+      {
+        q: "What payment methods do you take?",
+        a: "Zelle, Venmo, Cash App, PayPal and Apple Cash for online orders. In person at shows, tap to pay with any credit or debit card. Pick your preferred way to pay when you send a Buy request and Chris sends the details once the card is confirmed.",
       },
       {
         q: "Are the photos the actual cards?",

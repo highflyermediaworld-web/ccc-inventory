@@ -147,6 +147,7 @@ export const customerRequests = sqliteTable("customer_requests", {
   offerDescription: text("offer_description"),
   offerImageUrls: text("offer_image_urls"), // JSON array string
   message: text("message"),
+  paymentMethod: text("payment_method"), // customer's preferred way to pay (Buy requests)
   adminNote: text("admin_note"),
   status: text("status").notNull().default("New"), // New | Accepted | Declined | Completed
   createdAt: integer("created_at")

@@ -372,6 +372,12 @@ function RequestDrawer({
               <span className="text-sm tabular-nums">{req.quantity}</span>
             </div>
           )}
+          {req.paymentMethod && (
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-xs text-muted-foreground">Wants to pay with</span>
+              <span className="text-sm font-semibold">{req.paymentMethod}</span>
+            </div>
+          )}
         </section>
       ) : (
         <section>

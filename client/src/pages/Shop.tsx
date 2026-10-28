@@ -65,7 +65,9 @@ import {
   Banknote,
   Radio,
   BadgeCheck,
+  Wallet,
 } from "lucide-react";
+import { PAYMENT_METHODS, PAYMENT_METHODS_SENTENCE } from "@shared/storefront";
 import "@/shop.css";
 
 // ---------- Types ----------
@@ -1329,6 +1331,7 @@ export default function ShopPage() {
             <ul className="grid gap-2.5 text-sm pc-body text-white/78">
               <li className="flex items-start gap-2"><MapPin className="h-4 w-4 mt-0.5 shrink-0" /> Based in California · Online orders ship nationwide</li>
               <li className="flex items-start gap-2"><Truck className="h-4 w-4 mt-0.5 shrink-0" /> Orders ship within 48 hours, tracked and insured on high-value cards</li>
+              <li className="flex items-start gap-2" data-testid="footer-payments"><Wallet className="h-4 w-4 mt-0.5 shrink-0" /> We take {PAYMENT_METHODS_SENTENCE}</li>
               <li className="flex items-start gap-2"><SiInstagram className="h-4 w-4 mt-0.5 shrink-0" /> Questions: DM {BRAND_HANDLE} on Instagram or TikTok</li>
               <li className="flex items-start gap-2"><ShieldCheck className="h-4 w-4 mt-0.5 shrink-0" /> 100% satisfaction guarantee on every order</li>
             </ul>
@@ -2258,6 +2261,7 @@ function BuyDialog({
     customerEmail: "",
     customerPhone: "",
     preferredContact: "Email",
+    paymentMethod: "",
     quantity: 1,
     message: "",
   });
@@ -2318,6 +2322,7 @@ function BuyDialog({
       customerEmail: form.customerEmail.trim(),
       customerPhone: form.customerPhone.trim() || null,
       preferredContact: form.preferredContact,
+      paymentMethod: form.paymentMethod || null,
       quantity: form.quantity,
       offerPrice: listing.askingPrice,
       message: form.message.trim() || null,
@@ -2424,6 +2429,27 @@ function BuyDialog({
                 )}
               </div>
               <div>
+                <Label className="text-xs">How would you like to pay?</Label>
+                <Select
+                  value={form.paymentMethod}
+                  onValueChange={(v) => setForm((f) => ({ ...f, paymentMethod: v }))}
+                >
+                  <SelectTrigger className="mt-1" data-testid="select-buy-payment">
+                    <SelectValue placeholder="Pick one (optional)" />
+                  </SelectTrigger>
+                  <SelectContent className="pc">
+                    {PAYMENT_METHODS.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  No payment is taken here. Chris confirms the card, then sends the details for the method you pick. Card tap is for in-person pickup at shows.
+                </p>
+              </div>
+              <div>
                 <Label className="text-xs">Message (optional)</Label>
                 <Textarea
                   value={form.message}
@@ -2454,7 +2480,11 @@ function BuyDialog({
           <SuccessPane
             title="Request sent"
             preferredContact={form.preferredContact}
-            description="Chris will reach out to confirm and arrange payment. Usually within 24 hours."
+            description={
+              form.paymentMethod
+                ? `Chris will confirm the card and send ${form.paymentMethod} payment details. Usually within 24 hours.`
+                : "Chris will reach out to confirm and arrange payment. Usually within 24 hours."
+            }
             onClose={() => onOpenChange(false)}
           />
         )}

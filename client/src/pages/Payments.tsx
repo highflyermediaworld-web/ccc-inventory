@@ -32,12 +32,15 @@ import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
-type PaymentMethod = "Cash" | "Venmo" | "Zelle" | "CashApp" | "Other";
+type PaymentMethod = "Cash" | "Zelle" | "Venmo" | "CashApp" | "PayPal" | "AppleCash" | "Card" | "Other";
 const METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "Cash", label: "Cash" },
-  { value: "Venmo", label: "Venmo" },
   { value: "Zelle", label: "Zelle" },
+  { value: "Venmo", label: "Venmo" },
   { value: "CashApp", label: "Cash App" },
+  { value: "PayPal", label: "PayPal" },
+  { value: "AppleCash", label: "Apple Cash" },
+  { value: "Card", label: "Card (tap)" },
   { value: "Other", label: "Other" },
 ];
 
