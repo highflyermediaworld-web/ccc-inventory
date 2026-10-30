@@ -67,7 +67,13 @@ import {
   Radio,
   BadgeCheck,
   Wallet,
+  ShoppingCart,
+  Plus,
+  Minus,
+  Trash2,
 } from "lucide-react";
+import { cart, useCart, CARD_MINIMUM } from "@/lib/cart";
+import { ToastAction } from "@/components/ui/toast";
 import { PAYMENT_METHODS, PAYMENT_METHODS_SENTENCE } from "@shared/storefront";
 import "@/shop.css";
 
@@ -246,6 +252,23 @@ export default function ShopPage() {
   const { data: listings = [], isLoading } = useQuery<ShopListing[]>({
     queryKey: [LISTINGS_URL],
   });
+
+  // Cart: ids + quantities live in localStorage; prices come from listings.
+  const [cartOpen, setCartOpen] = useState(false);
+  const cartLines = useCart();
+  const cartCount = cartLines.reduce((n, l) => n + l.qty, 0);
+  const addToCart = useCallback((l: ShopListing) => {
+    cart.add(l.id, 1, Math.max(1, l.qty));
+    toast({
+      title: "Added to cart",
+      description: l.name,
+      action: (
+        <ToastAction altText="View cart" onClick={() => setCartOpen(true)}>
+          View cart
+        </ToastAction>
+      ),
+    });
+  }, [toast]);
 
   const { data: live } = useQuery<LiveStatus | null>({
     queryKey: ["/api/live", "shop"],
@@ -628,6 +651,15 @@ export default function ShopPage() {
             <button className="pc-icon-btn" onClick={focusSearch} aria-label="Search the shop" data-testid="button-nav-search">
               <Search className="h-5 w-5" />
             </button>
+            <button
+              className="pc-icon-btn pc-cart-btn"
+              onClick={() => setCartOpen(true)}
+              aria-label={cartCount ? `Open cart, ${cartCount} item${cartCount === 1 ? "" : "s"}` : "Open cart"}
+              data-testid="button-nav-cart"
+            >
+              <ShoppingCart className="h-5 w-5" />
+              {cartCount > 0 && <span className="pc-cart-count" data-testid="text-cart-count">{cartCount > 99 ? "99+" : cartCount}</span>}
+            </button>
             {isAdmin ? (
               <a href="#/admin" className="pc-icon-btn" aria-label="Open admin dashboard" title="Admin" data-testid="link-nav-admin">
                 <LayoutDashboard className="h-5 w-5" />
@@ -859,6 +891,7 @@ export default function ShopPage() {
           viewAllLabel="View all · newest first"
           onViewAll={() => browse({ sort: "newest" })}
           onBuy={setBuyTarget}
+          onAddToCart={addToCart}
           onTrade={setTradeTarget}
           hotIds={hotIds}
           showNewTag
@@ -876,6 +909,7 @@ export default function ShopPage() {
           viewAllLabel="View all best sellers"
           onViewAll={() => browse({ sort: "bestsellers" })}
           onBuy={setBuyTarget}
+          onAddToCart={addToCart}
           onTrade={setTradeTarget}
           hotIds={hotIds}
         />
@@ -891,6 +925,7 @@ export default function ShopPage() {
           count={sealed.length}
           onViewAll={() => browse({ category: "Sealed" })}
           onBuy={setBuyTarget}
+          onAddToCart={addToCart}
           onTrade={setTradeTarget}
           hotIds={hotIds}
         />
@@ -906,6 +941,7 @@ export default function ShopPage() {
           count={slabs.length}
           onViewAll={() => browse({ category: "Slab" })}
           onBuy={setBuyTarget}
+          onAddToCart={addToCart}
           onTrade={setTradeTarget}
           hotIds={hotIds}
           gold
@@ -923,6 +959,7 @@ export default function ShopPage() {
           count={singles.length}
           onViewAll={() => browse({ category: "Raw" })}
           onBuy={setBuyTarget}
+          onAddToCart={addToCart}
           onTrade={setTradeTarget}
           hotIds={hotIds}
         />
@@ -938,6 +975,7 @@ export default function ShopPage() {
           count={onePiece.length}
           onViewAll={() => browse({ franchise: "One Piece" })}
           onBuy={setBuyTarget}
+          onAddToCart={addToCart}
           onTrade={setTradeTarget}
           hotIds={hotIds}
         />
@@ -1087,7 +1125,7 @@ export default function ShopPage() {
               <>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                   {filtered.slice(0, visible).map((l) => (
-                    <ProductCard key={l.id} listing={l} onBuy={() => setBuyTarget(l)} onTrade={() => setTradeTarget(l)} hot={hotIds.has(l.id)} />
+                    <ProductCard key={l.id} listing={l} onBuy={() => setBuyTarget(l)} onAddToCart={() => addToCart(l)} onTrade={() => setTradeTarget(l)} hot={hotIds.has(l.id)} />
                   ))}
                 </div>
                 {visible < filtered.length && (
@@ -1366,7 +1404,18 @@ export default function ShopPage() {
       </footer>
 
       {/* Dialogs */}
-      {buyTarget && <BuyDialog listing={buyTarget} onOpenChange={(o) => !o && setBuyTarget(null)} />}
+      {buyTarget && (
+        <BuyDialog
+          listing={buyTarget}
+          onOpenChange={(o) => !o && setBuyTarget(null)}
+          onAddToCart={() => {
+            addToCart(buyTarget);
+            setBuyTarget(null);
+            setCartOpen(true);
+          }}
+        />
+      )}
+      <CartDrawer open={cartOpen} onOpenChange={setCartOpen} listings={listings} />
       {tradeTarget && <TradeDialog listing={tradeTarget} onOpenChange={(o) => !o && setTradeTarget(null)} />}
 
       <ShopChat />
@@ -2038,6 +2087,7 @@ function Shelf({
   viewAllLabel,
   onViewAll,
   onBuy,
+  onAddToCart,
   onTrade,
   gold,
   binder,
@@ -2053,6 +2103,7 @@ function Shelf({
   viewAllLabel?: string;
   onViewAll: () => void;
   onBuy: (l: ShopListing) => void;
+  onAddToCart?: (l: ShopListing) => void;
   onTrade: (l: ShopListing) => void;
   gold?: boolean;
   binder?: boolean;
@@ -2113,7 +2164,7 @@ function Shelf({
           </div>
           <div ref={ref} className="pc-shelf mt-6">
             {items.map((l) => (
-              <ProductCard key={l.id} listing={l} onBuy={() => onBuy(l)} onTrade={() => onTrade(l)} gold={gold} showNewTag={showNewTag} hot={hotIds?.has(l.id)} />
+              <ProductCard key={l.id} listing={l} onBuy={() => onBuy(l)} onAddToCart={onAddToCart ? () => onAddToCart(l) : undefined} onTrade={() => onTrade(l)} gold={gold} showNewTag={showNewTag} hot={hotIds?.has(l.id)} />
             ))}
           </div>
         </div>
@@ -2126,6 +2177,7 @@ function Shelf({
 function ProductCard({
   listing,
   onBuy,
+  onAddToCart,
   onTrade,
   gold,
   showNewTag,
@@ -2133,6 +2185,7 @@ function ProductCard({
 }: {
   listing: ShopListing;
   onBuy: () => void;
+  onAddToCart?: () => void;
   onTrade: () => void;
   gold?: boolean;
   showNewTag?: boolean;
@@ -2154,6 +2207,8 @@ function ProductCard({
   const soldOut = !inStock(listing);
   const hotSeller = hot || false;
   const isNew = !soldOut && (showNewTag || (listing.createdAt ? Date.now() / 1000 - listing.createdAt < 7 * 86400 : false));
+  const cartLines = useCart();
+  const inCart = cartLines.find((l) => l.id === listing.id)?.qty ?? 0;
 
   return (
     <div
@@ -2222,6 +2277,17 @@ function ProductCard({
                 <button onClick={onBuy} className="pc-btn pc-btn-red" data-testid={`button-buy-${listing.id}`}>
                   <ShoppingBag className="h-4 w-4" /> Buy
                 </button>
+                {onAddToCart && (
+                  <button
+                    onClick={onAddToCart}
+                    className={cn("pc-btn pc-btn-outline pc-btn-icon pc-btn-cart", inCart > 0 && "is-in-cart")}
+                    aria-label={inCart > 0 ? `${listing.name} is in your cart (${inCart}); add another` : `Add ${listing.name} to cart`}
+                    title={inCart > 0 ? `In cart (${inCart}) — add another` : "Add to cart"}
+                    data-testid={`button-cart-${listing.id}`}
+                  >
+                    {inCart > 0 ? <Check className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}
+                  </button>
+                )}
                 <button onClick={onTrade} className="pc-btn pc-btn-outline pc-btn-icon" aria-label={`Propose a trade for ${listing.name}`} title="Propose a trade" data-testid={`button-trade-${listing.id}`}>
                   <ArrowLeftRight className="h-4 w-4" />
                 </button>
@@ -2231,6 +2297,301 @@ function ProductCard({
         </div>
       </div>
     </div>
+  );
+}
+
+// ---------- Cart ----------
+function CartDrawer({
+  open,
+  onOpenChange,
+  listings,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  listings: ShopListing[];
+}) {
+  const { toast } = useToast();
+  const lines = useCart();
+  const byId = useMemo(() => new Map(listings.map((l) => [l.id, l] as const)), [listings]);
+  const { data: checkoutCfg } = useQuery<{ enabled: boolean; taxPercent: number }>({
+    queryKey: ["/api/shop/checkout/config"],
+    staleTime: 5 * 60 * 1000,
+  });
+  const cardEnabled = !!checkoutCfg?.enabled;
+  const taxPct = checkoutCfg?.taxPercent ?? 0;
+
+  // Resolve ids against live listings; anything missing or sold out is flagged.
+  const rows = lines.map((l) => {
+    const listing = byId.get(l.id);
+    const available = !!listing && inStock(listing);
+    const qty = listing ? Math.min(l.qty, Math.max(1, listing.qty)) : l.qty;
+    return { id: l.id, qty, listing, available, lineTotal: listing ? listing.askingPrice * qty : 0 };
+  });
+  const okRows = rows.filter((r) => r.available);
+  const problemRows = rows.filter((r) => !r.available);
+  const subtotal = okRows.reduce((n, r) => n + r.lineTotal, 0);
+  const taxEstimate = Math.round(subtotal * taxPct) / 100;
+  const count = okRows.reduce((n, r) => n + r.qty, 0);
+  const belowMinimum = subtotal > 0 && subtotal < CARD_MINIMUM;
+  const listingsReady = listings.length > 0;
+
+  const [cardPending, setCardPending] = useState(false);
+  const [mode, setMode] = useState<"cart" | "request" | "sent">("cart");
+  const [form, setForm] = useState({
+    customerName: "",
+    customerEmail: "",
+    customerPhone: "",
+    preferredContact: "Email",
+    paymentMethod: "",
+    message: "",
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [sending, setSending] = useState(false);
+  const [sentSummary, setSentSummary] = useState<{ count: number; total: number } | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setMode((m) => (m === "sent" ? "cart" : m));
+    }
+  }, [open]);
+
+  async function payWithCard() {
+    if (!okRows.length) return;
+    setCardPending(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/shop/checkout/session`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          items: okRows.map((row) => ({ itemId: row.id, quantity: row.qty })),
+          customerEmail: form.customerEmail.trim() || undefined,
+        }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok || !body?.url) throw new Error(body?.message || "Couldn't start checkout");
+      // The success page clears the cart after the payment is confirmed.
+      window.location.assign(body.url);
+    } catch (err: any) {
+      setCardPending(false);
+      queryClient.invalidateQueries({ queryKey: [LISTINGS_URL] });
+      toast({ title: "Card checkout unavailable", description: err?.message || "Please try again", variant: "destructive" });
+    }
+  }
+
+  async function sendRequest() {
+    const e: Record<string, string> = {};
+    if (!form.customerName.trim()) e.customerName = "Required";
+    if (!/\S+@\S+\.\S+/.test(form.customerEmail.trim())) e.customerEmail = "Valid email required";
+    setErrors(e);
+    if (Object.keys(e).length || !okRows.length) return;
+    setSending(true);
+    const label = `Cart order · ${count} item${count === 1 ? "" : "s"} · ${formatCurrency(subtotal)} before tax/shipping`;
+    const failures: string[] = [];
+    for (const row of okRows) {
+      try {
+        const res = await apiRequest("POST", "/api/shop/buy", {
+          itemId: row.id,
+          customerName: form.customerName.trim(),
+          customerEmail: form.customerEmail.trim(),
+          customerPhone: form.customerPhone.trim() || null,
+          preferredContact: form.preferredContact,
+          paymentMethod: form.paymentMethod || null,
+          quantity: row.qty,
+          offerPrice: row.listing!.askingPrice,
+          message: [label, form.message.trim()].filter(Boolean).join("\n"),
+        });
+        await res.json();
+      } catch (err: any) {
+        failures.push(`${row.listing?.name ?? row.id}: ${err?.message || "failed"}`);
+      }
+    }
+    setSending(false);
+    if (failures.length === okRows.length) {
+      toast({ title: "Request failed", description: failures[0], variant: "destructive" });
+      return;
+    }
+    if (failures.length) {
+      toast({ title: "Some items didn't go through", description: failures.join(" · "), variant: "destructive" });
+    }
+    setSentSummary({ count, total: subtotal });
+    cart.clear();
+    setMode("sent");
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="pc pc-dialog pc-cart w-[92vw] sm:w-[420px] sm:max-w-[420px] flex flex-col p-0" data-testid="cart-drawer">
+        <SheetHeader className="px-5 pt-5 pb-3 border-b border-border text-left">
+          <SheetTitle className="pc-font text-2xl font-bold flex items-center gap-2">
+            <ShoppingCart className="h-5 w-5" /> Your cart
+            {count > 0 && <span className="text-sm font-semibold text-muted-foreground">({count})</span>}
+          </SheetTitle>
+        </SheetHeader>
+
+        {mode === "sent" ? (
+          <div className="px-5 overflow-y-auto">
+            <SuccessPane
+              title="Request sent"
+              preferredContact={form.preferredContact}
+              description={
+                form.paymentMethod
+                  ? `Chris will confirm your ${sentSummary?.count ?? 0} card${(sentSummary?.count ?? 0) === 1 ? "" : "s"} and send ${form.paymentMethod} payment details. Usually within 24 hours.`
+                  : `Chris will confirm your ${sentSummary?.count ?? 0} card${(sentSummary?.count ?? 0) === 1 ? "" : "s"} and arrange payment. Usually within 24 hours.`
+              }
+              onClose={() => onOpenChange(false)}
+              payAmount={sentSummary?.total}
+            />
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-6 gap-3" data-testid="cart-empty">
+            <ShoppingCart className="h-10 w-10 text-neutral-300" />
+            <div className="pc-font text-lg font-bold">Your cart is empty</div>
+            <p className="text-sm text-muted-foreground pc-body">Add a few cards and pay for them all at once.</p>
+            <button onClick={() => onOpenChange(false)} className="pc-btn pc-btn-black mt-2" data-testid="button-cart-keep-shopping">
+              Keep shopping
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="flex-1 min-h-[4.5rem] overflow-y-auto px-5 py-3 divide-y divide-border">
+              {rows.map((row) => (
+                <div key={row.id} className="flex gap-3 py-3" data-testid={`cart-line-${row.id}`}>
+                  <div className="w-14 aspect-[3/4] bg-muted overflow-hidden shrink-0">
+                    <CardThumb imageUrl={row.listing?.imageUrl ?? null} franchise={row.listing?.franchise ?? ""} size="lg" className="h-full w-full" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground truncate">{row.listing?.setName ?? row.id}</div>
+                    <div className="text-sm font-semibold leading-tight line-clamp-2">{row.listing?.name ?? "Item no longer listed"}</div>
+                    {row.available ? (
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <div className="inline-flex items-center border border-border">
+                          <button
+                            type="button"
+                            className="h-8 w-8 inline-flex items-center justify-center hover:bg-black/5 disabled:opacity-40"
+                            onClick={() => cart.setQty(row.id, row.qty - 1)}
+                            aria-label="Decrease quantity"
+                            data-testid={`button-cart-dec-${row.id}`}
+                          >
+                            <Minus className="h-3.5 w-3.5" />
+                          </button>
+                          <span className="w-8 text-center text-sm tabular-nums" data-testid={`text-cart-qty-${row.id}`}>{row.qty}</span>
+                          <button
+                            type="button"
+                            className="h-8 w-8 inline-flex items-center justify-center hover:bg-black/5 disabled:opacity-40"
+                            onClick={() => cart.setQty(row.id, row.qty + 1)}
+                            disabled={!row.listing || row.qty >= row.listing.qty}
+                            aria-label="Increase quantity"
+                            title={row.listing && row.qty >= row.listing.qty ? `Only ${row.listing.qty} available` : undefined}
+                            data-testid={`button-cart-inc-${row.id}`}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <div className="text-sm font-bold tabular-nums" data-testid={`text-cart-line-${row.id}`}>{formatCurrency(row.lineTotal)}</div>
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-xs font-semibold text-red-600">
+                        {listingsReady ? "Sold out — remove to continue" : "Loading…"}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => cart.remove(row.id)}
+                    className="self-start h-8 w-8 inline-flex items-center justify-center text-muted-foreground hover:text-red-600"
+                    aria-label={`Remove ${row.listing?.name ?? row.id} from cart`}
+                    data-testid={`button-cart-remove-${row.id}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className={cn("border-t border-border px-5 py-4 space-y-3 bg-white shrink-0", mode === "request" && "overflow-y-auto max-h-[78dvh]")}>
+              <div className="text-sm space-y-1">
+                <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-semibold tabular-nums" data-testid="text-cart-subtotal">{formatCurrency(subtotal)}</span></div>
+                {cardEnabled && taxPct > 0 && (
+                  <div className="flex justify-between text-muted-foreground"><span>Est. CA sales tax ({taxPct}%)</span><span className="tabular-nums">{formatCurrency(taxEstimate)}</span></div>
+                )}
+                <div className="flex justify-between text-base font-bold pt-1 border-t border-border"><span>Total</span><span className="tabular-nums" data-testid="text-cart-total">{formatCurrency(subtotal + (cardEnabled ? taxEstimate : 0))}</span></div>
+                <p className="text-[11px] text-muted-foreground">Shipping is arranged after purchase. Ships within 48 hours.</p>
+              </div>
+
+              {mode === "cart" ? (
+                <>
+                  {problemRows.length > 0 && listingsReady && (
+                    <p className="text-xs text-red-600 font-semibold">Remove the sold-out item{problemRows.length === 1 ? "" : "s"} to check out.</p>
+                  )}
+                  {cardEnabled && belowMinimum && (
+                    <p className="text-xs text-muted-foreground" data-testid="text-cart-minimum">
+                      Card payments need a {formatCurrency(CARD_MINIMUM)} minimum — add another card, or request to buy another way.
+                    </p>
+                  )}
+                  {cardEnabled && (
+                    <Button
+                      className="w-full"
+                      onClick={payWithCard}
+                      disabled={cardPending || !okRows.length || problemRows.length > 0 || belowMinimum}
+                      data-testid="button-cart-pay-card"
+                    >
+                      {cardPending ? "Opening secure checkout…" : `Pay with card — ${formatCurrency(subtotal)} + tax`}
+                    </Button>
+                  )}
+                  <Button
+                    variant={cardEnabled ? "secondary" : "default"}
+                    className="w-full"
+                    onClick={() => setMode("request")}
+                    disabled={!okRows.length || problemRows.length > 0}
+                    data-testid="button-cart-request"
+                  >
+                    {cardEnabled ? "Request to buy another way" : `Request to buy for ${formatCurrency(subtotal)}`}
+                  </Button>
+                  {cardEnabled && (
+                    <p className="text-[11px] text-muted-foreground">Credit or debit, Apple Pay and Google Pay on Stripe's secure page. Or request and pay by Zelle, Venmo, Cash App, PayPal or Apple Cash.</p>
+                  )}
+                </>
+              ) : (
+                <div className="grid gap-3" data-testid="cart-request-form">
+                  <div className="text-sm font-semibold">Where should Chris reach you?</div>
+                  <Field label="Your name *" value={form.customerName} onChange={(v) => setForm((f) => ({ ...f, customerName: v }))} error={errors.customerName} testId="input-cart-name" />
+                  <Field label="Email *" type="email" value={form.customerEmail} onChange={(v) => setForm((f) => ({ ...f, customerEmail: v }))} error={errors.customerEmail} testId="input-cart-email" />
+                  <Field label="Phone (optional)" value={form.customerPhone} onChange={(v) => setForm((f) => ({ ...f, customerPhone: v }))} testId="input-cart-phone" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs">Preferred contact</Label>
+                      <Select value={form.preferredContact} onValueChange={(v) => setForm((f) => ({ ...f, preferredContact: v }))}>
+                        <SelectTrigger className="mt-1" data-testid="select-cart-contact"><SelectValue /></SelectTrigger>
+                        <SelectContent className="pc">
+                          {PREFERRED_CONTACTS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Pay with</Label>
+                      <Select value={form.paymentMethod} onValueChange={(v) => setForm((f) => ({ ...f, paymentMethod: v }))}>
+                        <SelectTrigger className="mt-1" data-testid="select-cart-payment"><SelectValue placeholder="Optional" /></SelectTrigger>
+                        <SelectContent className="pc">
+                          {PAYMENT_METHODS.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <Textarea value={form.message} onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))} rows={2} placeholder="Any questions, shipping notes…" data-testid="textarea-cart-message" />
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setMode("cart")} disabled={sending}>Back</Button>
+                    <Button className="flex-1" onClick={sendRequest} disabled={sending} data-testid="button-cart-request-submit">
+                      {sending ? "Sending…" : `Send request · ${count} item${count === 1 ? "" : "s"}`}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -2271,9 +2632,11 @@ const PREFERRED_CONTACTS = [
 function BuyDialog({
   listing,
   onOpenChange,
+  onAddToCart,
 }: {
   listing: ShopListing;
   onOpenChange: (open: boolean) => void;
+  onAddToCart?: () => void;
 }) {
   const { toast } = useToast();
   const [form, setForm] = useState({
@@ -2338,6 +2701,9 @@ function BuyDialog({
       ? rawMarket
       : null;
   const livePricedAt = live?.tcgpPricedAt ?? listing.tcgpPricedAt ?? null;
+  // Stripe can't take a payment under $0.50 — point tiny items to the cart.
+  const cardTotal = shownPrice * form.quantity;
+  const belowCardMinimum = cardTotal < CARD_MINIMUM;
 
   const mutation = useMutation({
     mutationFn: async (data: any) => {
@@ -2510,7 +2876,7 @@ function BuyDialog({
                 />
               </div>
             </div>
-            {cardEnabled && (
+            {cardEnabled && !belowCardMinimum && (
               <div className="mt-4 border border-border p-3" data-testid="card-checkout">
                 <Button
                   className="w-full"
@@ -2518,11 +2884,29 @@ function BuyDialog({
                   disabled={cardPending || mutation.isPending}
                   data-testid="button-pay-card"
                 >
-                  {cardPending ? "Opening secure checkout…" : `Pay with card — ${formatCurrency(shownPrice * form.quantity)} + tax`}
+                  {cardPending ? "Opening secure checkout…" : `Pay with card — ${formatCurrency(cardTotal)} + tax`}
                 </Button>
                 <p className="mt-2 text-[11px] text-muted-foreground">
                   Credit or debit, Apple Pay and Google Pay on Stripe's secure page. {checkoutCfg?.taxPercent}% CA sales tax is added at checkout. Ships in 48 hours.
                 </p>
+                {onAddToCart && (
+                  <button type="button" onClick={onAddToCart} className="mt-2 text-xs font-semibold underline underline-offset-2 text-foreground/80 hover:text-foreground" data-testid="button-buy-add-cart">
+                    Buying more than one card? Add to cart instead
+                  </button>
+                )}
+              </div>
+            )}
+            {cardEnabled && belowCardMinimum && (
+              <div className="mt-4 border border-border p-3" data-testid="card-checkout-minimum">
+                <div className="text-sm font-semibold">Card payments need a {formatCurrency(CARD_MINIMUM)} minimum</div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  This card is {formatCurrency(cardTotal)}. Add it to your cart with a few other cards and pay for everything together — or request it below and Chris will sort it out.
+                </p>
+                {onAddToCart && (
+                  <Button className="w-full mt-3" onClick={onAddToCart} data-testid="button-buy-add-cart">
+                    <ShoppingCart className="h-4 w-4" /> Add to cart
+                  </Button>
+                )}
               </div>
             )}
             <DialogFooter className={cardEnabled ? "mt-3" : undefined}>

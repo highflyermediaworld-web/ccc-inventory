@@ -83,46 +83,83 @@ export function registerStripeCheckoutRoutes(app: Express) {
     res.json({ enabled: isStripeEnabled(), taxPercent: SALES_TAX_PERCENT, label: PAYMENT_LABEL });
   });
 
+  // Stripe refuses checkouts under $0.50 — the storefront steers tiny items
+  // into the cart so they can be combined.
+  const CARD_MINIMUM_CENTS = 50;
+
+  // Body: { items: [{ itemId, quantity }], customerEmail? } — or the older
+  // single-item shape { itemId, quantity }.
   app.post("/api/shop/checkout/session", async (req, res) => {
     try {
       if (!isStripeEnabled()) return res.status(503).json({ message: "Card payments aren't switched on yet." });
-      const itemId = String(req.body?.itemId ?? "");
-      const quantity = Math.max(1, Math.min(99, Number(req.body?.quantity ?? 1) || 1));
+      const rawItems: any[] = Array.isArray(req.body?.items)
+        ? req.body.items
+        : req.body?.itemId
+          ? [{ itemId: req.body.itemId, quantity: req.body.quantity ?? 1 }]
+          : [];
+      const wanted = new Map<string, number>();
+      for (const r of rawItems) {
+        const id = String(r?.itemId ?? "").trim();
+        if (!id) continue;
+        const q = Math.max(1, Math.min(99, Math.floor(Number(r?.quantity ?? 1)) || 1));
+        wanted.set(id, (wanted.get(id) ?? 0) + q);
+      }
+      if (!wanted.size) return res.status(400).json({ message: "Your cart is empty." });
+      if (wanted.size > 40) return res.status(400).json({ message: "That's too many different items for one checkout — split it into two orders." });
       const email = typeof req.body?.customerEmail === "string" && /\S+@\S+\.\S+/.test(req.body.customerEmail)
         ? req.body.customerEmail.trim()
         : undefined;
 
-      const item = await storage.getInventoryItem(itemId);
-      if (!item) return res.status(404).json({ message: "That item is no longer listed." });
-      if (!buyable(item)) return res.status(409).json({ message: "Sorry, that item is out of stock." });
-      if ((item.qty ?? 0) < quantity) return res.status(409).json({ message: `Only ${item.qty} left.` });
-      const unit = shopPrice(item);
-      if (!unit) return res.status(409).json({ message: "This item isn't priced for online checkout yet." });
-
       const origin = publicOrigin(req);
+      const lines: { item: Inventory; quantity: number; unit: number }[] = [];
+      for (const [itemId, quantity] of wanted) {
+        const item = await storage.getInventoryItem(itemId);
+        if (!item) return res.status(404).json({ message: `${itemId} is no longer listed. Remove it from your cart and try again.` });
+        if (!buyable(item)) return res.status(409).json({ message: `Sorry, ${item.name} just sold out. Remove it from your cart and try again.` });
+        if ((item.qty ?? 0) < quantity) return res.status(409).json({ message: `Only ${item.qty} of ${item.name} left.` });
+        const unit = shopPrice(item);
+        if (!unit) return res.status(409).json({ message: `${item.name} isn't priced for online checkout yet.` });
+        lines.push({ item, quantity, unit });
+      }
+      const subtotalCents = lines.reduce((n, l) => n + Math.round(l.unit * 100) * l.quantity, 0);
+      if (subtotalCents < CARD_MINIMUM_CENTS) {
+        return res.status(409).json({
+          code: "below_minimum",
+          message: "Card payments need a $0.50 minimum. Add another item to your cart, or request to buy another way.",
+        });
+      }
+
       const tax = await taxRateId();
+      // Compact "ID×qty" list so the confirm step can record every line even
+      // if an item is renamed later. Stripe metadata values max out at 500 chars.
+      const manifest = lines.map((l) => `${l.item.id}x${l.quantity}@${l.unit}`).join(",");
       const session = await client().checkout.sessions.create({
         mode: "payment",
         customer_email: email,
-        line_items: [
-          {
-            quantity,
-            ...(tax ? { tax_rates: [tax] } : {}),
-            price_data: {
-              currency: "usd",
-              unit_amount: Math.round(unit * 100),
-              product_data: {
-                name: item.name,
-                description: [item.setName, item.condition, item.rarity].filter(Boolean).join(" · ") || undefined,
-                images: absoluteImage(origin, item.imageUrl),
-                metadata: { itemId: item.id },
-              },
+        line_items: lines.map((l) => ({
+          quantity: l.quantity,
+          ...(tax ? { tax_rates: [tax] } : {}),
+          price_data: {
+            currency: "usd",
+            unit_amount: Math.round(l.unit * 100),
+            product_data: {
+              name: l.item.name,
+              description: [l.item.setName, l.item.condition, l.item.rarity].filter(Boolean).join(" · ") || undefined,
+              images: absoluteImage(origin, l.item.imageUrl),
+              metadata: { itemId: l.item.id },
             },
           },
-        ],
+        })),
         shipping_address_collection: { allowed_countries: ["US"] },
         phone_number_collection: { enabled: true },
-        metadata: { itemId: item.id, quantity: String(quantity), unitPrice: String(unit) },
+        metadata: {
+          items: manifest.slice(0, 500),
+          lineCount: String(lines.length),
+          // Legacy single-item fields, kept for the first line.
+          itemId: lines[0].item.id,
+          quantity: String(lines[0].quantity),
+          unitPrice: String(lines[0].unit),
+        },
         success_url: `${origin}/?checkout_session={CHECKOUT_SESSION_ID}#/checkout/success`,
         cancel_url: `${origin}/#/`,
       });
@@ -148,21 +185,47 @@ export function registerStripeCheckoutRoutes(app: Express) {
         return res.status(402).json({ ok: false, status: session.payment_status, message: "Payment not completed." });
       }
 
-      const itemId = session.metadata?.itemId ?? "";
-      const quantity = Math.max(1, Number(session.metadata?.quantity ?? 1) || 1);
+      // Parse the manifest ("PK-001x1@389.99,OP-012x2@0.41"); fall back to the
+      // legacy single-item metadata for sessions created before carts.
+      type Line = { itemId: string; quantity: number; unit: number | null };
+      const parsedLines: Line[] = String(session.metadata?.items ?? "")
+        .split(",")
+        .map((s) => /^(.+?)x(\d+)(?:@([\d.]+))?$/.exec(s.trim()))
+        .filter((m): m is RegExpExecArray => !!m)
+        .map((m) => ({ itemId: m[1], quantity: Math.max(1, Number(m[2]) || 1), unit: m[3] ? Number(m[3]) : null }));
+      if (!parsedLines.length && session.metadata?.itemId) {
+        parsedLines.push({
+          itemId: session.metadata.itemId,
+          quantity: Math.max(1, Number(session.metadata?.quantity ?? 1) || 1),
+          unit: Number(session.metadata?.unitPrice) || null,
+        });
+      }
       const total = (session.amount_total ?? 0) / 100;
       const subtotal = (session.amount_subtotal ?? 0) / 100;
       const taxAmount = (session.total_details?.amount_tax ?? 0) / 100;
       const details = session.customer_details;
-      const item = await storage.getInventoryItem(itemId);
 
+      const resolved = await Promise.all(
+        parsedLines.map(async (l) => ({ ...l, item: await storage.getInventoryItem(l.itemId) }))
+      );
+      const summaryItems = resolved.map((l) => ({
+        itemId: l.itemId,
+        itemName: l.item?.name ?? l.itemId,
+        setName: l.item?.setName ?? null,
+        imageUrl: l.item?.imageUrl ?? null,
+        quantity: l.quantity,
+        unitPrice: l.unit ?? (l.item ? shopPrice(l.item) : null),
+      }));
+      const first = summaryItems[0];
       const summary = {
         ok: true,
-        itemId,
-        itemName: item ? item.name : (session.metadata?.itemName ?? "Your order"),
-        setName: item?.setName ?? null,
-        imageUrl: item?.imageUrl ?? null,
-        quantity,
+        items: summaryItems,
+        // Legacy single-item fields so older success pages keep working.
+        itemId: first?.itemId ?? "",
+        itemName: summaryItems.length > 1 ? `${summaryItems.length} items` : (first?.itemName ?? "Your order"),
+        setName: summaryItems.length > 1 ? null : (first?.setName ?? null),
+        imageUrl: first?.imageUrl ?? null,
+        quantity: summaryItems.reduce((n, i) => n + i.quantity, 0),
         subtotal,
         tax: taxAmount,
         total,
@@ -174,28 +237,38 @@ export function registerStripeCheckoutRoutes(app: Express) {
       if (await storage.getSetting(doneKey)) return res.json({ ...summary, alreadyRecorded: true });
       await storage.setSetting(doneKey, String(Date.now()));
 
-      if (item) {
-        const unit = Number(session.metadata?.unitPrice) || shopPrice(item) || subtotal / quantity;
-        const remaining = (item.qty ?? 0) - quantity;
+      const addr = details?.address;
+      const shipTo = addr
+        ? [details?.name, addr.line1, addr.line2, `${addr.city ?? ""}, ${addr.state ?? ""} ${addr.postal_code ?? ""}`.trim()]
+            .filter(Boolean)
+            .join(", ")
+        : null;
+      const orderLabel = resolved.length > 1 ? ` · ${resolved.length}-item order` : "";
+      let touchedInventory = false;
+      for (const l of resolved) {
+        const item = l.item;
+        if (!item) {
+          console.warn(`[stripe] paid session ${sessionId} references unknown item ${l.itemId}`);
+          continue;
+        }
+        const unit = l.unit ?? shopPrice(item) ?? 0;
+        const lineSubtotal = Math.round(unit * l.quantity * 100) / 100;
+        // Tax is split across lines in proportion to their subtotal.
+        const lineTax = subtotal > 0 ? Math.round((taxAmount * lineSubtotal / subtotal) * 100) / 100 : 0;
+        const remaining = (item.qty ?? 0) - l.quantity;
         const soldOut = remaining <= 0;
         const updated = await storage.updateInventory(item.id, soldOut
-          ? ({ status: "Sold", soldPrice: subtotal, qty: 0 } as any)
+          ? ({ status: "Sold", soldPrice: lineSubtotal, qty: 0 } as any)
           : ({ qty: remaining } as any));
-        const costShare = soldOut ? (item.totalCost ?? 0) : ((item.costPerUnit ?? 0) * quantity);
-        const addr = details?.address;
-        const shipTo = addr
-          ? [details?.name, addr.line1, addr.line2, `${addr.city ?? ""}, ${addr.state ?? ""} ${addr.postal_code ?? ""}`.trim()]
-              .filter(Boolean)
-              .join(", ")
-          : null;
+        const costShare = soldOut ? (item.totalCost ?? 0) : ((item.costPerUnit ?? 0) * l.quantity);
         await storage.createTransaction({
           type: "Sell",
           itemId: item.id,
-          itemName: `${item.setName} \u2014 ${item.name}${quantity > 1 ? ` \u00d7${quantity}` : ""}`,
+          itemName: `${item.setName} \u2014 ${item.name}${l.quantity > 1 ? ` \u00d7${l.quantity}` : ""}`,
           counterparty: details?.name || details?.email || "Online order",
-          price: subtotal,
-          pnl: Math.round((subtotal - costShare) * 100) / 100,
-          notes: `Paid via ${PAYMENT_LABEL} \u00b7 tax ${taxAmount.toFixed(2)} \u00b7 total ${total.toFixed(2)} \u00b7 ${sessionId}${shipTo ? ` \u00b7 ship to ${shipTo}` : ""}`,
+          price: lineSubtotal,
+          pnl: Math.round((lineSubtotal - costShare) * 100) / 100,
+          notes: `Paid via ${PAYMENT_LABEL}${orderLabel} \u00b7 tax ${lineTax.toFixed(2)} \u00b7 order total ${total.toFixed(2)} \u00b7 ${sessionId}${shipTo ? ` \u00b7 ship to ${shipTo}` : ""}`,
         } as any);
         await storage.createCustomerRequest({
           type: "Buy",
@@ -204,19 +277,18 @@ export function registerStripeCheckoutRoutes(app: Express) {
           customerEmail: details?.email || session.customer_email || "unknown@stripe",
           customerPhone: details?.phone ?? null,
           preferredContact: "Email",
-          quantity,
+          quantity: l.quantity,
           offerPrice: unit,
           paymentMethod: PAYMENT_LABEL,
-          message: `PAID online \u2014 ${total.toFixed(2)} total (${taxAmount.toFixed(2)} tax).${shipTo ? ` Ship to: ${shipTo}.` : ""} Stripe ${sessionId}`,
+          message: `PAID online${orderLabel} \u2014 ${total.toFixed(2)} order total (${taxAmount.toFixed(2)} tax).${shipTo ? ` Ship to: ${shipTo}.` : ""} Stripe ${sessionId}`,
           status: "Accepted",
         } as any);
         if (updated) broadcast({ type: "inventory:update", payload: updated });
-        broadcast({ type: "transactions:update", payload: {} });
         broadcast({ type: "customerRequest:new", payload: { itemId: item.id } });
-        console.log(`[stripe] recorded sale ${item.id} \u00d7${quantity} total ${total.toFixed(2)} (${sessionId})`);
-      } else {
-        console.warn(`[stripe] paid session ${sessionId} references unknown item ${itemId}`);
+        touchedInventory = true;
+        console.log(`[stripe] recorded sale ${item.id} \u00d7${l.quantity} line ${lineSubtotal.toFixed(2)} (${sessionId})`);
       }
+      if (touchedInventory) broadcast({ type: "transactions:update", payload: {} });
       res.json(summary);
     } catch (err: any) {
       console.error("[stripe] confirm error:", err?.message ?? err);

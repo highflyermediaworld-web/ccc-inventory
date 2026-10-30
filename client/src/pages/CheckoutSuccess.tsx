@@ -4,9 +4,20 @@ import { API_BASE } from "@/lib/queryClient";
 import { resolveUploadUrl } from "@/lib/uploads";
 import { formatCurrency } from "@/lib/format";
 import { Check, Loader2, AlertTriangle } from "lucide-react";
+import { cart } from "@/lib/cart";
+
+type ConfirmItem = {
+  itemId: string;
+  itemName: string;
+  setName: string | null;
+  imageUrl: string | null;
+  quantity: number;
+  unitPrice: number | null;
+};
 
 type Confirm = {
   ok: boolean;
+  items?: ConfirmItem[];
   itemName: string;
   setName: string | null;
   imageUrl: string | null;
@@ -37,6 +48,8 @@ export function CheckoutSuccessPage() {
       })
       .then((data) => {
         setState({ status: "ok", data });
+        // The order is paid — empty the cart so the shopper starts fresh.
+        cart.clear();
         // Drop the session id from the address bar so a refresh stays clean.
         try {
           window.history.replaceState(null, "", `${window.location.pathname}#/checkout/success`);
@@ -81,21 +94,29 @@ export function CheckoutSuccessPage() {
                 {state.data.email && <div className="text-xs text-muted-foreground">Receipt sent to {state.data.email}</div>}
               </div>
             </div>
-            <div className="flex gap-4 px-5 py-5">
-              <div className="w-20 aspect-[3/4] bg-black/30 shrink-0 overflow-hidden">
-                {state.data.imageUrl && (
-                  <img src={resolveUploadUrl(state.data.imageUrl)} alt="" className="h-full w-full object-contain" />
-                )}
+            {(state.data.items && state.data.items.length > 0
+              ? state.data.items
+              : [{ itemId: "", itemName: state.data.itemName, setName: state.data.setName, imageUrl: state.data.imageUrl, quantity: state.data.quantity, unitPrice: null }]
+            ).map((it, i) => (
+              <div key={`${it.itemId}-${i}`} className="flex gap-4 px-5 py-4 border-b border-white/10" data-testid={`checkout-line-${it.itemId || i}`}>
+                <div className="w-14 aspect-[3/4] bg-black/30 shrink-0 overflow-hidden">
+                  {it.imageUrl && <img src={resolveUploadUrl(it.imageUrl) ?? undefined} alt="" className="h-full w-full object-contain" />}
+                </div>
+                <div className="min-w-0 flex-1 text-sm">
+                  {it.setName && <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{it.setName}</div>}
+                  <div className="font-semibold">{it.itemName}{it.quantity > 1 ? ` ×${it.quantity}` : ""}</div>
+                  {it.unitPrice != null && (
+                    <div className="text-xs text-muted-foreground tabular-nums">{formatCurrency(it.unitPrice)}{it.quantity > 1 ? ` each · ${formatCurrency(it.unitPrice * it.quantity)}` : ""}</div>
+                  )}
+                </div>
               </div>
-              <div className="min-w-0 flex-1 text-sm">
-                {state.data.setName && <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{state.data.setName}</div>}
-                <div className="font-semibold">{state.data.itemName}{state.data.quantity > 1 ? ` ×${state.data.quantity}` : ""}</div>
-                <dl className="mt-4 grid grid-cols-[1fr_auto] gap-y-1 text-muted-foreground">
-                  <dt>Subtotal</dt><dd className="text-right tabular-nums text-foreground">{formatCurrency(state.data.subtotal)}</dd>
-                  <dt>Sales tax</dt><dd className="text-right tabular-nums text-foreground">{formatCurrency(state.data.tax)}</dd>
-                  <dt className="font-semibold text-foreground">Total charged</dt><dd className="text-right tabular-nums font-semibold text-foreground">{formatCurrency(state.data.total)}</dd>
-                </dl>
-              </div>
+            ))}
+            <div className="px-5 py-5 text-sm">
+              <dl className="grid grid-cols-[1fr_auto] gap-y-1 text-muted-foreground">
+                <dt>Subtotal</dt><dd className="text-right tabular-nums text-foreground">{formatCurrency(state.data.subtotal)}</dd>
+                <dt>Sales tax</dt><dd className="text-right tabular-nums text-foreground">{formatCurrency(state.data.tax)}</dd>
+                <dt className="font-semibold text-foreground">Total charged</dt><dd className="text-right tabular-nums font-semibold text-foreground">{formatCurrency(state.data.total)}</dd>
+              </dl>
             </div>
             <div className="border-t border-white/10 px-5 py-4 flex flex-wrap gap-3">
               <a href="#/" className="pc-btn pc-btn-sm pc-btn-red">Keep browsing</a>
