@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import { storage } from "./storage";
+import { storage, withDbRetry, isTransientDbError } from "./storage";
 import { broadcast } from "./realtime";
 import type { InsertInventory } from "@shared/schema";
 
@@ -338,20 +338,29 @@ export async function runAutoImport(opts: { wipe?: boolean } = {}): Promise<Auto
       let updated = 0;
       let skipped = 0;
 
+      const retry = <T,>(fn: () => Promise<T>) =>
+        withDbRetry(fn, { attempts: 4, label: "autoImport" });
+
       if (opts.wipe) {
-        await storage.replaceInventory(items);
+        await retry(() => storage.replaceInventory(items));
         inserted = items.length;
       } else {
-        const existing = await storage.listInventory();
+        const existing = await retry(() => storage.listInventory());
         const existingIds = new Set(existing.map((r) => r.id));
         for (const it of items) {
           try {
             if (existingIds.has(it.id)) {
-              const u = await storage.updateInventory(it.id, it);
+              const u = await retry(() => storage.updateInventory(it.id, it));
               if (u) updated += 1;
               else skipped += 1;
             } else {
-              await storage.createInventory(it);
+              try {
+                await retry(() => storage.createInventory(it));
+              } catch (err) {
+                // A retried insert may have landed on the first attempt even
+                // though the socket died; treat "already exists" as success.
+                if (!/unique|constraint|already exists/i.test(String((err as any)?.message ?? err))) throw err;
+              }
               inserted += 1;
             }
           } catch (err) {
@@ -373,7 +382,9 @@ export async function runAutoImport(opts: { wipe?: boolean } = {}): Promise<Auto
       console.log(`[autoImport] ${status.lastRunMessage}`);
     } catch (err: any) {
       status.lastRunOk = false;
-      status.lastRunMessage = err?.message || String(err);
+      status.lastRunMessage = isTransientDbError(err)
+        ? "Database connection dropped mid-import. It retried a few times without luck — run it again in a minute."
+        : err?.message || String(err);
       console.error("[autoImport] failed:", err);
     } finally {
       status.nextRunAt = status.enabled

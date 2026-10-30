@@ -64,6 +64,43 @@ const client = createClient({
 
 export const db = drizzle(client);
 
+// Turso closes idle HTTP connections; the next request then fails with
+// "socket hang up" / ECONNRESET before anything reaches the database. Wrap
+// idempotent operations in this to absorb those drops instead of failing a
+// whole job over one dead socket.
+export function isTransientDbError(err: unknown): boolean {
+  const msg = String((err as any)?.message ?? err ?? "").toLowerCase();
+  const code = String((err as any)?.code ?? (err as any)?.cause?.code ?? "").toUpperCase();
+  return (
+    msg.includes("socket hang up") ||
+    msg.includes("econnreset") ||
+    msg.includes("etimedout") ||
+    msg.includes("fetch failed") ||
+    msg.includes("network error") ||
+    (msg.includes("hrana") && msg.includes("closed")) ||
+    ["ECONNRESET", "ETIMEDOUT", "EPIPE", "UND_ERR_SOCKET", "ECONNREFUSED"].includes(code)
+  );
+}
+
+export async function withDbRetry<T>(
+  fn: () => Promise<T>,
+  { attempts = 3, baseDelayMs = 400, label = "db" }: { attempts?: number; baseDelayMs?: number; label?: string } = {}
+): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientDbError(err) || i === attempts - 1) throw err;
+      const delay = baseDelayMs * 2 ** i;
+      console.warn(`[${label}] transient database error, retrying in ${delay}ms (${i + 1}/${attempts - 1})`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
 // ── Migrations (run on startup) ───────────────────────────────
 export async function runMigrations() {
   try {
