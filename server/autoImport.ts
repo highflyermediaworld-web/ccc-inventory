@@ -268,7 +268,7 @@ function rowToItem(row: Record<string, any>, sheetFranchise: string): InsertInve
   if (!id || !name) return null;
   const setNameRaw = parseStr(pick(row, "set", "set name", "setname", "edition"));
 
-  return {
+  const item: Record<string, unknown> = {
     id,
     franchise: normalizeFranchise(parseStr(pick(row, "franchise")) || sheetFranchise),
     category: parseStr(pick(row, "category", "type")) || "Raw",
@@ -318,7 +318,35 @@ function rowToItem(row: Record<string, any>, sheetFranchise: string): InsertInve
     notes: parseStr(pick(row, "notes", "note", "comment")) || null,
     // Optional: a photo link in the sheet wins over anything we'd look up.
     ...(imageUrlFromRow(row) ? { imageUrl: imageUrlFromRow(row) } : {}),
-  } as InsertInventory;
+  };
+
+  // The sheet is only authoritative for the columns it actually has. A sheet
+  // without a Market Value column must not blank out the TCGplayer price the
+  // app maintains, and an empty money cell means "no opinion", not zero.
+  const OPTIONAL_COLUMNS: Record<string, string[]> = {
+    rarity: ["rarity"],
+    condition: ["condition", "grade"],
+    qty: ["qty", "quantity", "count"],
+    source: ["source", "supplier", "acquired from", "acquisition source", "acquisitionsource"],
+    costPerUnit: ["cost per unit", "cost", "costperunit", "unit cost"],
+    totalCost: ["total cost", "totalcost"],
+    marketValue: ["market value", "marketvalue", "value", "current market value", "currentmarketvalue"],
+    asking: ["asking", "asking price", "price", "askingprice"],
+    soldPrice: ["sold price", "soldprice", "sale price", "actual sale price", "actualsaleprice"],
+    status: ["status", "inventory status", "inventorystatus"],
+    notes: ["notes", "note", "comment"],
+  };
+  const MONEY = new Set(["costPerUnit", "totalCost", "marketValue", "asking", "soldPrice"]);
+  for (const [field, cols] of Object.entries(OPTIONAL_COLUMNS)) {
+    if (!hasColumn(row, ...cols)) delete item[field];
+    else if (MONEY.has(field) && item[field] == null) delete item[field];
+  }
+  return item as InsertInventory;
+}
+
+function hasColumn(row: Record<string, any>, ...keys: string[]): boolean {
+  const present = new Set(Object.keys(row).map(normalizeKey));
+  return keys.some((k) => present.has(normalizeKey(k)));
 }
 
 /**
