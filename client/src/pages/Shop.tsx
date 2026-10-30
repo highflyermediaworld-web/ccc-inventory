@@ -2351,7 +2351,7 @@ function BuyDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="pc-dialog max-w-md">
+      <DialogContent className="pc-dialog max-w-md max-h-[90vh] overflow-y-auto">
         {!submitted ? (
           <>
             <DialogHeader>
