@@ -30,10 +30,10 @@ const LINKS: Array<{ label: string; href: string; testId: string }> = [
   { label: "About", href: "#/about", testId: "info-nav-about" },
 ];
 
-function InfoShell({ title, kicker, intro, children, current }: { title: ReactNode; kicker: string; intro: string; children: ReactNode; current: "faq" | "about" }) {
+export function InfoShell({ title, kicker, intro, children, current }: { title: ReactNode; kicker: string; intro: string; children: ReactNode; current: "faq" | "about" | "checkout" }) {
   useEffect(() => {
     const prev = document.title;
-    document.title = `${current === "faq" ? "FAQ" : "About"} · Chris Collects Co`;
+    document.title = `${current === "faq" ? "FAQ" : current === "checkout" ? "Order confirmed" : "About"} · Chris Collects Co`;
     window.scrollTo({ top: 0 });
     return () => { document.title = prev; };
   }, [current]);

@@ -2288,6 +2288,35 @@ function BuyDialog({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [live, setLive] = useState<LivePrice | null>(null);
+  const [cardPending, setCardPending] = useState(false);
+  const { data: checkoutCfg } = useQuery<{ enabled: boolean; taxPercent: number }>({
+    queryKey: ["/api/shop/checkout/config"],
+    staleTime: 5 * 60 * 1000,
+  });
+  const cardEnabled = !!checkoutCfg?.enabled;
+
+  // Card checkout: Stripe hosts the payment page; we only start the session.
+  async function payWithCard() {
+    setCardPending(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/shop/checkout/session`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          itemId: listing.id,
+          quantity: form.quantity,
+          customerEmail: form.customerEmail.trim() || undefined,
+        }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok || !body?.url) throw new Error(body?.message || "Couldn't start checkout");
+      window.location.assign(body.url);
+    } catch (err: any) {
+      setCardPending(false);
+      toast({ title: "Card checkout unavailable", description: err?.message || "Please try again", variant: "destructive" });
+    }
+  }
 
   // Point-of-purchase refresh: pull the current TCGplayer price for this card.
   useEffect(() => {
@@ -2466,7 +2495,7 @@ function BuyDialog({
                   </SelectContent>
                 </Select>
                 <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  No payment is taken here. Chris confirms the card, then sends the details for the method you pick. Card tap is for in-person pickup at shows.
+                  For Zelle, Venmo, Cash App, PayPal or Apple Cash: Chris confirms the card, then sends payment details.
                 </p>
               </div>
               <div>
@@ -2481,18 +2510,36 @@ function BuyDialog({
                 />
               </div>
             </div>
-            <DialogFooter>
+            {cardEnabled && (
+              <div className="mt-4 border border-border p-3" data-testid="card-checkout">
+                <Button
+                  className="w-full"
+                  onClick={payWithCard}
+                  disabled={cardPending || mutation.isPending}
+                  data-testid="button-pay-card"
+                >
+                  {cardPending ? "Opening secure checkout…" : `Pay with card — ${formatCurrency(shownPrice * form.quantity)} + tax`}
+                </Button>
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Credit or debit, Apple Pay and Google Pay on Stripe's secure page. {checkoutCfg?.taxPercent}% CA sales tax is added at checkout. Ships in 48 hours.
+                </p>
+              </div>
+            )}
+            <DialogFooter className={cardEnabled ? "mt-3" : undefined}>
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
               <Button
+                variant={cardEnabled ? "secondary" : "default"}
                 onClick={submit}
-                disabled={mutation.isPending}
+                disabled={mutation.isPending || cardPending}
                 data-testid="button-buy-submit"
               >
                 {mutation.isPending
                   ? "Sending…"
-                  : `Request to buy for ${formatCurrency(shownPrice * form.quantity)}`}
+                  : cardEnabled
+                    ? "Request to buy another way"
+                    : `Request to buy for ${formatCurrency(shownPrice * form.quantity)}`}
               </Button>
             </DialogFooter>
           </>

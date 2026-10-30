@@ -9,6 +9,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { AuthProvider } from "@/lib/auth";
 import Shop from "@/pages/Shop";
 import { FaqPage, AboutPage } from "@/pages/Info";
+import { CheckoutSuccessPage } from "@/pages/CheckoutSuccess";
 
 // Admin, login and signup are split into their own chunks so the public
 // storefront only downloads what it needs.
@@ -54,6 +55,7 @@ function AppRouter() {
       <Route path="/" component={Shop} />
       <Route path="/faq" component={FaqPage} />
       <Route path="/about" component={AboutPage} />
+      <Route path="/checkout/success" component={CheckoutSuccessPage} />
       <Route component={NotFound} />
     </Switch>
   );
