@@ -25,6 +25,8 @@ import {
   sweepDeadImageUrls, fetchMissingImagesBatch,
   applyFollowedPrice,
   fetchImageOnly,
+  tcgplayerImageUrl,
+  imageUrlLoads,
 } from "./pricing";
 import { storage } from "./storage";
 import { broadcast } from "./realtime";
@@ -123,6 +125,17 @@ async function priceItem(item: Inventory): Promise<"updated" | "skipped" | "fail
           // Raw cards track the live TCGplayer market price unless the
           // value was pinned by hand in admin (then the manual price wins).
           await applyFollowedPrice(item, points, patch as any);
+        }
+        // Keep the photo on the same TCGplayer product the price came from.
+        // The image pass can land on a sibling printing (002/165 instead of
+        // 167/165) when it runs before pricing; once the price match is
+        // known, that product's photo is the right one. Hand-picked photos
+        // (local /catalog/ files, Scryfall, etc.) are left alone.
+        const tcgpImg = /^https:\/\/product-images\.tcgplayer\.com\/fit-in\/\d+x\d+\/(\d+)\.jpg$/.exec(item.imageUrl ?? "");
+        const imgPid = tcgpImg ? Number(tcgpImg[1]) : null;
+        if ((!item.imageUrl || (imgPid && imgPid !== points.productId)) && points.productId) {
+          const wanted = tcgplayerImageUrl(points.productId);
+          if (await imageUrlLoads(wanted)) (patch as any).imageUrl = wanted;
         }
         await storage.updateInventory(item.id, patch as any);
         return "updated";
