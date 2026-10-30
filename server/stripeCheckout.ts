@@ -57,6 +57,16 @@ async function taxRateId(): Promise<string | null> {
   const key = `stripe_tax_rate_${SALES_TAX_PERCENT}`;
   const cached = await storage.getSetting(key);
   if (cached) return cached;
+  // Reuse a matching rate already in the Stripe account (e.g. after a DB
+  // wipe) instead of creating a duplicate.
+  const existing = await client().taxRates.list({ active: true, limit: 100 });
+  const match = existing.data.find(
+    (r) => Number(r.percentage) === SALES_TAX_PERCENT && !r.inclusive && (r.jurisdiction ?? "") === "US - CA"
+  );
+  if (match) {
+    await storage.setSetting(key, match.id);
+    return match.id;
+  }
   const rate = await client().taxRates.create({
     display_name: "Sales Tax",
     description: `California sales tax ${SALES_TAX_PERCENT}%`,

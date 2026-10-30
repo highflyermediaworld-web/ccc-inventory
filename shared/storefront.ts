@@ -34,7 +34,7 @@ export const PAYMENT_METHODS = [
   "Credit / debit card (tap)",
 ] as const;
 export type PaymentMethodName = (typeof PAYMENT_METHODS)[number];
-export const PAYMENT_METHODS_SENTENCE = "Zelle, Venmo, Cash App, PayPal, Apple Cash, or credit / debit card (tap to pay in person)";
+export const PAYMENT_METHODS_SENTENCE = "credit / debit card, Apple Pay and Google Pay at checkout, plus Zelle, Venmo, Cash App, PayPal and Apple Cash";
 
 export type FaqItem = { q: string; a: string };
 export type FaqGroup = { id: "buying" | "shipping" | "selling" | "shows"; title: string; items: FaqItem[] };
@@ -50,7 +50,7 @@ export const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         q: "What payment methods do you take?",
-        a: "Zelle, Venmo, Cash App, PayPal and Apple Cash for online orders. In person at shows, tap to pay with any credit or debit card. Pick your preferred way to pay when you send a Buy request and Chris sends the details once the card is confirmed.",
+        a: "Credit or debit card, Apple Pay and Google Pay right on the site — tap Pay with card on any listing and you check out on Stripe's secure page (8.75% California sales tax is added). Prefer Zelle, Venmo, Cash App, PayPal or Apple Cash? Send a Buy request instead and Chris sends the details once the card is confirmed. At shows, tap to pay in person.",
       },
       {
         q: "Are the photos the actual cards?",

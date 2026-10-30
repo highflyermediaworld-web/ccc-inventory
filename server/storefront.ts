@@ -209,7 +209,7 @@ SHOP FACTS
 - Games carried: ${GAMES.join(", ")}, plus graded slabs and sealed product.
 - Shipping: within 48 hours of payment, US only, sleeve + toploader + team bag + bubble mailer, insured + tracked on high-value cards. 100% satisfaction guarantee.
 - Buying: tap Buy on a card in the vault, leave contact info, Chris replies usually within 24 hours.
-- Payment: Zelle, Venmo, Cash App, PayPal or Apple Cash for online orders; credit / debit card tap to pay in person at shows. Customers pick a preferred method on the Buy form and Chris sends payment details after confirming the card. No payment is taken on the website itself.
+- Payment: credit / debit card, Apple Pay or Google Pay directly on the site — the Pay with card button on a listing opens Stripe's secure checkout, and 8.75% California sales tax is added there. Zelle, Venmo, Cash App, PayPal and Apple Cash also work: customers send a Buy request, pick the method, and Chris sends payment details after confirming the card. Tap to pay in person at shows. Shipping is arranged after payment.
 - Trading: tap Trade on a card, describe what you have, add photos; Chris counters within about 24 hours. Trades also happen at shows.
 - Contact: DM ${BRAND_HANDLE} — Instagram ${INSTAGRAM_URL}, TikTok ${TIKTOK_URL}.
 - Live stream right now: ${liveStatus ? `YES — watching link ${liveUrl}` : "no"}.
