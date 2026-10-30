@@ -34,7 +34,7 @@ import { correctSpelling, correctSetName } from "./pricing";
 // Storage-level autocorrect. Applied to every create/update so any code path
 // (manual entry, CSV upload, intake form, trade, scan, auto-import) gets the
 // same cleanup. Corrects both card name and set name.
-function applyNameAutocorrect<
+export function applyNameAutocorrect<
   T extends { name?: string | null; setName?: string | null },
 >(input: T): T {
   if (!input || typeof input !== "object") return input;

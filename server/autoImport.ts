@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
-import { storage, withDbRetry, isTransientDbError } from "./storage";
+import { storage, withDbRetry, isTransientDbError, applyNameAutocorrect } from "./storage";
+import { refreshItemsNow } from "./autoPricing";
 import { broadcast } from "./realtime";
 import type { InsertInventory } from "@shared/schema";
 
@@ -197,19 +198,82 @@ function pick(row: Record<string, any>, ...keys: string[]): any {
   return undefined;
 }
 
+function imageUrlFromRow(row: Record<string, any>): string | null {
+  const raw = parseStr(
+    pick(row, "image", "image url", "imageurl", "photo", "photo url", "picture", "img")
+  );
+  if (!raw) return null;
+  // Google Sheets =IMAGE("url") formulas come through as the formula text.
+  const m = raw.match(/https?:\/\/[^\s"')]+/i);
+  return m ? m[0] : null;
+}
+
+// Names copied from TCGplayer come as "Product - Group Name (ABBR)" and
+// sometimes "Card - 012 (Variant) - Group Name (ABBR) - FB10-057". The group
+// segment duplicates the Set column and wrecks product matching, so drop it.
+const GROUP_SEGMENT = /\s+-\s+((?:(?!\s+-\s+)[^()])+?)\s+\((?=[A-Za-z0-9_:\-]*[A-Za-z])([A-Za-z0-9][A-Za-z0-9_:\-]{1,14})\)(?=\s+-\s+|$)/g;
+function words(s: string): Set<string> {
+  return new Set(
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !["the", "and", "promo", "promos", "cards", "packs", "set"].includes(w))
+  );
+}
+function isGroupSegment(group: string, setName: string | null | undefined): boolean {
+  const setWords = words(setName ?? "");
+  const groupWords = words(group);
+  const overlaps = setWords.size === 0 || [...groupWords].some((w) => setWords.has(w));
+  // Classic TCGplayer group prefixes count even without a Set column.
+  return overlaps || /^(SV|SWSH|SM|XY|ME|ME\d+|OP\d+|EB\d+|FB\d+|ST\d+|BT\d+|DBS|MCAP)\b|:/.test(group);
+}
+export function stripGroupSuffix(name: string, setName: string | null | undefined): string {
+  let out = name.trim();
+  for (let guard = 0; guard < 3; guard++) {
+    let removed = false;
+    GROUP_SEGMENT.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = GROUP_SEGMENT.exec(out))) {
+      if (!isGroupSegment(m[1].trim(), setName)) continue;
+      const candidate = (out.slice(0, m.index) + out.slice(m.index + m[0].length)).trim();
+      if (!candidate) break;
+      out = candidate;
+      removed = true;
+      break;
+    }
+    if (!removed) break;
+  }
+  // "Card - SM - Unbroken Bonds (SM10)" leaves a dangling era token behind.
+  out = out.replace(/\s+-\s+(SM|SWSH|SV|XY|BW|DP|HGSS|ME|EX)$/i, "").trim();
+  return out;
+}
+
+// Fields that identify *which* card a row is. If any of these change on an
+// existing item, its looked-up photo and TCGplayer match are stale.
+const IDENTITY_FIELDS = ["name", "setName", "franchise", "category", "rarity", "condition"] as const;
+
+function same(a: unknown, b: unknown): boolean {
+  const na = a === undefined ? null : a;
+  const nb = b === undefined ? null : b;
+  if (typeof na === "number" && typeof nb === "number") return Math.abs(na - nb) < 1e-9;
+  return na === nb;
+}
+
 function rowToItem(row: Record<string, any>, sheetFranchise: string): InsertInventory | null {
   const id = parseStr(pick(row, "id", "sku", "item id", "itemid", "card id", "cardid"));
   const name = parseStr(
     pick(row, "name", "item name", "itemname", "card name", "item", "title")
   );
   if (!id || !name) return null;
+  const setNameRaw = parseStr(pick(row, "set", "set name", "setname", "edition"));
 
   return {
     id,
     franchise: normalizeFranchise(parseStr(pick(row, "franchise")) || sheetFranchise),
     category: parseStr(pick(row, "category", "type")) || "Raw",
-    setName: parseStr(pick(row, "set", "set name", "setname", "edition")),
-    name,
+    setName: setNameRaw,
+    name: stripGroupSuffix(name, setNameRaw),
     rarity: parseStr(pick(row, "rarity")) || null,
     condition: parseStr(pick(row, "condition", "grade")) || null,
     qty: parseNum(pick(row, "qty", "quantity", "count")) ?? 1,
@@ -252,6 +316,8 @@ function rowToItem(row: Record<string, any>, sheetFranchise: string): InsertInve
     ),
     status: parseStr(pick(row, "status", "inventory status", "inventorystatus")) || "In Inventory",
     notes: parseStr(pick(row, "notes", "note", "comment")) || null,
+    // Optional: a photo link in the sheet wins over anything we'd look up.
+    ...(imageUrlFromRow(row) ? { imageUrl: imageUrlFromRow(row) } : {}),
   } as InsertInventory;
 }
 
@@ -263,6 +329,8 @@ function rowToItem(row: Record<string, any>, sheetFranchise: string): InsertInve
 function looksLikeInventorySheet(sheetName: string, firstRow?: Record<string, any>): boolean {
   const n = sheetName.toLowerCase();
   if (/sales|expense|event|grading|dashboard|cheat|helper/.test(n)) return false;
+  // Archived copies of the inventory must never be merged into the live one.
+  if (/outdated|archive|backup|\bold\b|previous|deprecated|\(old\)/.test(n)) return false;
   if (/inventory|stash|stock|items?/.test(n)) return true;
   if (!firstRow) return false;
   const keys = Object.keys(firstRow).map(normalizeKey);
@@ -337,6 +405,9 @@ export async function runAutoImport(opts: { wipe?: boolean } = {}): Promise<Auto
       let inserted = 0;
       let updated = 0;
       let skipped = 0;
+      let unchanged = 0;
+      // Items that need a photo / price lookup as soon as the import ends.
+      const touched: string[] = [];
 
       const retry = <T,>(fn: () => Promise<T>) =>
         withDbRetry(fn, { attempts: 4, label: "autoImport" });
@@ -344,15 +415,40 @@ export async function runAutoImport(opts: { wipe?: boolean } = {}): Promise<Auto
       if (opts.wipe) {
         await retry(() => storage.replaceInventory(items));
         inserted = items.length;
+        touched.push(...items.map((it) => it.id));
       } else {
         const existing = await retry(() => storage.listInventory());
-        const existingIds = new Set(existing.map((r) => r.id));
+        const existingById = new Map(existing.map((r) => [r.id, r]));
         for (const it of items) {
           try {
-            if (existingIds.has(it.id)) {
-              const u = await retry(() => storage.updateInventory(it.id, it));
-              if (u) updated += 1;
-              else skipped += 1;
+            const cur = existingById.get(it.id);
+            if (cur) {
+              // Only write the columns that actually differ, so a 700-row
+              // sheet that hasn't changed costs zero database writes.
+              const normalized = applyNameAutocorrect(it) as Record<string, unknown>;
+              const patch: Record<string, unknown> = {};
+              for (const [k, v] of Object.entries(normalized)) {
+                if (k === "id") continue;
+                if (!same(v, (cur as any)[k])) patch[k] = v;
+              }
+              const identityChanged = IDENTITY_FIELDS.some((f) => f in patch);
+              if (identityChanged) {
+                // The row now describes a different card: drop the looked-up
+                // photo and TCGplayer match so they're re-resolved. Photos the
+                // admin uploaded or the sheet supplies are kept.
+                const lookedUp = cur.imageUrl && /^https?:\/\//.test(cur.imageUrl) && !("imageUrl" in patch);
+                if (lookedUp) patch.imageUrl = null;
+                patch.tcgpProductId = null;
+              }
+              if (Object.keys(patch).length === 0) {
+                unchanged += 1;
+              } else {
+                const u = await retry(() => storage.updateInventory(it.id, patch as any));
+                if (u) updated += 1;
+                else skipped += 1;
+              }
+              const after = { ...cur, ...patch } as typeof cur;
+              if (identityChanged || !after.imageUrl || after.tcgpProductId == null) touched.push(it.id);
             } else {
               try {
                 await retry(() => storage.createInventory(it));
@@ -362,6 +458,7 @@ export async function runAutoImport(opts: { wipe?: boolean } = {}): Promise<Auto
                 if (!/unique|constraint|already exists/i.test(String((err as any)?.message ?? err))) throw err;
               }
               inserted += 1;
+              touched.push(it.id);
             }
           } catch (err) {
             skipped += 1;
@@ -374,12 +471,27 @@ export async function runAutoImport(opts: { wipe?: boolean } = {}): Promise<Auto
       status.lastInserted = inserted;
       status.lastUpdated = updated;
       status.lastSkipped = skipped;
+      // Cap the follow-up lookup so a huge first import can't monopolise the
+      // TCGplayer API; the scheduled cycle sweeps up anything left over.
+      const MAX_TARGETED = 120;
+      const toRefresh = touched.slice(0, MAX_TARGETED);
       status.lastRunMessage = opts.wipe
         ? `Wiped and imported ${items.length} rows fresh`
-        : `Imported ${items.length} rows (${inserted} new, ${updated} updated, ${skipped} skipped)`;
+        : `Imported ${items.length} rows (${inserted} new, ${updated} updated, ${unchanged} unchanged, ${skipped} skipped)`;
+      if (toRefresh.length) {
+        status.lastRunMessage += ` — fetching photos and prices for ${toRefresh.length} item${toRefresh.length === 1 ? "" : "s"}`;
+      }
 
       broadcast({ type: "inventory:bulk", payload: { source: "autoImport" } });
       console.log(`[autoImport] ${status.lastRunMessage}`);
+
+      if (toRefresh.length) {
+        // Fire-and-forget so the Run Now button returns immediately; progress
+        // shows up live in the inventory as each item resolves.
+        void refreshItemsNow(toRefresh).catch((e) =>
+          console.error("[autoImport] follow-up photo/price refresh failed", e)
+        );
+      }
     } catch (err: any) {
       status.lastRunOk = false;
       status.lastRunMessage = isTransientDbError(err)

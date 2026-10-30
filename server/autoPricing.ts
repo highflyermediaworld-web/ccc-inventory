@@ -24,9 +24,11 @@ import {
   getGradedEstimate,
   sweepDeadImageUrls, fetchMissingImagesBatch,
   applyFollowedPrice,
+  fetchImageOnly,
 } from "./pricing";
 import { storage } from "./storage";
 import { broadcast } from "./realtime";
+import type { Inventory } from "@shared/schema";
 
 type AutoPricingStatus = {
   enabled: boolean;
@@ -67,6 +69,103 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Price a single item: find/reuse its TCGplayer product, pull price points,
+// and write marketValue following the graded / raw rules described above.
+async function priceItem(item: Inventory): Promise<"updated" | "skipped" | "failed"> {
+    try {
+      const points = await Promise.race<any>([
+        (async () => {
+          let pid = item.tcgpProductId ?? null;
+          if (!pid) {
+            pid = await findTcgplayerProductId(
+              item.name,
+              item.setName ?? null,
+              item.franchise,
+              item.category
+            );
+          }
+          if (!pid) return null;
+          return await fetchTcgplayerPricePoints(pid);
+        })(),
+        new Promise((resolve) =>
+          setTimeout(() => resolve(null), PER_ITEM_TIMEOUT_MS)
+        ),
+      ]);
+
+      if (points) {
+        const patch = pricePointsToPatch(points);
+        if (isGraded(item.condition)) {
+          // Graded: refresh marketValue with AI graded estimate only when
+          // empty, so user-entered values are preserved between cycles.
+          if (item.marketValue == null) {
+            const graded = await Promise.race<any>([
+              getGradedEstimate({
+                name: item.name,
+                set: item.setName ?? "",
+                franchise: item.franchise,
+                rarity: item.rarity ?? "",
+                condition: item.condition ?? "",
+                rawMarketPrice: points.marketPrice,
+              }),
+              new Promise((resolve) =>
+                setTimeout(() => resolve(null), GRADED_TIMEOUT_MS)
+              ),
+            ]);
+            if (
+              graded &&
+              graded.marketValue != null &&
+              graded.marketValue > 0
+            ) {
+              (patch as any).marketValue = graded.marketValue;
+            }
+          }
+        } else {
+          // Raw cards track the live TCGplayer market price unless the
+          // value was pinned by hand in admin (then the manual price wins).
+          await applyFollowedPrice(item, points, patch as any);
+        }
+        await storage.updateInventory(item.id, patch as any);
+        return "updated";
+      } else if (isGraded(item.condition) && item.marketValue == null) {
+        // No TCGplayer match for a graded slab — pure AI fallback.
+        const graded = await Promise.race<any>([
+          getGradedEstimate({
+            name: item.name,
+            set: item.setName ?? "",
+            franchise: item.franchise,
+            rarity: item.rarity ?? "",
+            condition: item.condition ?? "",
+            rawMarketPrice: null,
+          }),
+          new Promise((resolve) =>
+            setTimeout(() => resolve(null), GRADED_TIMEOUT_MS)
+          ),
+        ]);
+        if (
+          graded &&
+          graded.marketValue != null &&
+          graded.marketValue > 0
+        ) {
+          await storage.updateInventory(item.id, {
+            marketValue: graded.marketValue,
+          } as any);
+          return "updated";
+        } else {
+          return "skipped";
+        }
+      } else {
+        return "skipped";
+      }
+    } catch (err) {
+      console.error(
+        "[autoPricing] item failed",
+        item.id,
+        (err as any)?.message ?? err
+      );
+      return "failed";
+    }
+}
+
 async function runAutoPricing(): Promise<void> {
   if (status.running) {
     console.log("[autoPricing] previous run still in progress — skipping");
@@ -94,98 +193,10 @@ async function runAutoPricing(): Promise<void> {
       // Items in a batch are processed in parallel so a full cycle fits
       // comfortably inside the 5-minute interval.
       await Promise.all(batch.map(async (item) => {
-        try {
-          const points = await Promise.race<any>([
-            (async () => {
-              let pid = item.tcgpProductId ?? null;
-              if (!pid) {
-                pid = await findTcgplayerProductId(
-                  item.name,
-                  item.setName ?? null,
-                  item.franchise,
-                  item.category
-                );
-              }
-              if (!pid) return null;
-              return await fetchTcgplayerPricePoints(pid);
-            })(),
-            new Promise((resolve) =>
-              setTimeout(() => resolve(null), PER_ITEM_TIMEOUT_MS)
-            ),
-          ]);
-
-          if (points) {
-            const patch = pricePointsToPatch(points);
-            if (isGraded(item.condition)) {
-              // Graded: refresh marketValue with AI graded estimate only when
-              // empty, so user-entered values are preserved between cycles.
-              if (item.marketValue == null) {
-                const graded = await Promise.race<any>([
-                  getGradedEstimate({
-                    name: item.name,
-                    set: item.setName ?? "",
-                    franchise: item.franchise,
-                    rarity: item.rarity ?? "",
-                    condition: item.condition ?? "",
-                    rawMarketPrice: points.marketPrice,
-                  }),
-                  new Promise((resolve) =>
-                    setTimeout(() => resolve(null), GRADED_TIMEOUT_MS)
-                  ),
-                ]);
-                if (
-                  graded &&
-                  graded.marketValue != null &&
-                  graded.marketValue > 0
-                ) {
-                  (patch as any).marketValue = graded.marketValue;
-                }
-              }
-            } else {
-              // Raw cards track the live TCGplayer market price unless the
-              // value was pinned by hand in admin (then the manual price wins).
-              await applyFollowedPrice(item, points, patch as any);
-            }
-            await storage.updateInventory(item.id, patch as any);
-            updated++;
-          } else if (isGraded(item.condition) && item.marketValue == null) {
-            // No TCGplayer match for a graded slab — pure AI fallback.
-            const graded = await Promise.race<any>([
-              getGradedEstimate({
-                name: item.name,
-                set: item.setName ?? "",
-                franchise: item.franchise,
-                rarity: item.rarity ?? "",
-                condition: item.condition ?? "",
-                rawMarketPrice: null,
-              }),
-              new Promise((resolve) =>
-                setTimeout(() => resolve(null), GRADED_TIMEOUT_MS)
-              ),
-            ]);
-            if (
-              graded &&
-              graded.marketValue != null &&
-              graded.marketValue > 0
-            ) {
-              await storage.updateInventory(item.id, {
-                marketValue: graded.marketValue,
-              } as any);
-              updated++;
-            } else {
-              skipped++;
-            }
-          } else {
-            skipped++;
-          }
-        } catch (err) {
-          console.error(
-            "[autoPricing] item failed",
-            item.id,
-            (err as any)?.message ?? err
-          );
-          failed++;
-        }
+        const r = await priceItem(item);
+        if (r === "updated") updated++;
+        else if (r === "skipped") skipped++;
+        else failed++;
       }));
 
       // Yield between batches so live requests stay responsive.
@@ -277,6 +288,60 @@ export function startAutoPricing(): void {
     },
     status.intervalMin * 60 * 1000
   );
+}
+
+// Targeted refresh for a known set of items — used right after a spreadsheet
+// import so new or renamed rows get their photo and TCGplayer price within
+// seconds instead of waiting for the next scheduled cycle. Runs in small
+// parallel batches and never throws.
+let targetedRunning = false;
+export async function refreshItemsNow(ids: string[]): Promise<{ priced: number; photos: number }> {
+  const unique = Array.from(new Set(ids));
+  let priced = 0;
+  let photos = 0;
+  if (unique.length === 0) return { priced, photos };
+  if (targetedRunning) {
+    console.log(`[autoPricing] targeted refresh already running — ${unique.length} item(s) will be picked up by the next cycle`);
+    return { priced, photos };
+  }
+  targetedRunning = true;
+  const startedAt = Date.now();
+  try {
+    console.log(`[autoPricing] targeted refresh — ${unique.length} item(s) from import`);
+    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+      const batchIds = unique.slice(i, i + BATCH_SIZE);
+      await Promise.all(batchIds.map(async (id) => {
+        try {
+          const item = await storage.getInventoryItem(id);
+          if (!item) return;
+          if (!item.imageUrl) {
+            const url = await Promise.race<string | null>([
+              fetchImageOnly(item),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), PER_ITEM_TIMEOUT_MS)),
+            ]);
+            if (url) {
+              await storage.updateInventory(id, { imageUrl: url } as any);
+              photos++;
+            }
+          }
+          if (item.status === "In Inventory" || item.status === "Listed") {
+            const fresh = (await storage.getInventoryItem(id)) ?? item;
+            if ((await priceItem(fresh)) === "updated") priced++;
+          }
+        } catch (err) {
+          console.error("[autoPricing] targeted item failed", id, (err as any)?.message ?? err);
+        }
+      }));
+      await sleep(SLEEP_BETWEEN_BATCHES_MS);
+    }
+    broadcast({ type: "inventory:bulk", payload: { source: "autoImport" } });
+    console.log(
+      `[autoPricing] targeted refresh done — prices updated=${priced} photos updated=${photos} | in ${Math.round((Date.now() - startedAt) / 1000)}s`
+    );
+  } finally {
+    targetedRunning = false;
+  }
+  return { priced, photos };
 }
 
 export function getAutoPricingStatus(): AutoPricingStatus {
