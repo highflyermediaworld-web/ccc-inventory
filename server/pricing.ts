@@ -578,7 +578,9 @@ const TCGPLAYER_PRODUCT_LINE_MAP: Record<string, string> = {
   "DBZ": "Dragon Ball Super CCG",
   "Yu-Gi-Oh": "YuGiOh",
   "Union Arena": "Union Arena",
-  "League of Legends": "Riftbound",
+  "League of Legends": "Riftbound: League of Legends Trading Card Game",
+  "Riftbound": "Riftbound: League of Legends Trading Card Game",
+  "Dragon Ball Super: Fusion World": "Dragon Ball Super: Fusion World",
 };
 // Some franchises span more than one TCGplayer product line (Dragon Ball has
 // the original CCG and Fusion World). Matching accepts any of them.
@@ -691,6 +693,7 @@ export const ONE_PIECE_SET_CODES: [RegExp, string][] = [
 const ONE_PIECE_SET_NAMES = ONE_PIECE_SET_CODES.map(([, n]) => n);
 
 export const SET_NAME_CORRECTIONS: [RegExp, string][] = [
+  [/\bBo+oster\b/gi, "Booster"],
   [/\bShinning\s+Fates\b/gi, "Shining Fates"],
   [/\bShinnying\s+Fates\b/gi, "Shining Fates"],
   [/\bPalden\s+Fates\b/gi, "Paldean Fates"],
@@ -707,6 +710,16 @@ export const SET_NAME_CORRECTIONS: [RegExp, string][] = [
   [/\bAscended\s+Heros\b/gi, "Ascended Heroes"],
   [/\bPhantasmal\s+Flame\b/gi, "Phantasmal Flames"],
   [/\bCelebrations?\s*\(\s*classic\s+collection\s*\)/gi, "Celebrations: Classic Collection"],
+  // Promo set names as TCGplayer spells them.
+  [/^\s*Sun\s*(&|and)\s*Moon\s+Promos?\s*$/gi, "SM Promos"],
+  [/^\s*Sword\s*(&|and)\s*Shield\s+Promos?\s*$/gi, "SWSH: Sword & Shield Promo Cards"],
+  [/^\s*Scarlet\s*(&|and)\s*Violet\s+Promos?\s*$/gi, "SV: Scarlet & Violet Promo Cards"],
+  [/^\s*XY\s+Promos?\s*$/gi, "XY Promos"],
+  [/^\s*Black\s*(&|and)\s*White\s+Promos?\s*$/gi, "Black and White Promos"],
+  // Japanese Gym-era sets carry the Japanese names on TCGplayer's Pokemon Japan line.
+  [/^\s*Gym\s+Heroes\s*\(\s*Japanese\s*\)\s*$/gi, "Leaders' Stadium"],
+  [/^\s*Gym\s+Challenge\s*\(\s*Japanese\s*\)\s*$/gi, "Challenge from the Darkness"],
+  [/^\s*Terastal\s+Festival\s+ex\s*$/gi, "SV8a: Terastal Fest ex"],
   // Japanese sets -> the English set that reprints the same cards. TCGplayer
   // only carries the English printings, and the artwork is identical.
   [/\bNight\s+Wanderer\b(\s*\(SV6a\))?/gi, "Shrouded Fable"],
@@ -970,15 +983,33 @@ function sharesCardNumber(query: string, candidate: string): boolean {
 }
 
 // Find the best matching TCGplayer productId for an item. Returns null on no match.
+// Pokémon cards that aren't in the English catalogue (Japanese-only sets and
+// numbers like 224/187) get a second pass against TCGplayer's "Pokemon Japan"
+// product line.
 export async function findTcgplayerProductId(
   rawName: string,
   setHint: string | null,
   franchise: string,
   category?: string | null
 ): Promise<number | null> {
+  const main = await findTcgplayerProductIdInLines(rawName, setHint, franchise, category, null);
+  if (main) return main;
+  if (productLineFor(franchise) === "Pokemon") {
+    return findTcgplayerProductIdInLines(rawName, setHint, franchise, category, ["pokemon japan"]);
+  }
+  return null;
+}
+
+async function findTcgplayerProductIdInLines(
+  rawName: string,
+  setHint: string | null,
+  franchise: string,
+  category: string | null | undefined,
+  linesOverride: string[] | null
+): Promise<number | null> {
   if (!rawName) return null;
   try {
-    const productLines = productLinesFor(franchise).map((l) => l.toLowerCase());
+    const productLines = linesOverride ?? productLinesFor(franchise).map((l) => l.toLowerCase());
     const productLine = productLines[0] ?? null;
     const embedded = extractEmbeddedSet(rawName);
     const nameForSearch = correctSpelling(embedded ? embedded.name : rawName);
@@ -1025,12 +1056,24 @@ export async function findTcgplayerProductId(
       const data: any = await res.json();
       return data?.results?.[0]?.results ?? [];
     };
+    if (process.env.DEBUG_TCGP) console.log(`[tcgp:debug] queries base=${JSON.stringify(baseQuery)} name=${JSON.stringify(expandedName)} raw=${JSON.stringify(nameForSearch)} lines=${JSON.stringify(productLines)}`);
     let items: any[] = variantHint ? await runSearch(`${baseQuery} ${variantHint}`) : [];
     if (!items.length) items = await runSearch(baseQuery);
     // Nothing? Drop the set hint, then try the simplified card name.
     let scoreName = expandedName;
     let scoreSet = cleanSet || "";
+    // TCGplayer's search is order-sensitive for some lines ("Arise! Spiritforged"
+    // hits, "Spiritforged Arise!" doesn't) — try name-first before dropping the set.
+    if (!items.length && cleanSet) items = await runSearch(`${expandedName} ${cleanSet}`);
     if (!items.length && cleanSet) items = await runSearch(expandedName);
+    if (!items.length && nameForSearch !== expandedName) items = await runSearch(nameForSearch);
+    // Lines whose product names don't carry the collector number (Riftbound,
+    // One Piece): search the bare name, number-free.
+    const bareName = expandedName.replace(/\s+-\s+[A-Z]{0,3}\d{1,3}(\s*\/\s*\d{1,3})?\s*$/i, "").trim();
+    if (!items.length && bareName && bareName !== expandedName) {
+      items = await runSearch(cleanSet ? `${bareName} ${cleanSet}` : bareName);
+      if (!items.length && cleanSet) items = await runSearch(bareName);
+    }
     // Some lines (Union Arena, Yu-Gi-Oh) never list a "Sleeved" SKU — the
     // plain booster pack is the same product in different packaging.
     if (!items.length && /\bSleeved\b/i.test(expandedName)) {

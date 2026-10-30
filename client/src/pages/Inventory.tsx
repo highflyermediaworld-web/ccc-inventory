@@ -783,8 +783,10 @@ export default function InventoryPage() {
                       />
                     </td>
                     <td className="px-3 py-2.5 text-xs text-muted-foreground font-mono whitespace-nowrap">{i.id}</td>
-                    <td className="px-3 py-2.5 max-w-[140px]">
-                      <FranchiseBadge franchise={i.franchise} />
+                    <td className="px-3 py-2.5">
+                      <div className="w-[7.5rem] sm:w-[9.5rem] overflow-hidden">
+                        <FranchiseBadge franchise={i.franchise} />
+                      </div>
                     </td>
                     <td className="px-3 py-2.5"><CategoryBadge category={i.category} /></td>
                     <td className="px-3 py-2 max-w-[180px] text-muted-foreground" onClick={(e) => e.stopPropagation()} title={i.setName}>

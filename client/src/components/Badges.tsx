@@ -68,13 +68,20 @@ export function FranchiseBadge({ franchise }: { franchise: string }) {
     "Magic The Gathering": { code: "MTG", color: "bg-orange-500" },
     DBZ: { code: "DBZ", color: "bg-blue-500" },
     "League of Legends": { code: "LOL", color: "bg-cyan-500" },
+    Riftbound: { code: "RB", color: "bg-cyan-500" },
     "Union Arena": { code: "UA", color: "bg-fuchsia-500" },
+    "Dragon Ball Super: Fusion World": { code: "DBS", color: "bg-blue-500" },
+    "Yu-Gi-Oh": { code: "YGO", color: "bg-violet-500" },
+    Digimon: { code: "DIGI", color: "bg-sky-500" },
+    Gundam: { code: "GUN", color: "bg-rose-500" },
   };
   const info = map[franchise] ?? { code: franchise.slice(0, 3).toUpperCase(), color: "bg-muted" };
+  // max-w-full + min-w-0 so long names ("Dragon Ball Super: Fusion World")
+  // clip inside a sized parent instead of running into the next column.
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-medium">
+    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs font-medium align-bottom" title={franchise}>
       <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", info.color)} />
-      <span className="truncate">{franchise}</span>
+      <span className="truncate min-w-0">{franchise}</span>
     </span>
   );
 }
