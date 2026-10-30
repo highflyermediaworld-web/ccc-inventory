@@ -304,7 +304,7 @@ export function registerStripeCheckoutRoutes(app: Express) {
       const upload = (purpose: "business_icon" | "business_logo") =>
         client().files.create({ purpose, file: { data, name: "chris-collects-co.jpg", type: "application/octet-stream" } });
       const [icon, logo] = await Promise.all([upload("business_icon"), upload("business_logo")]);
-      const me = await client().accounts.retrieve();
+      const me = await (client().accounts as any).retrieve();
       const updated = await client().accounts.update(me.id, {
         settings: { branding: { icon: icon.id, logo: logo.id } },
       } as any);
