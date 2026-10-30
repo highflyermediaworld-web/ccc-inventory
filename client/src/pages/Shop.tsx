@@ -2330,7 +2330,8 @@ function CartDrawer({
   const okRows = rows.filter((r) => r.available);
   const problemRows = rows.filter((r) => !r.available);
   const subtotal = okRows.reduce((n, r) => n + r.lineTotal, 0);
-  const taxEstimate = Math.round(subtotal * taxPct) / 100;
+  // Stripe taxes each line separately, so estimate the same way to match the receipt.
+  const taxEstimate = okRows.reduce((n, r) => n + Math.round(r.lineTotal * taxPct) / 100, 0);
   const count = okRows.reduce((n, r) => n + r.qty, 0);
   const belowMinimum = subtotal > 0 && subtotal < CARD_MINIMUM;
   const listingsReady = listings.length > 0;
