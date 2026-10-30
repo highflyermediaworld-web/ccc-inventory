@@ -12,8 +12,6 @@ import { requireAuth } from "./auth";
 import { storage } from "./storage";
 import { broadcast } from "./realtime";
 import type { Inventory } from "@shared/schema";
-import * as fs from "node:fs";
-import * as path from "node:path";
 
 const SECRET = process.env.STRIPE_SECRET_KEY || "";
 // California sales tax, as a percentage. Override with SALES_TAX_PERCENT.
@@ -287,33 +285,6 @@ export function startPaidSessionSweep(intervalMin = 10): void {
 
 export function registerStripeCheckoutRoutes(app: Express) {
   startPaidSessionSweep();
-
-  // Admin: push the shop logo into the Stripe account's branding so receipts,
-  // Checkout and emails carry it. Uploads client/public/logo.jpeg (square) as
-  // both icon and logo.
-  app.post("/api/shop/checkout/branding", requireAuth, async (_req, res) => {
-    try {
-      if (!isStripeEnabled()) return res.status(503).json({ message: "Stripe isn't configured." });
-      const candidates = [
-        path.resolve(process.cwd(), "dist/public/logo.jpeg"),
-        path.resolve(process.cwd(), "client/public/logo.jpeg"),
-      ];
-      const file = candidates.find((p) => fs.existsSync(p));
-      if (!file) return res.status(404).json({ message: "logo.jpeg not found on the server." });
-      const data = fs.readFileSync(file);
-      const upload = (purpose: "business_icon" | "business_logo") =>
-        client().files.create({ purpose, file: { data, name: "chris-collects-co.jpg", type: "application/octet-stream" } });
-      const [icon, logo] = await Promise.all([upload("business_icon"), upload("business_logo")]);
-      const me = await (client().accounts as any).retrieve();
-      const updated = await client().accounts.update(me.id, {
-        settings: { branding: { icon: icon.id, logo: logo.id } },
-      } as any);
-      res.json({ ok: true, account: updated.id, branding: updated.settings?.branding });
-    } catch (err: any) {
-      console.error("[stripe] branding error:", err?.message ?? err);
-      res.status(500).json({ message: err?.message || "Branding update failed" });
-    }
-  });
 
   // Admin: run the missed-order sweep on demand.
   app.post("/api/shop/checkout/sweep", requireAuth, async (_req, res) => {
