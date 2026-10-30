@@ -8,6 +8,7 @@
 // session was paid and records the sale exactly once.
 import Stripe from "stripe";
 import type { Express, Request } from "express";
+import { requireAuth } from "./auth";
 import { storage } from "./storage";
 import { broadcast } from "./realtime";
 import type { Inventory } from "@shared/schema";
@@ -78,7 +79,222 @@ async function taxRateId(): Promise<string | null> {
   return rate.id;
 }
 
+
+export type PaidSummary = {
+  ok: true;
+  items: { itemId: string; itemName: string; setName: string | null; imageUrl: string | null; quantity: number; unitPrice: number | null }[];
+  itemId: string;
+  itemName: string;
+  setName: string | null;
+  imageUrl: string | null;
+  quantity: number;
+  subtotal: number;
+  tax: number;
+  total: number;
+  email: string | null;
+  name: string | null;
+  alreadyRecorded?: boolean;
+};
+
+/**
+ * Record a paid Checkout Session exactly once: lower stock (or mark Sold),
+ * write a Sell transaction and an Accepted Buy request per line. Used by the
+ * success page confirm and by the background sweep, so a buyer who closes the
+ * Stripe tab without coming back still gets their order recorded.
+ */
+export async function recordPaidSession(session: Stripe.Checkout.Session): Promise<PaidSummary> {
+  const sessionId = session.id;
+  // Parse the manifest ("PK-001x1@389.99,OP-012x2@0.41"); fall back to the
+  // legacy single-item metadata for sessions created before carts.
+  type Line = { itemId: string; quantity: number; unit: number | null };
+  const parsedLines: Line[] = String(session.metadata?.items ?? "")
+    .split(",")
+    .map((s) => /^(.+?)x(\d+)(?:@([\d.]+))?$/.exec(s.trim()))
+    .filter((m): m is RegExpExecArray => !!m)
+    .map((m) => ({ itemId: m[1], quantity: Math.max(1, Number(m[2]) || 1), unit: m[3] ? Number(m[3]) : null }));
+  if (!parsedLines.length && session.metadata?.itemId) {
+    parsedLines.push({
+      itemId: session.metadata.itemId,
+      quantity: Math.max(1, Number(session.metadata?.quantity ?? 1) || 1),
+      unit: Number(session.metadata?.unitPrice) || null,
+    });
+  }
+  const total = (session.amount_total ?? 0) / 100;
+  const subtotal = (session.amount_subtotal ?? 0) / 100;
+  const taxAmount = (session.total_details?.amount_tax ?? 0) / 100;
+  const details = session.customer_details;
+
+  const resolved = await Promise.all(
+    parsedLines.map(async (l) => ({ ...l, item: await storage.getInventoryItem(l.itemId) }))
+  );
+  const summaryItems = resolved.map((l) => ({
+    itemId: l.itemId,
+    itemName: l.item?.name ?? l.itemId,
+    setName: l.item?.setName ?? null,
+    imageUrl: l.item?.imageUrl ?? null,
+    quantity: l.quantity,
+    unitPrice: l.unit ?? (l.item ? shopPrice(l.item) : null),
+  }));
+  const first = summaryItems[0];
+  const summary: PaidSummary = {
+    ok: true,
+    items: summaryItems,
+    // Legacy single-item fields so older success pages keep working.
+    itemId: first?.itemId ?? "",
+    itemName: summaryItems.length > 1 ? `${summaryItems.length} items` : (first?.itemName ?? "Your order"),
+    setName: summaryItems.length > 1 ? null : (first?.setName ?? null),
+    imageUrl: first?.imageUrl ?? null,
+    quantity: summaryItems.reduce((n, i) => n + i.quantity, 0),
+    subtotal,
+    tax: taxAmount,
+    total,
+    email: details?.email ?? session.customer_email ?? null,
+    name: details?.name ?? null,
+  };
+
+  const doneKey = `stripe_session_${sessionId}`;
+  if (await storage.getSetting(doneKey)) return { ...summary, alreadyRecorded: true };
+  await storage.setSetting(doneKey, String(Date.now()));
+
+  const addr = details?.address;
+  const shipTo = addr
+    ? [details?.name, addr.line1, addr.line2, `${addr.city ?? ""}, ${addr.state ?? ""} ${addr.postal_code ?? ""}`.trim()]
+        .filter(Boolean)
+        .join(", ")
+    : null;
+  const orderLabel = resolved.length > 1 ? ` · ${resolved.length}-item order` : "";
+  let touchedInventory = false;
+  for (const l of resolved) {
+    const item = l.item;
+    if (!item) {
+      console.warn(`[stripe] paid session ${sessionId} references unknown item ${l.itemId}`);
+      continue;
+    }
+    const unit = l.unit ?? shopPrice(item) ?? 0;
+    const lineSubtotal = Math.round(unit * l.quantity * 100) / 100;
+    // Tax is split across lines in proportion to their subtotal.
+    const lineTax = subtotal > 0 ? Math.round((taxAmount * lineSubtotal / subtotal) * 100) / 100 : 0;
+    const remaining = (item.qty ?? 0) - l.quantity;
+    const soldOut = remaining <= 0;
+    const updated = await storage.updateInventory(item.id, soldOut
+      ? ({ status: "Sold", soldPrice: lineSubtotal, qty: 0 } as any)
+      : ({ qty: remaining } as any));
+    const costShare = soldOut ? (item.totalCost ?? 0) : ((item.costPerUnit ?? 0) * l.quantity);
+    await storage.createTransaction({
+      type: "Sell",
+      itemId: item.id,
+      itemName: `${item.setName} \u2014 ${item.name}${l.quantity > 1 ? ` \u00d7${l.quantity}` : ""}`,
+      counterparty: details?.name || details?.email || "Online order",
+      price: lineSubtotal,
+      pnl: Math.round((lineSubtotal - costShare) * 100) / 100,
+      notes: `Paid via ${PAYMENT_LABEL}${orderLabel} \u00b7 tax ${lineTax.toFixed(2)} \u00b7 order total ${total.toFixed(2)} \u00b7 ${sessionId}${shipTo ? ` \u00b7 ship to ${shipTo}` : ""}`,
+    } as any);
+    await storage.createCustomerRequest({
+      type: "Buy",
+      itemId: item.id,
+      customerName: details?.name || "Online buyer",
+      customerEmail: details?.email || session.customer_email || "unknown@stripe",
+      customerPhone: details?.phone ?? null,
+      preferredContact: "Email",
+      quantity: l.quantity,
+      offerPrice: unit,
+      paymentMethod: PAYMENT_LABEL,
+      message: `PAID online${orderLabel} \u2014 ${total.toFixed(2)} order total (${taxAmount.toFixed(2)} tax).${shipTo ? ` Ship to: ${shipTo}.` : ""} Stripe ${sessionId}`,
+      status: "Accepted",
+    } as any);
+    if (updated) broadcast({ type: "inventory:update", payload: updated });
+    broadcast({ type: "customerRequest:new", payload: { itemId: item.id } });
+    touchedInventory = true;
+    console.log(`[stripe] recorded sale ${item.id} \u00d7${l.quantity} line ${lineSubtotal.toFixed(2)} (${sessionId})`);
+  }
+  if (touchedInventory) broadcast({ type: "transactions:update", payload: {} });
+  await sendReceipt(session, summary.email).catch((err: any) =>
+    console.warn(`[stripe] receipt email failed for ${sessionId}:`, err?.message ?? err)
+  );
+  return summary;
+}
+
+/**
+ * Ask Stripe to email the buyer a receipt. Stripe only auto-sends receipts
+ * when "Email customers about successful payments" is on in the account
+ * settings; setting receipt_email on the charge sends one regardless.
+ */
+async function sendReceipt(session: Stripe.Checkout.Session, email: string | null): Promise<void> {
+  if (!email || !/\S+@\S+\.\S+/.test(email)) return;
+  const piId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
+  if (!piId) return;
+  const pi = await client().paymentIntents.retrieve(piId);
+  const chargeId = typeof pi.latest_charge === "string" ? pi.latest_charge : pi.latest_charge?.id;
+  if (!chargeId) return;
+  const charge = await client().charges.retrieve(chargeId);
+  if (charge.receipt_email) return; // already sent
+  await client().charges.update(chargeId, { receipt_email: email });
+  console.log(`[stripe] receipt emailed to ${email} (${session.id})`);
+}
+
+
+// ---- safety net: paid sessions the browser never confirmed ----
+// Stripe only redirects to our success page if the buyer clicks through. If
+// they close the tab (or the redirect fails), the sale would otherwise never
+// hit inventory. Sweep recent paid sessions and record any we haven't seen.
+const SWEEP_LOOKBACK_SEC = 7 * 24 * 3600;
+let sweeping = false;
+export async function sweepPaidSessions(): Promise<{ checked: number; recorded: number }> {
+  if (!isStripeEnabled() || sweeping) return { checked: 0, recorded: 0 };
+  sweeping = true;
+  let checked = 0;
+  let recorded = 0;
+  try {
+    const since = Math.floor(Date.now() / 1000) - SWEEP_LOOKBACK_SEC;
+    for await (const session of client().checkout.sessions.list({
+      status: "complete",
+      created: { gte: since },
+      limit: 100,
+      expand: ["data.customer_details"],
+    })) {
+      checked += 1;
+      if (session.payment_status !== "paid") continue;
+      if (await storage.getSetting(`stripe_session_${session.id}`)) continue;
+      try {
+        const summary = await recordPaidSession(session);
+        if (!summary.alreadyRecorded) {
+          recorded += 1;
+          console.log(`[stripe] sweep recorded missed order ${session.id} (${summary.total.toFixed(2)}, ${summary.items.length} line${summary.items.length === 1 ? "" : "s"})`);
+        }
+      } catch (err: any) {
+        console.error(`[stripe] sweep failed for ${session.id}:`, err?.message ?? err);
+      }
+    }
+  } catch (err: any) {
+    console.error("[stripe] sweep error:", err?.message ?? err);
+  } finally {
+    sweeping = false;
+  }
+  return { checked, recorded };
+}
+
+let sweepTimer: NodeJS.Timeout | null = null;
+export function startPaidSessionSweep(intervalMin = 10): void {
+  if (!isStripeEnabled() || sweepTimer) return;
+  // First pass shortly after boot, then on an interval.
+  setTimeout(() => void sweepPaidSessions(), 20_000);
+  sweepTimer = setInterval(() => void sweepPaidSessions(), intervalMin * 60_000);
+  sweepTimer.unref?.();
+  console.log(`[stripe] paid-order sweep every ${intervalMin} min`);
+}
+
 export function registerStripeCheckoutRoutes(app: Express) {
+  startPaidSessionSweep();
+
+  // Admin: run the missed-order sweep on demand.
+  app.post("/api/shop/checkout/sweep", requireAuth, async (_req, res) => {
+    try {
+      res.json(await sweepPaidSessions());
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Sweep failed" });
+    }
+  });
+
   app.get("/api/shop/checkout/config", (_req, res) => {
     res.json({ enabled: isStripeEnabled(), taxPercent: SALES_TAX_PERCENT, label: PAYMENT_LABEL });
   });
@@ -185,110 +401,7 @@ export function registerStripeCheckoutRoutes(app: Express) {
         return res.status(402).json({ ok: false, status: session.payment_status, message: "Payment not completed." });
       }
 
-      // Parse the manifest ("PK-001x1@389.99,OP-012x2@0.41"); fall back to the
-      // legacy single-item metadata for sessions created before carts.
-      type Line = { itemId: string; quantity: number; unit: number | null };
-      const parsedLines: Line[] = String(session.metadata?.items ?? "")
-        .split(",")
-        .map((s) => /^(.+?)x(\d+)(?:@([\d.]+))?$/.exec(s.trim()))
-        .filter((m): m is RegExpExecArray => !!m)
-        .map((m) => ({ itemId: m[1], quantity: Math.max(1, Number(m[2]) || 1), unit: m[3] ? Number(m[3]) : null }));
-      if (!parsedLines.length && session.metadata?.itemId) {
-        parsedLines.push({
-          itemId: session.metadata.itemId,
-          quantity: Math.max(1, Number(session.metadata?.quantity ?? 1) || 1),
-          unit: Number(session.metadata?.unitPrice) || null,
-        });
-      }
-      const total = (session.amount_total ?? 0) / 100;
-      const subtotal = (session.amount_subtotal ?? 0) / 100;
-      const taxAmount = (session.total_details?.amount_tax ?? 0) / 100;
-      const details = session.customer_details;
-
-      const resolved = await Promise.all(
-        parsedLines.map(async (l) => ({ ...l, item: await storage.getInventoryItem(l.itemId) }))
-      );
-      const summaryItems = resolved.map((l) => ({
-        itemId: l.itemId,
-        itemName: l.item?.name ?? l.itemId,
-        setName: l.item?.setName ?? null,
-        imageUrl: l.item?.imageUrl ?? null,
-        quantity: l.quantity,
-        unitPrice: l.unit ?? (l.item ? shopPrice(l.item) : null),
-      }));
-      const first = summaryItems[0];
-      const summary = {
-        ok: true,
-        items: summaryItems,
-        // Legacy single-item fields so older success pages keep working.
-        itemId: first?.itemId ?? "",
-        itemName: summaryItems.length > 1 ? `${summaryItems.length} items` : (first?.itemName ?? "Your order"),
-        setName: summaryItems.length > 1 ? null : (first?.setName ?? null),
-        imageUrl: first?.imageUrl ?? null,
-        quantity: summaryItems.reduce((n, i) => n + i.quantity, 0),
-        subtotal,
-        tax: taxAmount,
-        total,
-        email: details?.email ?? session.customer_email ?? null,
-        name: details?.name ?? null,
-      };
-
-      const doneKey = `stripe_session_${sessionId}`;
-      if (await storage.getSetting(doneKey)) return res.json({ ...summary, alreadyRecorded: true });
-      await storage.setSetting(doneKey, String(Date.now()));
-
-      const addr = details?.address;
-      const shipTo = addr
-        ? [details?.name, addr.line1, addr.line2, `${addr.city ?? ""}, ${addr.state ?? ""} ${addr.postal_code ?? ""}`.trim()]
-            .filter(Boolean)
-            .join(", ")
-        : null;
-      const orderLabel = resolved.length > 1 ? ` · ${resolved.length}-item order` : "";
-      let touchedInventory = false;
-      for (const l of resolved) {
-        const item = l.item;
-        if (!item) {
-          console.warn(`[stripe] paid session ${sessionId} references unknown item ${l.itemId}`);
-          continue;
-        }
-        const unit = l.unit ?? shopPrice(item) ?? 0;
-        const lineSubtotal = Math.round(unit * l.quantity * 100) / 100;
-        // Tax is split across lines in proportion to their subtotal.
-        const lineTax = subtotal > 0 ? Math.round((taxAmount * lineSubtotal / subtotal) * 100) / 100 : 0;
-        const remaining = (item.qty ?? 0) - l.quantity;
-        const soldOut = remaining <= 0;
-        const updated = await storage.updateInventory(item.id, soldOut
-          ? ({ status: "Sold", soldPrice: lineSubtotal, qty: 0 } as any)
-          : ({ qty: remaining } as any));
-        const costShare = soldOut ? (item.totalCost ?? 0) : ((item.costPerUnit ?? 0) * l.quantity);
-        await storage.createTransaction({
-          type: "Sell",
-          itemId: item.id,
-          itemName: `${item.setName} \u2014 ${item.name}${l.quantity > 1 ? ` \u00d7${l.quantity}` : ""}`,
-          counterparty: details?.name || details?.email || "Online order",
-          price: lineSubtotal,
-          pnl: Math.round((lineSubtotal - costShare) * 100) / 100,
-          notes: `Paid via ${PAYMENT_LABEL}${orderLabel} \u00b7 tax ${lineTax.toFixed(2)} \u00b7 order total ${total.toFixed(2)} \u00b7 ${sessionId}${shipTo ? ` \u00b7 ship to ${shipTo}` : ""}`,
-        } as any);
-        await storage.createCustomerRequest({
-          type: "Buy",
-          itemId: item.id,
-          customerName: details?.name || "Online buyer",
-          customerEmail: details?.email || session.customer_email || "unknown@stripe",
-          customerPhone: details?.phone ?? null,
-          preferredContact: "Email",
-          quantity: l.quantity,
-          offerPrice: unit,
-          paymentMethod: PAYMENT_LABEL,
-          message: `PAID online${orderLabel} \u2014 ${total.toFixed(2)} order total (${taxAmount.toFixed(2)} tax).${shipTo ? ` Ship to: ${shipTo}.` : ""} Stripe ${sessionId}`,
-          status: "Accepted",
-        } as any);
-        if (updated) broadcast({ type: "inventory:update", payload: updated });
-        broadcast({ type: "customerRequest:new", payload: { itemId: item.id } });
-        touchedInventory = true;
-        console.log(`[stripe] recorded sale ${item.id} \u00d7${l.quantity} line ${lineSubtotal.toFixed(2)} (${sessionId})`);
-      }
-      if (touchedInventory) broadcast({ type: "transactions:update", payload: {} });
+      const summary = await recordPaidSession(session);
       res.json(summary);
     } catch (err: any) {
       console.error("[stripe] confirm error:", err?.message ?? err);

@@ -251,6 +251,57 @@ export function stripGroupSuffix(name: string, setName: string | null | undefine
 
 // Fields that identify *which* card a row is. If any of these change on an
 // existing item, its looked-up photo and TCGplayer match are stale.
+// ---- stock reconciliation between the sheet and online sales ----
+const SHEET_STOCK_KEY = "autoImport_sheetStock";
+const SOLD_STATUSES = new Set(["Sold", "Traded Out", "Traded"]);
+
+function stockSignature(it: Pick<InsertInventory, "qty" | "status">): string {
+  return `${it.qty ?? 1}|${it.status ?? "In Inventory"}`;
+}
+
+async function loadSheetStockSnapshot(): Promise<Record<string, string>> {
+  try {
+    const raw = await storage.getSetting(SHEET_STOCK_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveSheetStockSnapshot(snap: Record<string, string>): Promise<void> {
+  try {
+    await storage.setSetting(SHEET_STOCK_KEY, JSON.stringify(snap));
+  } catch (err) {
+    console.warn("[autoImport] couldn't save sheet stock snapshot", err);
+  }
+}
+
+/**
+ * Decide whether the app's qty/status should survive this import.
+ *  - Sheet row unchanged since the last import → the sheet has nothing new to
+ *    say about stock; keep the app's numbers (an online sale lowered them).
+ *  - Sheet row changed → Christian updated it; the sheet wins.
+ *  - No snapshot yet (first run after this logic shipped) → keep the app's
+ *    numbers only when they look like a sale happened in the app: fewer on
+ *    hand than the sheet, or app says Sold while the sheet still says in stock.
+ */
+function keepAppStock(
+  cur: { qty: number | null; status: string | null; soldPrice?: number | null },
+  it: Pick<InsertInventory, "qty" | "status">,
+  prevSig: string | undefined
+): boolean {
+  const sig = stockSignature(it);
+  if (prevSig !== undefined) return prevSig === sig;
+  const sheetQty = it.qty ?? 1;
+  const appQty = cur.qty ?? 0;
+  const sheetSold = SOLD_STATUSES.has(it.status ?? "");
+  const appSold = SOLD_STATUSES.has(cur.status ?? "");
+  if (appSold && !sheetSold && cur.soldPrice != null) return true;
+  if (appQty < sheetQty && !sheetSold) return true;
+  return false;
+}
+
 const IDENTITY_FIELDS = ["name", "setName", "franchise", "category", "rarity", "condition"] as const;
 
 function same(a: unknown, b: unknown): boolean {
@@ -439,6 +490,8 @@ export async function runAutoImport(opts: { wipe?: boolean } = {}): Promise<Auto
 
       const retry = <T,>(fn: () => Promise<T>) =>
         withDbRetry(fn, { attempts: 4, label: "autoImport" });
+      const nextStock: Record<string, string> = {};
+      let stockKept = 0;
 
       if (opts.wipe) {
         await retry(() => storage.replaceInventory(items));
@@ -447,9 +500,17 @@ export async function runAutoImport(opts: { wipe?: boolean } = {}): Promise<Auto
       } else {
         const existing = await retry(() => storage.listInventory());
         const existingById = new Map(existing.map((r) => [r.id, r]));
+        // Stock (qty/status) is shared between the sheet and the shop: online
+        // sales lower qty / mark Sold in the app, while Christian edits the
+        // sheet by hand. Remember what the sheet said last time so we only
+        // apply the sheet's stock when the sheet itself changed — otherwise a
+        // card sold online would pop back into stock on the next import.
+        const prevStock = await loadSheetStockSnapshot();
         for (const it of items) {
           try {
             const cur = existingById.get(it.id);
+            const stockSig = stockSignature(it);
+            nextStock[it.id] = stockSig;
             if (cur) {
               // Only write the columns that actually differ, so a 700-row
               // sheet that hasn't changed costs zero database writes.
@@ -458,6 +519,11 @@ export async function runAutoImport(opts: { wipe?: boolean } = {}): Promise<Auto
               for (const [k, v] of Object.entries(normalized)) {
                 if (k === "id") continue;
                 if (!same(v, (cur as any)[k])) patch[k] = v;
+              }
+              if (("qty" in patch || "status" in patch) && keepAppStock(cur, it, prevStock[it.id])) {
+                delete patch.qty;
+                delete patch.status;
+                stockKept += 1;
               }
               const identityChanged = IDENTITY_FIELDS.some((f) => f in patch);
               if (identityChanged) {
@@ -493,6 +559,11 @@ export async function runAutoImport(opts: { wipe?: boolean } = {}): Promise<Auto
             console.warn(`[autoImport] row skipped (${it.id})`, err);
           }
         }
+      }
+
+      if (!opts.wipe) {
+        await saveSheetStockSnapshot(nextStock);
+        if (stockKept) console.log(`[autoImport] kept app stock for ${stockKept} item${stockKept === 1 ? "" : "s"} sold through the shop (sheet unchanged)`);
       }
 
       status.lastRunOk = true;
