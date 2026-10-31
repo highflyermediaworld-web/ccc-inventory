@@ -1,5 +1,18 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type { Transaction } from "@shared/schema";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,7 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatCurrency, formatDateTime, pnlClass } from "@/lib/format";
-import { Download } from "lucide-react";
+import { Download, Trash2 } from "lucide-react";
 
 export default function TransactionsPage() {
   const { data: txs = [], isLoading } = useQuery<Transaction[]>({
@@ -23,6 +36,29 @@ export default function TransactionsPage() {
   const [type, setType] = useState<string>("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const { toast } = useToast();
+  const [pendingDelete, setPendingDelete] = useState<Transaction | null>(null);
+  const [restock, setRestock] = useState(true);
+  const deleteMutation = useMutation({
+    mutationFn: async ({ id, restock }: { id: number; restock: boolean }) => {
+      const res = await apiRequest("DELETE", `/api/transactions/${id}?restock=${restock ? 1 : 0}`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/listings"] });
+      toast({
+        title: "Transaction deleted",
+        description: data?.restocked
+          ? `${data.restocked.id} is back in inventory (qty ${data.restocked.qty}).`
+          : "Removed from the ledger. Inventory was left as is.",
+      });
+      setPendingDelete(null);
+    },
+    onError: (err: any) => toast({ title: "Couldn't delete", description: err?.message || "Try again", variant: "destructive" }),
+  });
+  const canRestock = (t: Transaction | null) => !!t && t.type === "Sell" && !!t.itemId;
 
   const filtered = useMemo(() => {
     let r = txs;
@@ -171,15 +207,16 @@ export default function TransactionsPage() {
                 <th className="text-right font-semibold px-4 py-2.5">Price</th>
                 <th className="text-right font-semibold px-4 py-2.5">P/L</th>
                 <th className="text-left font-semibold px-4 py-2.5">Notes</th>
+                <th className="px-2 py-2.5"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">Loading…</td></tr>
+                <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">Loading…</td></tr>
               )}
               {!isLoading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="p-12 text-center text-muted-foreground text-sm">
+                  <td colSpan={8} className="p-12 text-center text-muted-foreground text-sm">
                     No transactions yet. Sell an item or buy from the marketplace to start the ledger.
                   </td>
                 </tr>
@@ -213,8 +250,19 @@ export default function TransactionsPage() {
                   <td className={`px-4 py-2.5 text-right tnum font-semibold ${pnlClass(t.pnl)}`}>
                     {t.pnl != null ? (t.pnl >= 0 ? "+" : "") + formatCurrency(t.pnl) : "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-[200px] truncate">
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-[200px] truncate" title={t.notes ?? undefined}>
                     {t.notes ?? "—"}
+                  </td>
+                  <td className="px-2 py-2.5 text-right">
+                    <button
+                      type="button"
+                      onClick={() => { setRestock(canRestock(t)); setPendingDelete(t); }}
+                      className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-destructive"
+                      aria-label={`Delete transaction ${t.id}`}
+                      data-testid={`button-delete-tx-${t.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -222,6 +270,42 @@ export default function TransactionsPage() {
           </table>
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(o) => !o && setPendingDelete(null)}>
+        <AlertDialogContent data-testid="dialog-delete-tx">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this transaction?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete && (
+                <>
+                  {pendingDelete.type} · {pendingDelete.itemName ?? pendingDelete.itemId ?? "—"} · {formatCurrency(pendingDelete.price)} on {formatDateTime(pendingDelete.date)}.
+                  {" "}This removes it from the ledger and your totals. It can't be undone.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {canRestock(pendingDelete) && (
+            <label className="flex items-start gap-3 border border-border p-3 text-sm cursor-pointer">
+              <Checkbox checked={restock} onCheckedChange={(v) => setRestock(v === true)} className="mt-0.5" data-testid="checkbox-restock" />
+              <span>
+                <span className="font-semibold">Put {pendingDelete?.itemId} back in inventory</span>
+                <span className="block text-xs text-muted-foreground mt-0.5">Adds one back to quantity and clears Sold. Use this when the sale was a mistake or a test.</span>
+              </span>
+            </label>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteMutation.isPending}
+              onClick={(e) => { e.preventDefault(); if (pendingDelete) deleteMutation.mutate({ id: pendingDelete.id, restock: canRestock(pendingDelete) && restock }); }}
+              data-testid="button-confirm-delete-tx"
+            >
+              {deleteMutation.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

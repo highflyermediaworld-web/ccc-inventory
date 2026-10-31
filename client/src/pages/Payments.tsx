@@ -28,6 +28,8 @@ import {
   QrCode,
 } from "lucide-react";
 import { PayCodeDialog } from "@/components/PayCodeDialog";
+import { CardChargeDialog } from "@/components/CardChargeDialog";
+import { CreditCard } from "lucide-react";
 import { paymentByRegisterValue } from "@/data/payments";
 import { RegisterScanner, type ScanDraft } from "@/components/RegisterScanner";
 import type { Inventory } from "@shared/schema";
@@ -43,7 +45,7 @@ const METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "CashApp", label: "Cash App" },
   { value: "PayPal", label: "PayPal" },
   { value: "AppleCash", label: "Apple Cash" },
-  { value: "Card", label: "Card (tap)" },
+  { value: "Card", label: "Card" },
   { value: "Other", label: "Other" },
 ];
 
@@ -111,6 +113,13 @@ function SellTab() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Cash");
   const [payCodeOpen, setPayCodeOpen] = useState(false);
   const payOption = paymentByRegisterValue(paymentMethod);
+  const [cardOpen, setCardOpen] = useState(false);
+  const [customerEmail, setCustomerEmail] = useState("");
+  const { data: checkoutCfg } = useQuery<{ enabled: boolean; taxPercent: number }>({
+    queryKey: ["/api/shop/checkout/config"],
+    staleTime: 5 * 60 * 1000,
+  });
+  const stripeReady = !!checkoutCfg?.enabled;
   const [discountStr, setDiscountStr] = useState("");
   const [taxStr, setTaxStr] = useState("");
   const [notes, setNotes] = useState("");
@@ -154,6 +163,25 @@ function SellTab() {
       c.map((x) => (x.item.id === id ? { ...x, soldPrice: val } : x))
     );
 
+  const resetSale = () => {
+    setCart([]);
+    setDiscountStr("");
+    setTaxStr("");
+    setNotes("");
+    setCustomerEmail("");
+  };
+
+  const onCardPaid = (summary: any) => {
+    queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/shop/listings"] });
+    toast({
+      title: "Card payment received",
+      description: `${cart.length} item${cart.length === 1 ? "" : "s"} · ${formatCurrency(summary?.total ?? total)} via Stripe`,
+    });
+    resetSale();
+  };
+
   const chargeMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/payments/sell", {
@@ -177,10 +205,7 @@ function SellTab() {
         title: "Sale recorded",
         description: `${cart.length} item${cart.length === 1 ? "" : "s"} · ${formatCurrency(data.total)} via ${data.paymentMethod}`,
       });
-      setCart([]);
-      setDiscountStr("");
-      setTaxStr("");
-      setNotes("");
+      resetSale();
     },
     onError: (err: any) => {
       toast({
@@ -362,6 +387,16 @@ function SellTab() {
                 placeholder="Name or handle (optional)"
                 data-testid="input-sell-customer"
               />
+              {paymentMethod === "Card" && stripeReady && (
+                <Input
+                  type="email"
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
+                  placeholder="Email for the receipt (optional)"
+                  className="mt-2"
+                  data-testid="input-sell-email"
+                />
+              )}
             </div>
 
             <div>
@@ -470,24 +505,63 @@ function SellTab() {
               <PayCodeDialog open={payCodeOpen} onOpenChange={setPayCodeOpen} option={payOption} amount={total} />
             )}
 
-            <Button
-              size="lg"
-              className="w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-glow-red-strong min-h-12"
-              disabled={cart.length === 0 || chargeMutation.isPending}
-              onClick={() => chargeMutation.mutate()}
-              data-testid="button-charge"
-            >
-              {chargeMutation.isPending ? (
-                <>
-                  <Loader2 className="h-5 w-5 mr-2 animate-spin" /> Recording…
-                </>
-              ) : (
-                <>
-                  <Banknote className="h-5 w-5 mr-2" /> Charge{" "}
-                  {formatCurrency(total)}
-                </>
-              )}
-            </Button>
+            {paymentMethod === "Card" && stripeReady ? (
+              <>
+                <Button
+                  size="lg"
+                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-glow-red-strong min-h-12"
+                  disabled={cart.length === 0 || total < 0.5}
+                  onClick={() => setCardOpen(true)}
+                  data-testid="button-charge-card"
+                >
+                  <CreditCard className="h-5 w-5 mr-2" /> Charge card {formatCurrency(total)}
+                </Button>
+                {total > 0 && total < 0.5 && (
+                  <p className="text-xs text-muted-foreground">Card payments need a $0.50 minimum.</p>
+                )}
+                <Button
+                  variant="ghost"
+                  className="w-full text-xs text-muted-foreground"
+                  disabled={cart.length === 0 || chargeMutation.isPending}
+                  onClick={() => chargeMutation.mutate()}
+                  data-testid="button-charge"
+                >
+                  {chargeMutation.isPending ? "Recording…" : "Already paid on a card reader — just record the sale"}
+                </Button>
+                <CardChargeDialog
+                  open={cardOpen}
+                  onOpenChange={setCardOpen}
+                  payload={cardOpen ? {
+                    items: cart.map((c) => ({ itemId: c.item.id, soldPrice: c.soldPrice })),
+                    counterparty: counterparty || null,
+                    customerEmail: customerEmail || null,
+                    discount,
+                    tax,
+                    notes: notes || null,
+                  } : null}
+                  onPaid={onCardPaid}
+                />
+              </>
+            ) : (
+              <Button
+                size="lg"
+                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-glow-red-strong min-h-12"
+                disabled={cart.length === 0 || chargeMutation.isPending}
+                onClick={() => chargeMutation.mutate()}
+                data-testid="button-charge"
+              >
+                {chargeMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" /> Recording…
+                  </>
+                ) : (
+                  <>
+                    <Banknote className="h-5 w-5 mr-2" /> Charge{" "}
+                    {formatCurrency(total)}
+                  </>
+                )}
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>

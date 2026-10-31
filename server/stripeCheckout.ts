@@ -120,9 +120,15 @@ export async function recordPaidSession(session: Stripe.Checkout.Session): Promi
     });
   }
   const total = (session.amount_total ?? 0) / 100;
-  const subtotal = (session.amount_subtotal ?? 0) / 100;
-  const taxAmount = (session.total_details?.amount_tax ?? 0) / 100;
+  const isRegister = session.metadata?.source === "register";
+  // Register sessions carry tax as a separate line item (so the total matches
+  // the register exactly); read it back from metadata.
+  const metaTax = Number(session.metadata?.tax);
+  const taxAmount = isRegister && Number.isFinite(metaTax) ? metaTax : (session.total_details?.amount_tax ?? 0) / 100;
+  const subtotal = isRegister ? Math.max(0, total - taxAmount) : (session.amount_subtotal ?? 0) / 100;
   const details = session.customer_details;
+  const registerNotes = (session.metadata?.notes ?? "").trim();
+  const counterpartyOverride = (session.metadata?.counterparty ?? "").trim();
 
   const resolved = await Promise.all(
     parsedLines.map(async (l) => ({ ...l, item: await storage.getInventoryItem(l.itemId) }))
@@ -184,12 +190,14 @@ export async function recordPaidSession(session: Stripe.Checkout.Session): Promi
       type: "Sell",
       itemId: item.id,
       itemName: `${item.setName} \u2014 ${item.name}${l.quantity > 1 ? ` \u00d7${l.quantity}` : ""}`,
-      counterparty: details?.name || details?.email || "Online order",
+      counterparty: counterpartyOverride || details?.name || details?.email || (isRegister ? "Walk-up customer" : "Online order"),
       price: lineSubtotal,
       pnl: Math.round((lineSubtotal - costShare) * 100) / 100,
-      notes: `Paid via ${PAYMENT_LABEL}${orderLabel} \u00b7 tax ${lineTax.toFixed(2)} \u00b7 order total ${total.toFixed(2)} \u00b7 ${sessionId}${shipTo ? ` \u00b7 ship to ${shipTo}` : ""}`,
+      notes: `Paid via ${PAYMENT_LABEL}${isRegister ? " at register" : ""}${orderLabel} \u00b7 tax ${lineTax.toFixed(2)} \u00b7 order total ${total.toFixed(2)} \u00b7 ${sessionId}${shipTo ? ` \u00b7 ship to ${shipTo}` : ""}${registerNotes ? ` \u00b7 ${registerNotes}` : ""}`,
     } as any);
-    await storage.createCustomerRequest({
+    // Online orders also land in Requests so Chris sees the ship-to details;
+    // register sales are already in hand.
+    if (!isRegister) await storage.createCustomerRequest({
       type: "Buy",
       itemId: item.id,
       customerName: details?.name || "Online buyer",
@@ -203,7 +211,7 @@ export async function recordPaidSession(session: Stripe.Checkout.Session): Promi
       status: "Accepted",
     } as any);
     if (updated) broadcast({ type: "inventory:update", payload: updated });
-    broadcast({ type: "customerRequest:new", payload: { itemId: item.id } });
+    if (!isRegister) broadcast({ type: "customerRequest:new", payload: { itemId: item.id } });
     touchedInventory = true;
     console.log(`[stripe] recorded sale ${item.id} \u00d7${l.quantity} line ${lineSubtotal.toFixed(2)} (${sessionId})`);
   }
@@ -283,8 +291,130 @@ export function startPaidSessionSweep(intervalMin = 10): void {
   console.log(`[stripe] paid-order sweep every ${intervalMin} min`);
 }
 
+// Stripe refuses checkouts under $0.50 — the storefront steers tiny items
+// into the cart so they can be combined.
+const CARD_MINIMUM_CENTS = 50;
+
 export function registerStripeCheckoutRoutes(app: Express) {
   startPaidSessionSweep();
+
+  // ---- Register: take a card payment for an in-person sale ----
+  // Creates a Checkout Session priced at the register (per-item sold price,
+  // discount spread across lines, manual tax as its own line) and returns the
+  // URL so the customer can scan a QR or tap on the counter device. Recording
+  // happens when the session is paid (poll below, success page, or sweep).
+  app.post("/api/payments/card-session", requireAuth, async (req, res) => {
+    try {
+      if (!isStripeEnabled()) return res.status(503).json({ message: "Card payments aren't switched on yet." });
+      const rawItems: any[] = Array.isArray(req.body?.items) ? req.body.items : [];
+      if (!rawItems.length) return res.status(400).json({ message: "Add at least one item." });
+      const discount = Math.max(0, Number(req.body?.discount) || 0);
+      const tax = Math.max(0, Math.round((Number(req.body?.tax) || 0) * 100));
+      const counterparty = typeof req.body?.counterparty === "string" ? req.body.counterparty.trim().slice(0, 120) : "";
+      const notes = typeof req.body?.notes === "string" ? req.body.notes.trim().slice(0, 200) : "";
+      const email = typeof req.body?.customerEmail === "string" && /\S+@\S+\.\S+/.test(req.body.customerEmail)
+        ? req.body.customerEmail.trim()
+        : undefined;
+
+      const lines: { item: Inventory; cents: number }[] = [];
+      for (const r of rawItems) {
+        const item = await storage.getInventoryItem(String(r?.itemId ?? ""));
+        if (!item) return res.status(404).json({ message: `${r?.itemId} isn't in inventory.` });
+        if (!buyable(item)) return res.status(409).json({ message: `${item.name} is already sold.` });
+        const price = Number(r?.soldPrice);
+        if (!Number.isFinite(price) || price < 0) return res.status(400).json({ message: `Bad price for ${item.name}.` });
+        lines.push({ item, cents: Math.round(price * 100) });
+      }
+      // Spread the discount across lines in proportion to price (Stripe has no
+      // negative line items); any rounding remainder lands on the last line.
+      const gross = lines.reduce((n, l) => n + l.cents, 0);
+      let discountCents = Math.min(gross, Math.round(discount * 100));
+      if (discountCents > 0 && gross > 0) {
+        let applied = 0;
+        lines.forEach((l, i) => {
+          const share = i === lines.length - 1 ? discountCents - applied : Math.round((discountCents * l.cents) / gross);
+          l.cents = Math.max(0, l.cents - share);
+          applied += share;
+        });
+      }
+      const totalCents = lines.reduce((n, l) => n + l.cents, 0) + tax;
+      if (totalCents < CARD_MINIMUM_CENTS) return res.status(409).json({ message: "Card payments need a $0.50 minimum." });
+
+      const origin = publicOrigin(req);
+      const manifest = lines.map((l) => `${l.item.id}x1@${(l.cents / 100).toFixed(2)}`).join(",");
+      const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = lines
+        .filter((l) => l.cents > 0)
+        .map((l) => ({
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: l.cents,
+            product_data: {
+              name: l.item.name,
+              description: [l.item.setName, l.item.condition].filter(Boolean).join(" \u00b7 ") || undefined,
+              images: absoluteImage(origin, l.item.imageUrl),
+              metadata: { itemId: l.item.id },
+            },
+          },
+        }));
+      if (tax > 0) {
+        line_items.push({
+          quantity: 1,
+          price_data: { currency: "usd", unit_amount: tax, product_data: { name: "Sales tax" } },
+        });
+      }
+      const session = await client().checkout.sessions.create({
+        mode: "payment",
+        customer_email: email,
+        line_items,
+        metadata: {
+          source: "register",
+          items: manifest.slice(0, 500),
+          lineCount: String(lines.length),
+          tax: (tax / 100).toFixed(2),
+          discount: (discountCents / 100).toFixed(2),
+          counterparty: counterparty.slice(0, 200),
+          notes: notes.slice(0, 200),
+        },
+        // 30 minutes is plenty for a counter sale; keeps stale QR codes from lingering.
+        expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+        success_url: `${origin}/?checkout_session={CHECKOUT_SESSION_ID}#/checkout/success`,
+        cancel_url: `${origin}/#/`,
+      });
+      res.json({ id: session.id, url: session.url, total: totalCents / 100, expiresAt: session.expires_at });
+    } catch (err: any) {
+      console.error("[stripe] register session error:", err?.message ?? err);
+      res.status(500).json({ message: err?.message || "Couldn't start the card payment." });
+    }
+  });
+
+  // Register polls this until the customer has paid; recording is idempotent.
+  app.get("/api/payments/card-session/:id", requireAuth, async (req, res) => {
+    try {
+      if (!isStripeEnabled()) return res.status(503).json({ message: "Card payments aren't switched on yet." });
+      const session = await client().checkout.sessions.retrieve(String(req.params.id));
+      if (session.payment_status === "paid") {
+        const summary = await recordPaidSession(session);
+        return res.json({ status: "paid", summary });
+      }
+      res.json({ status: session.status === "expired" ? "expired" : "pending" });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Couldn't check the payment." });
+    }
+  });
+
+  // Register cancelled before the customer paid: kill the link.
+  app.post("/api/payments/card-session/:id/cancel", requireAuth, async (req, res) => {
+    try {
+      if (!isStripeEnabled()) return res.status(503).json({ message: "Card payments aren't switched on yet." });
+      const session = await client().checkout.sessions.retrieve(String(req.params.id));
+      if (session.payment_status === "paid") return res.status(409).json({ message: "Already paid." });
+      if (session.status === "open") await client().checkout.sessions.expire(session.id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Couldn't cancel." });
+    }
+  });
 
   // Admin: run the missed-order sweep on demand.
   app.post("/api/shop/checkout/sweep", requireAuth, async (_req, res) => {
@@ -298,10 +428,6 @@ export function registerStripeCheckoutRoutes(app: Express) {
   app.get("/api/shop/checkout/config", (_req, res) => {
     res.json({ enabled: isStripeEnabled(), taxPercent: SALES_TAX_PERCENT, label: PAYMENT_LABEL });
   });
-
-  // Stripe refuses checkouts under $0.50 — the storefront steers tiny items
-  // into the cart so they can be combined.
-  const CARD_MINIMUM_CENTS = 50;
 
   // Body: { items: [{ itemId, quantity }], customerEmail? } — or the older
   // single-item shape { itemId, quantity }.

@@ -281,6 +281,8 @@ export interface IStorage {
 
   // Transactions
   listTransactions(): Promise<Transaction[]>;
+  getTransaction(id: number): Promise<Transaction | undefined>;
+  deleteTransaction(id: number): Promise<void>;
   createTransaction(t: InsertTransaction): Promise<Transaction>;
 
   // Listings
@@ -401,6 +403,13 @@ export class DatabaseStorage implements IStorage {
   async createTransaction(t: InsertTransaction): Promise<Transaction> {
     const result = await db.insert(transactions).values(t).returning();
     return result[0] as Transaction;
+  }
+  async getTransaction(id: number): Promise<Transaction | undefined> {
+    const rows = await db.select().from(transactions).where(eq(transactions.id, id)).all();
+    return rows[0] as Transaction | undefined;
+  }
+  async deleteTransaction(id: number): Promise<void> {
+    await db.delete(transactions).where(eq(transactions.id, id));
   }
 
   async listListings(): Promise<Listing[]> {

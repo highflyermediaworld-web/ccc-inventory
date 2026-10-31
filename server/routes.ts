@@ -13,6 +13,7 @@ import {
   transactions,
   trades,
 } from "@shared/schema";
+import type { Inventory } from "@shared/schema";
 import { normalizeRole, roleLabel, isOwner } from "@shared/roles";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -1279,6 +1280,39 @@ export async function registerRoutes(
   });
 
   // ===== TRANSACTIONS =====
+  // Remove a ledger entry. `restock=1` on a Sell also puts the item back on
+  // the shelf (qty +1, status back to In Inventory) — handy for test sales.
+  app.delete("/api/transactions/:id", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id)) return res.status(400).json({ message: "Bad transaction id" });
+      const tx = await storage.getTransaction(id);
+      if (!tx) return res.status(404).json({ message: "Transaction not found" });
+      const restock = req.query.restock === "1" || req.query.restock === "true";
+      let restocked: Inventory | null = null;
+      if (restock && tx.type === "Sell" && tx.itemId) {
+        const item = await storage.getInventoryItem(tx.itemId);
+        if (item) {
+          const qty = (item.qty ?? 0) + 1;
+          const updated = await storage.updateInventory(item.id, {
+            qty,
+            status: item.status === "Sold" ? "In Inventory" : item.status,
+            soldPrice: null,
+          } as any);
+          if (updated) {
+            restocked = updated as Inventory;
+            broadcast({ type: "inventory:update", payload: updated });
+          }
+        }
+      }
+      await storage.deleteTransaction(id);
+      broadcast({ type: "transactions:update", payload: {} });
+      res.json({ ok: true, restocked: restocked ? { id: restocked.id, qty: restocked.qty, status: restocked.status } : null });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Delete failed" });
+    }
+  });
+
   app.get("/api/transactions", async (_req, res) => {
     const items = await storage.listTransactions();
     res.json(items);
@@ -2073,15 +2107,20 @@ export async function registerRoutes(
           results.push({ itemId: line.itemId, ok: false, error: "Not found" });
           continue;
         }
-        if (item.status === "Sold") {
+        if (item.status === "Sold" || (item.qty ?? 0) <= 0) {
           results.push({ itemId: line.itemId, ok: false, error: "Already sold" });
           continue;
         }
-        const updated = await storage.updateInventory(line.itemId, {
-          status: "Sold",
-          soldPrice: line.soldPrice,
-        });
-        const pnl = (line.soldPrice ?? 0) - (item.totalCost ?? 0);
+        // Multi-quantity items drop by one; the last unit marks the row Sold.
+        const remaining = (item.qty ?? 1) - 1;
+        const updated = await storage.updateInventory(
+          line.itemId,
+          remaining <= 0
+            ? { status: "Sold", soldPrice: line.soldPrice, qty: 0 }
+            : ({ qty: remaining } as any)
+        );
+        const costShare = remaining <= 0 ? (item.totalCost ?? 0) : (item.costPerUnit ?? 0);
+        const pnl = (line.soldPrice ?? 0) - costShare;
         subtotal += line.soldPrice ?? 0;
         totalPnl += pnl;
         await storage.createTransaction({
@@ -2095,12 +2134,14 @@ export async function registerRoutes(
             body.notes ? " \u00b7 " + body.notes : ""
           }`,
         } as any);
-        // Deactivate any user listings for this item
-        const existing = await storage.listListings();
-        for (const l of existing.filter(
-          (x) => x.itemId === item.id && !x.sellerName
-        )) {
-          await storage.deactivateListing(l.id);
+        // Deactivate any user listings for this item once it's gone
+        if (remaining <= 0) {
+          const existing = await storage.listListings();
+          for (const l of existing.filter(
+            (x) => x.itemId === item.id && !x.sellerName
+          )) {
+            await storage.deactivateListing(l.id);
+          }
         }
         if (updated) broadcast({ type: "inventory:update", payload: updated });
         results.push({ itemId: line.itemId, ok: true, item: updated });
