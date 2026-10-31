@@ -707,8 +707,93 @@ export default function InventoryPage() {
         </CardContent>
       </Card>
 
+      {/* Phone layout: stacked cards, tap for details */}
+      <Card className="md:hidden">
+        <CardContent className="p-0">
+          {isLoading && <div className="p-6 text-center text-muted-foreground text-sm">Loading…</div>}
+          {!isLoading && filtered.length === 0 && (
+            <div className="p-10 text-center text-muted-foreground text-sm">No items match these filters.</div>
+          )}
+          {filtered.map((i) => {
+            const gl = (i.marketValue ?? 0) - (i.totalCost ?? 0);
+            return (
+              <div
+                key={i.id}
+                className="border-b border-border last:border-0 px-3 py-3"
+                data-testid={`card-item-${i.id}`}
+              >
+                <div
+                  className="flex items-start gap-3 cursor-pointer"
+                  onClick={() => setDetailItem(i)}
+                >
+                  <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.has(i.id)}
+                      onCheckedChange={() => toggleSelect(i.id)}
+                      aria-label={`Select ${i.id}`}
+                    />
+                  </div>
+                  <CardThumb imageUrl={i.imageUrl} franchise={i.franchise} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold leading-snug break-words">{i.name}</div>
+                    {i.setName && <div className="text-xs text-muted-foreground truncate">{i.setName}</div>}
+                    <div className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                      {i.id}{i.condition ? ` · ${i.condition}` : ""} · Qty {i.qty ?? 0}
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                      <StatusBadge status={i.status} />
+                      <CategoryBadge category={i.category} />
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="tnum font-bold">{formatCurrency(i.marketValue)}</div>
+                    <div className="tnum text-[11px] text-muted-foreground">cost {formatCurrency(i.totalCost)}</div>
+                    <div className={`tnum text-xs font-semibold ${pnlClass(gl)}`}>
+                      {i.marketValue != null && i.totalCost != null ? (gl >= 0 ? "+" : "") + formatCurrency(gl) : ""}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center justify-end gap-1.5">
+                  <button
+                    onClick={() => refreshOneMutation.mutate(i.id)}
+                    disabled={refreshOneMutation.isPending}
+                    className="inline-flex h-9 w-9 items-center justify-center border border-border"
+                    aria-label="Refresh price"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${refreshOneMutation.isPending && refreshOneMutation.variables === i.id ? "animate-spin" : ""}`} />
+                  </button>
+                  <button
+                    onClick={() => setEditItem(i)}
+                    className="inline-flex h-9 items-center gap-1.5 border border-border px-3 text-xs font-semibold"
+                  >
+                    <Pencil className="h-3.5 w-3.5" /> Edit
+                  </button>
+                  {i.status !== "Sold" && (
+                    <button
+                      onClick={() => setSellItem(i)}
+                      className="inline-flex h-9 items-center gap-1.5 bg-primary text-primary-foreground px-3 text-xs font-semibold"
+                    >
+                      <DollarSign className="h-3.5 w-3.5" /> Sell
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (confirm(`Delete ${i.id} — ${i.name}?`)) deleteMutation.mutate(i.id);
+                    }}
+                    className="inline-flex h-9 w-9 items-center justify-center border border-border text-destructive"
+                    aria-label="Delete"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
       {/* Table */}
-      <Card>
+      <Card className="hidden md:block">
         <CardContent className="p-0 overflow-x-auto">
           <table className="w-full text-sm numeric">
             <thead className="border-b border-border">

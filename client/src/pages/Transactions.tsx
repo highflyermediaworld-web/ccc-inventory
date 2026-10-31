@@ -162,9 +162,9 @@ export default function TransactionsPage() {
 
       {/* Filters */}
       <Card className="mb-4">
-        <CardContent className="p-4 flex flex-wrap items-center gap-3">
+        <CardContent className="p-3 sm:p-4 grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2 sm:gap-3">
           <Select value={type} onValueChange={setType}>
-            <SelectTrigger className="h-9 w-[140px]" data-testid="select-type"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-9 col-span-2 sm:col-span-1 sm:w-[140px]" data-testid="select-type"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All types</SelectItem>
               <SelectItem value="Buy">Buy</SelectItem>
@@ -172,21 +172,21 @@ export default function TransactionsPage() {
               <SelectItem value="Trade">Trade</SelectItem>
             </SelectContent>
           </Select>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-muted-foreground">From</label>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 min-w-0">
+            <label className="text-[10px] sm:text-xs uppercase sm:normal-case tracking-wider sm:tracking-normal text-muted-foreground">From</label>
             <Input
               type="date"
-              className="h-9 w-[160px]"
+              className="h-9 w-full sm:w-[160px] min-w-0"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
               data-testid="input-from-date"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-muted-foreground">To</label>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 min-w-0">
+            <label className="text-[10px] sm:text-xs uppercase sm:normal-case tracking-wider sm:tracking-normal text-muted-foreground">To</label>
             <Input
               type="date"
-              className="h-9 w-[160px]"
+              className="h-9 w-full sm:w-[160px] min-w-0"
               value={to}
               onChange={(e) => setTo(e.target.value)}
               data-testid="input-to-date"
@@ -195,7 +195,58 @@ export default function TransactionsPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      {/* Phone layout: stacked rows, nothing hidden off-screen */}
+      <Card className="md:hidden">
+        <CardContent className="p-0">
+          {isLoading && <div className="p-6 text-center text-muted-foreground text-sm">Loading…</div>}
+          {!isLoading && filtered.length === 0 && (
+            <div className="p-10 text-center text-muted-foreground text-sm">
+              No transactions yet. Sell an item or buy from the marketplace to start the ledger.
+            </div>
+          )}
+          {filtered.map((t) => (
+            <div
+              key={t.id}
+              className="border-b border-border last:border-0 px-4 py-3"
+              data-testid={`card-tx-${t.id}`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <TypeBadge type={t.type} />
+                    <span className="text-[11px] text-muted-foreground tnum">{formatDateTime(t.date)}</span>
+                  </div>
+                  <div className="text-sm font-semibold leading-snug break-words">{t.itemName ?? "—"}</div>
+                  <div className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                    {t.itemId ?? ""}{t.itemId && t.counterparty ? " · " : ""}{t.counterparty ?? ""}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="tnum font-bold text-base">{formatCurrency(t.price)}</div>
+                  <div className={`tnum text-xs font-semibold ${pnlClass(t.pnl)}`}>
+                    {t.pnl != null ? "P/L " + (t.pnl >= 0 ? "+" : "") + formatCurrency(t.pnl) : ""}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-2 flex items-end justify-between gap-3">
+                <div className="text-xs text-muted-foreground min-w-0 break-words">{t.notes ?? ""}</div>
+                <button
+                  type="button"
+                  onClick={() => { setRestock(canRestock(t)); setPendingDelete(t); }}
+                  className="inline-flex h-9 items-center gap-1.5 border border-border px-3 text-xs font-semibold text-muted-foreground hover:text-destructive hover:border-destructive shrink-0"
+                  aria-label={`Delete transaction ${t.id}`}
+                  data-testid={`button-delete-tx-mobile-${t.id}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* Tablet / desktop table */}
+      <Card className="hidden md:block">
         <CardContent className="p-0 overflow-x-auto">
           <table className="w-full text-sm numeric">
             <thead className="border-b border-border">
@@ -228,19 +279,7 @@ export default function TransactionsPage() {
                   data-testid={`row-tx-${t.id}`}
                 >
                   <td className="px-4 py-2.5 text-xs whitespace-nowrap">{formatDateTime(t.date)}</td>
-                  <td className="px-4 py-2.5">
-                    <span
-                      className={`text-[10px] font-bold uppercase tracking-wider rounded-sm px-2 py-0.5 ${
-                        t.type === "Buy"
-                          ? "bg-emerald-500/20 text-emerald-800 dark:bg-emerald-400/25 dark:text-emerald-100"
-                          : t.type === "Sell"
-                          ? "bg-rose-500/20 text-rose-800 dark:bg-rose-400/25 dark:text-rose-100"
-                          : "bg-violet-500/20 text-violet-800 dark:bg-violet-400/25 dark:text-violet-100"
-                      }`}
-                    >
-                      {t.type}
-                    </span>
-                  </td>
+                  <td className="px-4 py-2.5"><TypeBadge type={t.type} /></td>
                   <td className="px-4 py-2.5 text-xs max-w-[220px] truncate">
                     <div className="font-medium">{t.itemName ?? "—"}</div>
                     {t.itemId && <div className="text-[10px] text-muted-foreground font-mono">{t.itemId}</div>}
@@ -307,5 +346,21 @@ export default function TransactionsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function TypeBadge({ type }: { type: string }) {
+  return (
+    <span
+      className={`text-[10px] font-bold uppercase tracking-wider rounded-sm px-2 py-0.5 ${
+        type === "Buy"
+          ? "bg-emerald-500/20 text-emerald-800 dark:bg-emerald-400/25 dark:text-emerald-100"
+          : type === "Sell"
+          ? "bg-rose-500/20 text-rose-800 dark:bg-rose-400/25 dark:text-rose-100"
+          : "bg-violet-500/20 text-violet-800 dark:bg-violet-400/25 dark:text-violet-100"
+      }`}
+    >
+      {type}
+    </span>
   );
 }
