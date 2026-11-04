@@ -73,18 +73,32 @@ function sleep(ms: number) {
 
 // Price a single item: find/reuse its TCGplayer product, pull price points,
 // and write marketValue following the graded / raw rules described above.
+// Items TCGplayer simply doesn't carry (accessory brands like GradedGuard)
+// would otherwise cost several searches every cycle. Remember the miss for a
+// while; an edit to the name/set clears it.
+const NO_MATCH_TTL_MS = 6 * 60 * 60 * 1000;
+const noMatchUntil = new Map<string, number>();
+function noMatchKey(item: Inventory) {
+  return `${item.id}|${item.name}|${item.setName ?? ""}`;
+}
+
 async function priceItem(item: Inventory): Promise<"updated" | "skipped" | "failed"> {
     try {
       const points = await Promise.race<any>([
         (async () => {
           let pid = item.tcgpProductId ?? null;
           if (!pid) {
+            const key = noMatchKey(item);
+            const until = noMatchUntil.get(key);
+            if (until && until > Date.now()) return null;
             pid = await findTcgplayerProductId(
               item.name,
               item.setName ?? null,
               item.franchise,
               item.category
             );
+            if (!pid) noMatchUntil.set(key, Date.now() + NO_MATCH_TTL_MS);
+            else noMatchUntil.delete(key);
           }
           if (!pid) return null;
           return await fetchTcgplayerPricePoints(pid);

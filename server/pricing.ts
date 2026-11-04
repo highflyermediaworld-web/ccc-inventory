@@ -587,6 +587,22 @@ const TCGPLAYER_PRODUCT_LINE_MAP: Record<string, string> = {
 const TCGPLAYER_EXTRA_LINES: Record<string, string[]> = {
   "Dragon Ball Super CCG": ["Dragon Ball Super: Fusion World", "Dragon Ball Z TCG"],
 };
+// Accessories live in their own TCGplayer product lines, not under the game.
+// "Pokemon TCG: Mega Evolution Elite Trainer Box Card Sleeves" is in "Card
+// Sleeves", a Charizard playmat is in "Playmats". When the item name says so,
+// allow those lines too (the game line still comes first).
+const ACCESSORY_LINES: [RegExp, string][] = [
+  [/\bsleeves?\b/i, "card sleeves"],
+  [/\bplaymats?\b/i, "playmats"],
+  [/\bdeck (box|case)(es)?\b/i, "deck boxes"],
+  [/\b(binder|portfolio|album)s?\b/i, "storage albums"],
+  [/\b(storage|tin|box) (case|holder)\b|\bcard (case|holder|storage)\b/i, "collectible storage"],
+];
+export function accessoryLinesFor(name: string): string[] {
+  const out: string[] = [];
+  for (const [re, line] of ACCESSORY_LINES) if (re.test(name || "") && !out.includes(line)) out.push(line);
+  return out;
+}
 function productLineFor(franchise: string | null | undefined): string | null {
   if (!franchise) return null;
   const direct = TCGPLAYER_PRODUCT_LINE_MAP[franchise];
@@ -1009,7 +1025,10 @@ async function findTcgplayerProductIdInLines(
 ): Promise<number | null> {
   if (!rawName) return null;
   try {
-    const productLines = linesOverride ?? productLinesFor(franchise).map((l) => l.toLowerCase());
+    const productLines = linesOverride ?? [
+      ...productLinesFor(franchise).map((l) => l.toLowerCase()),
+      ...accessoryLinesFor(rawName),
+    ];
     const productLine = productLines[0] ?? null;
     const embedded = extractEmbeddedSet(rawName);
     const nameForSearch = correctSpelling(embedded ? embedded.name : rawName);

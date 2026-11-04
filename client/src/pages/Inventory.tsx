@@ -151,6 +151,15 @@ export default function InventoryPage() {
     },
   });
 
+  // Where the shown price comes from: a live TCGplayer product, the last
+  // manual refresh (Scryfall / TCGdex / AI est), or a hand-entered value.
+  const priceSourceFor = (i: Inventory): string | null => {
+    if (itemSources[i.id]) return itemSources[i.id];
+    if (i.marketValueSource === "tcgp" || i.tcgpProductId) return "TCGplayer";
+    if (i.marketValue != null) return "Manual";
+    return null;
+  };
+
   const refreshOneMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await apiRequest("POST", `/api/pricing/refresh/${id}`);
@@ -747,6 +756,7 @@ export default function InventoryPage() {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="tnum font-bold">{formatCurrency(i.marketValue)}</div>
+                    <SourceBadge source={priceSourceFor(i)} />
                     <div className="tnum text-[11px] text-muted-foreground">cost {formatCurrency(i.totalCost)}</div>
                     <div className={`tnum text-xs font-semibold ${pnlClass(gl)}`}>
                       {i.marketValue != null && i.totalCost != null ? (gl >= 0 ? "+" : "") + formatCurrency(gl) : ""}
@@ -839,7 +849,7 @@ export default function InventoryPage() {
               )}
               {filtered.map((i) => {
                 const gl = (i.marketValue ?? 0) - (i.totalCost ?? 0);
-                const sourceLabel = itemSources[i.id];
+                const sourceLabel = priceSourceFor(i);
                 return (
                   <tr
                     key={i.id}

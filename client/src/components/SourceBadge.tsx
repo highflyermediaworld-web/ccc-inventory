@@ -1,9 +1,10 @@
 // Tiny text badge indicating the origin of a market value (Scryfall, TCGdex, AI est, Manual).
-type Source = "Scryfall" | "TCGdex" | "AI est" | "Manual" | "Seed";
+type Source = "Scryfall" | "TCGdex" | "TCGplayer" | "AI est" | "Manual" | "Seed";
 
 const COLORS: Record<string, string> = {
   Scryfall: "text-amber-600 dark:text-amber-400",
   TCGdex: "text-emerald-600 dark:text-emerald-400",
+  TCGplayer: "text-emerald-600 dark:text-emerald-400",
   "AI est": "text-violet-600 dark:text-violet-400",
   Manual: "text-muted-foreground",
   Seed: "text-muted-foreground",

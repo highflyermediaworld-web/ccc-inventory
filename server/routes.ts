@@ -526,6 +526,21 @@ export async function registerRoutes(
     try {
       const item = await storage.getInventoryItem(req.params.itemId);
       if (!item) return res.status(404).json({ message: "Item not found" });
+      // TCGplayer first (same matcher + price-following rules as the live
+      // sync), so the row's refresh button agrees with the storefront. Graded
+      // slabs keep their AI graded estimate flow.
+      if (!isGraded(item.condition)) {
+        const live = await refreshItemPricePoints(item, 0).catch(() => null);
+        if (live?.refreshed) {
+          broadcast({ type: "inventory:update", payload: live.item });
+          return res.json({
+            marketValue: live.item.marketValue,
+            imageUrl: live.item.imageUrl ?? null,
+            source: "TCGplayer",
+            note: live.item.tcgpProductId ? `TCGplayer product ${live.item.tcgpProductId}` : null,
+          });
+        }
+      }
       const result = await refreshItem(item);
       if (result.marketValue != null) {
         await persistRefreshResult(item, result);
