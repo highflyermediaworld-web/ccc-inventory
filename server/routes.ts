@@ -1,3 +1,4 @@
+import * as igShows from "./instagramShows";
 import type { Express, Request, Response } from "express";
 import type { Server } from "node:http";
 import express from "express";
@@ -387,6 +388,8 @@ export async function registerRoutes(
     host: z.string().trim().max(60).optional(),
     url: z.string().trim().max(300).optional(),
     note: z.string().trim().max(200).optional(),
+    source: z.enum(["manual", "instagram"]).optional(),
+    postUrl: z.string().trim().max(300).optional(),
   });
   app.get("/api/shop/shows", async (_req, res) => {
     try {
@@ -409,6 +412,41 @@ export async function registerRoutes(
       res.status(400).json({ message: err?.message || "Failed to save shows" });
     }
   });
+  // ===== INSTAGRAM → SHOWS SYNC =====
+  app.get("/api/admin/instagram/status", requireAuth, async (_req, res) => {
+    try { res.json(await igShows.getStatus()); }
+    catch (err: any) { res.status(500).json({ message: err?.message || "Failed" }); }
+  });
+  app.post("/api/admin/instagram/check", requireAuth, async (req, res) => {
+    try {
+      const force = req.body?.force === true;
+      const st = await igShows.runInstagramCheck({ force });
+      const { seen, ...rest } = st;
+      res.json({ ...rest, seenCount: Object.keys(seen).length });
+    } catch (err: any) { res.status(500).json({ message: err?.message || "Check failed" }); }
+  });
+  app.post("/api/admin/instagram/token", requireAuth, requireOwner, async (req, res) => {
+    try {
+      const token = z.string().min(20).max(1000).parse(req.body?.token ?? "");
+      const who = await igShows.setToken(token);
+      // Kick off a check right away so the owner sees results.
+      igShows.runInstagramCheck().catch(() => {});
+      res.json({ ok: true, account: who });
+    } catch (err: any) { res.status(400).json({ message: err?.message || "Token rejected" }); }
+  });
+  app.delete("/api/admin/instagram/token", requireAuth, requireOwner, async (_req, res) => {
+    try { await igShows.clearToken(); res.json({ ok: true }); }
+    catch (err: any) { res.status(400).json({ message: err?.message || "Failed" }); }
+  });
+  app.post("/api/admin/instagram/pending", requireAuth, async (req, res) => {
+    try {
+      const body = z.object({ postId: z.string(), start: z.string(), action: z.enum(["add", "dismiss"]) }).parse(req.body ?? {});
+      const st = await igShows.resolvePending(body.postId, body.start, body.action);
+      const { seen, ...rest } = st;
+      res.json({ ...rest, seenCount: Object.keys(seen).length });
+    } catch (err: any) { res.status(400).json({ message: err?.message || "Failed" }); }
+  });
+
   app.delete("/api/admin/shop/shows", requireAuth, async (_req, res) => {
     try {
       await storage.setSetting("shop_shows", "");

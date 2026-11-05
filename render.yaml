@@ -15,6 +15,12 @@ services:
       # Gemini → OpenAI → Anthropic). Override with AI_PROVIDER if needed.
       - key: GEMINI_API_KEY
         sync: false
+      # Optional: Instagram → shows sync. Usually pasted in Admin → Shop
+      # settings instead; set here only if you prefer env-managed tokens.
+      - key: INSTAGRAM_ACCESS_TOKEN
+        sync: false
+      - key: IG_SHOWS_INTERVAL_MIN
+        value: "30"
       - key: OPENAI_API_KEY
         sync: false
       - key: ANTHROPIC_API_KEY

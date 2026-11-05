@@ -22,6 +22,10 @@ export type CardShow = {
   url?: string;
   /** Short note: free entry, what we're bringing, etc. */
   note?: string;
+  /** Where the entry came from: typed in admin, or pulled from an Instagram post */
+  source?: "manual" | "instagram";
+  /** Instagram post that announced the show */
+  postUrl?: string;
 };
 
 export const SHOWS: CardShow[] = [

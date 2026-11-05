@@ -2016,6 +2016,11 @@ function ShowCard({ show, next }: { show: CardShow; next?: boolean }) {
               Tickets &amp; info <ArrowRight className="h-3.5 w-3.5" />
             </a>
           )}
+          {show.postUrl && (
+            <a href={show.postUrl} target="_blank" rel="noopener noreferrer" className="pc-chip !h-8 text-[13px]" data-testid="link-show-post">
+              <SiInstagram className="h-3.5 w-3.5" /> See the post
+            </a>
+          )}
         </div>
       </div>
     </>
