@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { API_BASE } from "@/lib/queryClient";
 import { resolveUploadUrl } from "@/lib/uploads";
 import { ShopChat } from "@/components/ShopChat";
+import { BackToTop } from "@/components/BackToTop";
 import { FAQ_GROUPS as FAQ_DATA, GAMES, CASH_PCT, TRADE_PCT, DEFAULT_ABOUT, mergeAbout, plainText, type AboutContent } from "@shared/storefront";
 import {
   ArrowRight,
@@ -119,6 +120,7 @@ export function InfoShell({ title, kicker, intro, children, current }: { title: 
         </div>
       </footer>
       <ShopChat />
+      <BackToTop />
     </div>
   );
 }

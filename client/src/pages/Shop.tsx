@@ -23,6 +23,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { CardThumb } from "@/components/CardThumb";
 import { ShopChat } from "@/components/ShopChat";
+import { BackToTop } from "@/components/BackToTop";
 import { PaymentOptionCards, PaymentChips } from "@/components/PaymentOptions";
 import { BRAND_HANDLE, TIKTOK_URL, INSTAGRAM_URL } from "@/components/SocialLinks";
 import { resolveUploadUrl, thumbSrcSet } from "@/lib/uploads";
@@ -1419,6 +1420,7 @@ export default function ShopPage() {
       {tradeTarget && <TradeDialog listing={tradeTarget} onOpenChange={(o) => !o && setTradeTarget(null)} />}
 
       <ShopChat />
+      <BackToTop />
     </div>
   );
 }
