@@ -235,6 +235,18 @@ export async function runMigrations() {
       ["tcgp_history_json", "TEXT"],
       ["tcgp_priced_at", "INTEGER"],
       ["market_value_source", "TEXT"],
+      // Alt (alt.xyz) graded-slab pricing
+      ["alt_card_id", "TEXT"],
+      ["alt_grade", "TEXT"],
+      ["alt_name", "TEXT"],
+      ["alt_url", "TEXT"],
+      ["alt_value", "REAL"],
+      ["alt_value_low", "REAL"],
+      ["alt_value_high", "REAL"],
+      ["alt_pop", "INTEGER"],
+      ["alt_last_sale_price", "REAL"],
+      ["alt_last_sale_date", "TEXT"],
+      ["alt_priced_at", "INTEGER"],
     ];
     for (const [col, type] of tcgpColumns) {
       try {

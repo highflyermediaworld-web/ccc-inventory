@@ -58,6 +58,7 @@ import {
   FileText,
   MoreHorizontal,
   ImageIcon,
+  Crosshair,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -155,6 +156,8 @@ export default function InventoryPage() {
   // manual refresh (Scryfall / TCGdex / AI est), or a hand-entered value.
   const priceSourceFor = (i: Inventory): string | null => {
     if (itemSources[i.id]) return itemSources[i.id];
+    if (i.marketValueSource === "alt") return "Alt";
+    if (i.marketValueSource === "ai") return "AI est";
     if (i.marketValueSource === "tcgp" || i.tcgpProductId) return "TCGplayer";
     if (i.marketValue != null) return "Manual";
     return null;
@@ -191,6 +194,28 @@ export default function InventoryPage() {
         variant: "destructive",
       });
     },
+  });
+
+  // Forget the remembered TCGplayer product and match the listing again —
+  // for rows that landed on a sibling printing (wrong art / number).
+  const rematchMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/pricing/rematch/${id}`);
+      return { id, ...(await res.json()) };
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory", data.id, "history"] });
+      if (data?.ok) {
+        toast({
+          title: data.changed ? "Re-matched to a different TCGplayer product" : "Same TCGplayer product confirmed",
+          description: `${data.id} · product ${data.productId}${data.marketPrice != null ? ` · market ${formatCurrency(data.marketPrice)}` : ""}`,
+        });
+      } else {
+        toast({ title: "No confident match", description: data?.message || "TCGplayer had nothing close enough.", variant: "destructive" });
+      }
+    },
+    onError: (err: any) => toast({ title: "Re-match failed", description: err?.message, variant: "destructive" }),
   });
 
   const refreshAllMutation = useMutation({
@@ -772,6 +797,16 @@ export default function InventoryPage() {
                   >
                     <RefreshCw className={`h-3.5 w-3.5 ${refreshOneMutation.isPending && refreshOneMutation.variables === i.id ? "animate-spin" : ""}`} />
                   </button>
+                  {i.category !== "Slab" && (
+                    <button
+                      onClick={() => rematchMutation.mutate(i.id)}
+                      disabled={rematchMutation.isPending}
+                      className="inline-flex h-9 w-9 items-center justify-center border border-border"
+                      aria-label="Re-match TCGplayer product"
+                    >
+                      <Crosshair className={`h-3.5 w-3.5 ${rematchMutation.isPending && rematchMutation.variables === i.id ? "animate-pulse" : ""}`} />
+                    </button>
+                  )}
                   <button
                     onClick={() => setEditItem(i)}
                     className="inline-flex h-9 items-center gap-1.5 border border-border px-3 text-xs font-semibold"
@@ -981,6 +1016,21 @@ export default function InventoryPage() {
                             }`}
                           />
                         </button>
+                        {i.category !== "Slab" && (
+                          <button
+                            onClick={() => rematchMutation.mutate(i.id)}
+                            disabled={rematchMutation.isPending}
+                            className="p-1.5 rounded hover:bg-accent"
+                            title="Re-match TCGplayer product (wrong art or number?)"
+                            data-testid={`button-rematch-${i.id}`}
+                          >
+                            <Crosshair
+                              className={`h-3.5 w-3.5 ${
+                                rematchMutation.isPending && rematchMutation.variables === i.id ? "animate-pulse" : ""
+                              }`}
+                            />
+                          </button>
+                        )}
                         <button
                           onClick={() => setEditItem(i)}
                           className="p-1.5 rounded hover:bg-accent"

@@ -43,6 +43,8 @@ import {
   tcgplayerProductLineFor,
   tcgplayerImageUrl,
   refreshItemPricePoints,
+  applyFollowedPrice,
+  imageUrlLoads,
   refreshManyPricePoints,
 } from "./pricing";
 import {
@@ -50,6 +52,8 @@ import {
   triggerAutoPricingNow,
 } from "./autoPricing";
 import { broadcast } from "./realtime";
+import * as altPricing from "./altPricing";
+import { gradeOfItem } from "@shared/grading";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -556,6 +560,32 @@ export async function registerRoutes(
     }
   });
 
+  // ===== ALT (alt.xyz) GRADED-SLAB PRICING =====
+  app.get("/api/admin/alt/status", requireAuth, async (_req, res) => {
+    try { res.json(await altPricing.getAltStatus()); }
+    catch (err: any) { res.status(500).json({ message: err?.message || "Failed" }); }
+  });
+  app.post("/api/admin/alt/key", requireAuth, requireOwner, async (req, res) => {
+    try {
+      const key = z.string().min(16).max(400).parse(req.body?.key ?? "");
+      const r = await altPricing.setAltKey(key);
+      altPricing.refreshAllGraded().catch(() => {});
+      res.json({ ok: true, ...r });
+    } catch (err: any) { res.status(400).json({ message: err?.message || "Key rejected" }); }
+  });
+  app.delete("/api/admin/alt/key", requireAuth, requireOwner, async (_req, res) => {
+    try { await altPricing.clearAltKey(); res.json({ ok: true }); }
+    catch (err: any) { res.status(400).json({ message: err?.message || "Failed" }); }
+  });
+  app.post("/api/admin/alt/refresh", requireAuth, async (req, res) => {
+    try {
+      const force = req.body?.force === true;
+      const st = await altPricing.refreshAllGraded({ force });
+      broadcast({ type: "inventory:bulk", payload: {} });
+      res.json(st);
+    } catch (err: any) { res.status(500).json({ message: err?.message || "Refresh failed" }); }
+  });
+
   // ===== SCAN (AI) =====
   registerScanRoutes(app);
 
@@ -567,7 +597,19 @@ export async function registerRoutes(
       // TCGplayer first (same matcher + price-following rules as the live
       // sync), so the row's refresh button agrees with the storefront. Graded
       // slabs keep their AI graded estimate flow.
-      if (!isGraded(item.condition)) {
+      if (isGraded(item)) {
+        // Slabs: Alt's per-grade value first (forced — this is the row's ↻).
+        const alt = await altPricing.priceGradedItemWithAlt(item, { force: true }).catch((e: any) => ({ item, refreshed: false, quote: null, reason: e?.message || "Alt failed" }));
+        if (alt.refreshed && alt.quote) {
+          broadcast({ type: "inventory:update", payload: alt.item });
+          return res.json({
+            marketValue: alt.item.marketValue,
+            imageUrl: alt.item.imageUrl ?? null,
+            source: "Alt",
+            note: `${alt.quote.grade} · ${alt.quote.cardName}${alt.quote.pop != null ? ` · pop ${alt.quote.pop}` : ""}`,
+          });
+        }
+      } else {
         const live = await refreshItemPricePoints(item, 0).catch(() => null);
         if (live?.refreshed) {
           broadcast({ type: "inventory:update", payload: live.item });
@@ -589,6 +631,59 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("pricing/refresh error:", err);
       res.status(500).json({ message: err?.message || "Refresh failed" });
+    }
+  });
+
+  // Throw away the remembered TCGplayer product and match the listing again
+  // from scratch — for rows that landed on a sibling printing ("Kaido (062)"
+  // instead of "Kaido (063)"). Re-points the photo at the new product too.
+  app.post("/api/pricing/rematch/:itemId", requireAuth, async (req, res) => {
+    try {
+      const item = await storage.getInventoryItem(String(req.params.itemId));
+      if (!item) return res.status(404).json({ message: "Item not found" });
+      const previous = item.tcgpProductId ?? null;
+      const pid = await findTcgplayerProductId(item.name, item.setName ?? null, item.franchise, item.category);
+      if (!pid) {
+        return res.json({ ok: false, previous, productId: null, message: "No confident TCGplayer match for this listing" });
+      }
+      const points = await fetchTcgplayerPricePoints(pid);
+      if (!points) return res.json({ ok: false, previous, productId: pid, message: "TCGplayer returned no price points" });
+      const patch: Record<string, any> = pricePointsToPatch(points);
+      await applyFollowedPrice(item, points, patch);
+      // An explicit re-match is the owner saying "this is the right product":
+      // skip the automatic mismatch guard (which keeps a stale value when the
+      // new price is far from it). Hand-pinned prices still win.
+      if (
+        patch.marketValue == null &&
+        !isGraded(item) &&
+        (item as any).marketValueSource !== "manual" &&
+        points.marketPrice != null && points.marketPrice > 0
+      ) {
+        const next = Math.round(Number(points.marketPrice) * 100) / 100;
+        patch.marketValue = next;
+        patch.marketValueSource = "tcgp";
+        try { await storage.createPriceHistory({ itemId: item.id, price: next, source: "TCGplayer" }); } catch { /* best-effort */ }
+      }
+      const tcgpImg = /^https:\/\/product-images\.tcgplayer\.com\/fit-in\/\d+x\d+\/(\d+)\.jpg$/.exec(item.imageUrl ?? "");
+      if (!item.imageUrl || tcgpImg) {
+        const wanted = tcgplayerImageUrl(pid);
+        if (await imageUrlLoads(wanted)) patch.imageUrl = wanted;
+      }
+      const updated = await storage.updateInventory(item.id, patch as any);
+      if (updated) broadcast({ type: "inventory:update", payload: updated });
+      res.json({
+        ok: true,
+        previous,
+        productId: pid,
+        changed: previous !== pid,
+        productName: (points as any).productName ?? null,
+        marketPrice: points.marketPrice,
+        marketValue: updated?.marketValue ?? null,
+        item: updated,
+      });
+    } catch (err: any) {
+      console.error("pricing/rematch error:", err);
+      res.status(500).json({ message: err?.message || "Re-match failed" });
     }
   });
 
@@ -626,7 +721,7 @@ export async function registerRoutes(
       // produce a graded AI estimate so the user gets a number. We do this
       // BEFORE the early returns below.
       const handleGradedNoPoints = async () => {
-        if (!isGraded(item.condition)) return null;
+        if (!isGraded(item)) return null;
         const graded = await getGradedEstimate({
           name: item.name,
           set: item.setName ?? "",
@@ -678,7 +773,7 @@ export async function registerRoutes(
       // not the slab value. Keep tcgp* columns as the raw reference and write a
       // graded AI estimate into marketValue instead. Always refresh marketValue
       // for graded items on manual refresh (overwrites stale value).
-      if (isGraded(item.condition)) {
+      if (isGraded(item)) {
         const graded = await getGradedEstimate({
           name: item.name,
           set: item.setName ?? "",
@@ -755,7 +850,7 @@ export async function registerRoutes(
           ]);
           if (points) {
             const patch = pricePointsToPatch(points);
-            if (isGraded(item.condition)) {
+            if (isGraded(item)) {
               // Graded slab: run AI graded estimate anchored on the raw price.
               // Only refresh marketValue if it's empty OR force=1 (so nightly
               // refresh doesn't churn user-entered marketValues).
@@ -781,7 +876,7 @@ export async function registerRoutes(
             }
             await storage.updateInventory(item.id, patch as any);
             updated++;
-          } else if (isGraded(item.condition) && (item.marketValue == null || force)) {
+          } else if (isGraded(item) && (item.marketValue == null || force)) {
             // No TCGplayer match for this graded slab — fall back to a pure AI
             // graded estimate so the item still gets a value.
             const graded = await Promise.race<any>([
@@ -1531,6 +1626,8 @@ export async function registerRoutes(
             condition: i.condition,
             category: i.category,
             franchise: i.franchise,
+            // Slab grade wherever the sheet put it (Condition or Rarity).
+            grade: gradeOfItem(i)?.label ?? null,
             qty: i.qty,
             inStock: isShopInStock(i),
             sold3mo: i.tcgpTotalSold3mo ?? null,
@@ -1540,6 +1637,9 @@ export async function registerRoutes(
             tcgpProductId: i.tcgpProductId ?? null,
             tcgpMarketPrice: i.tcgpMarketPrice ?? null,
             tcgpPricedAt: i.tcgpPricedAt ?? null,
+            altValue: (i as any).altValue ?? null,
+            altGrade: (i as any).altGrade ?? null,
+            altPricedAt: (i as any).altPricedAt ?? null,
             // Belt and braces: an inline photo that hasn't been migrated yet
             // is served from its own URL instead of inflating this payload.
             imageUrl:

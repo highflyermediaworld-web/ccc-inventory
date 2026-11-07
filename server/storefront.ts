@@ -12,6 +12,7 @@
  * About copy lives in app_settings under `shop_about` (Turso, survives deploys).
  * The photo is written to the persistent uploads disk under /uploads/about/.
  */
+import { gradeOfItem } from "@shared/grading";
 import type { Express, Request } from "express";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -168,7 +169,8 @@ async function buildPrompt(messages: { role: "user" | "assistant"; content: stri
   const listings: Listing[] = (inv as any[]).map((i) => ({
     name: i.name,
     setName: i.setName ?? null,
-    condition: i.condition ?? null,
+    // Slabs: show the grade ("PSA 10") rather than the sheet's label ("GEM - MT").
+    condition: gradeOfItem(i)?.label ?? i.condition ?? null,
     category: i.category ?? null,
     franchise: i.franchise ?? null,
     qty: i.qty ?? null,

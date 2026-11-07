@@ -85,6 +85,12 @@ type ShopListing = {
   setName: string;
   rarity: string | null;
   condition: string | null;
+  /** Slab grade from the server ("PSA 10", "CGC 10 Pristine") wherever the sheet put it. */
+  grade?: string | null;
+  /** Alt (alt.xyz) value in that grade, when the slab has been priced. */
+  altValue?: number | null;
+  altGrade?: string | null;
+  altPricedAt?: number | null;
   category: string;
   franchise: string;
   qty: number;
@@ -169,6 +175,10 @@ function gradeLabel(condition: string | null | undefined): string | null {
   if (!condition) return null;
   const m = condition.match(GRADE_RE);
   return m ? `${m[1].toUpperCase()} ${m[2]}` : null;
+}
+/** Grade of a listing: the server's parsed grade first, else the condition field. */
+function listingGrade(l: { grade?: string | null; condition: string | null }): string | null {
+  return l.grade ?? gradeLabel(l.condition);
 }
 
 const COND_NAMES: Record<string, string> = {
@@ -775,7 +785,7 @@ export default function ShopPage() {
                   <h2 className="mt-1.5 text-[1.6rem] sm:text-[2rem] leading-tight">{feature.item.name}</h2>
                   <div className="mt-1 text-sm text-white/70 pc-body">
                     {feature.item.setName}
-                    {feature.item.condition ? ` · ${gradeLabel(feature.item.condition) ?? conditionName(feature.item.condition)}` : ""}
+                    {listingGrade(feature.item) ? ` · ${listingGrade(feature.item)}` : feature.item.condition ? ` · ${conditionName(feature.item.condition)}` : ""}
                     {feature.item.rarity ? ` · ${feature.item.rarity}` : ""}
                   </div>
                   <div className="mt-5 flex items-center gap-3 flex-wrap">
@@ -2204,7 +2214,7 @@ function ProductCard({
     listing.marketValue > 0 &&
     listing.marketValue - listing.askingPrice >= 2 &&
     listing.askingPrice <= listing.marketValue * 0.95;
-  const grade = gradeLabel(listing.condition);
+  const grade = listingGrade(listing);
   const isSlab = listing.category === "Slab" || !!grade;
   const isSealed = listing.category === "Sealed";
   const condKey = (listing.condition ?? "").toUpperCase();
@@ -2778,16 +2788,22 @@ function BuyDialog({
                 </div>
                 <div className="text-sm font-semibold truncate">{listing.name}</div>
                 <div className="text-[11px] text-muted-foreground">
-                  {listing.condition || ""}
+                  {listingGrade(listing)
+                    ? `${listingGrade(listing)}${listing.condition && !GRADE_RE.test(listing.condition) ? ` · ${listing.condition}` : ""}`
+                    : listing.condition || ""}
                 </div>
                 <div className="mt-1 text-base font-bold text-primary tabular-nums" data-testid="text-buy-price">
                   {formatCurrency(shownPrice)}
                 </div>
-                {liveMarket != null && (
+                {listing.altValue != null && listing.altValue > 0 ? (
+                  <div className="text-[11px] text-muted-foreground" data-testid="text-buy-market">
+                    Alt {listing.altGrade ?? listingGrade(listing) ?? "graded"} value {formatCurrency(listing.altValue)}{listing.altPricedAt ? ` · updated ${agoLabel(listing.altPricedAt)}` : ""}
+                  </div>
+                ) : liveMarket != null && !listingGrade(listing) ? (
                   <div className="text-[11px] text-muted-foreground" data-testid="text-buy-market">
                     TCGplayer market {formatCurrency(liveMarket)}{livePricedAt ? ` · updated ${agoLabel(livePricedAt)}` : ""}
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
             <div className="grid gap-3">

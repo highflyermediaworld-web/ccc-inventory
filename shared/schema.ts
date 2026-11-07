@@ -37,8 +37,22 @@ export const inventory = sqliteTable("inventory", {
   tcgpHistoryJson: text("tcgp_history_json"), // JSON array of {date,marketPrice,low,high,qty}
   tcgpPricedAt: integer("tcgp_priced_at"), // unix seconds of last price refresh
   // "manual" pins marketValue (set when edited by hand in admin); "tcgp" means
-  // the value is tracking the live TCGplayer market price. Null = not pinned.
+  // the value is tracking the live TCGplayer market price; "alt" = graded
+  // value from Alt; "ai" = graded AI estimate. Null = not pinned.
   marketValueSource: text("market_value_source"),
+  // Graded slabs: Alt (alt.xyz) per-grade value via ReefAPI. altGrade is the
+  // grade the value was pulled for ("PSA 10", "CGC Pristine").
+  altCardId: text("alt_card_id"),
+  altGrade: text("alt_grade"),
+  altName: text("alt_name"),
+  altUrl: text("alt_url"),
+  altValue: real("alt_value"),
+  altValueLow: real("alt_value_low"),
+  altValueHigh: real("alt_value_high"),
+  altPop: integer("alt_pop"),
+  altLastSalePrice: real("alt_last_sale_price"),
+  altLastSaleDate: text("alt_last_sale_date"),
+  altPricedAt: integer("alt_priced_at"),
   createdAt: integer("created_at")
     .notNull()
     .$defaultFn(() => Math.floor(Date.now() / 1000)),

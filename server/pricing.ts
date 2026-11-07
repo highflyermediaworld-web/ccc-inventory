@@ -1,6 +1,7 @@
 import { storage } from "./storage";
 import type { Inventory } from "@shared/schema";
 import { aiText } from "./ai";
+import { gradeOfItem, isGradedItem, parseGrade } from "@shared/grading";
 
 // ===================================================================
 // Pricing feed module
@@ -404,10 +405,16 @@ export async function getClaudeEstimate(opts: {
 // items we still fetch the raw TCGplayer points (useful as a floor / reference)
 // and additionally run an AI estimate anchored on the raw price + the grade,
 // then write that into marketValue.
-export function isGraded(condition: string | null | undefined): boolean {
-  if (!condition) return false;
-  const c = String(condition).trim().toUpperCase();
-  return /^(PSA|CGC|BGS|SGC|HGA|GMA|ACE)\b/.test(c);
+// Slab detection. Accepts either a bare condition string ("PSA 10") or the
+// item itself, so the grade is also found when the sheet puts it in Rarity
+// ("PSA 10" / "CGC 8.5" / "Beckett Pristine 10") and Condition holds the
+// label ("GEM - MT", "Pristine", "NM/MINT+").
+export function isGraded(
+  item: string | null | undefined | { condition?: string | null; rarity?: string | null; category?: string | null; name?: string | null }
+): boolean {
+  if (!item) return false;
+  if (typeof item === "string") return parseGrade(item) != null;
+  return isGradedItem(item);
 }
 
 // Estimate graded-slab market value in USD using Claude. We pass the raw
@@ -421,8 +428,13 @@ export async function getGradedEstimate(opts: {
   condition: string;
   rawMarketPrice: number | null;
 }): Promise<PriceResult | null> {
-  const { name, set, franchise, rarity, condition, rawMarketPrice } = opts;
+  const { name, set, franchise, rawMarketPrice } = opts;
   if (!name && !set) return null;
+  // The grade may live in Rarity ("PSA 10") with Condition holding the label
+  // ("GEM - MT") — give the model the real grade either way.
+  const gradeInfo = gradeOfItem({ condition: opts.condition, rarity: opts.rarity, name, category: "Slab" });
+  const condition = gradeInfo?.label ?? opts.condition;
+  const rarity = gradeInfo && parseGrade(opts.rarity) ? "" : opts.rarity;
   const anchor =
     rawMarketPrice != null && isFinite(rawMarketPrice)
       ? `\n- Raw (ungraded NM) TCGplayer market price reference: $${rawMarketPrice.toFixed(2)}`
@@ -998,6 +1010,44 @@ function sharesCardNumber(query: string, candidate: string): boolean {
   return false;
 }
 
+// Explicit collector numbers that identify a printing inside a set:
+// "(063)", "(OP16-003)", "OP05-118", "FB10-057", "ST10-010", "#176". Returns
+// the bare 3-digit part so "(063)" and "OP17-063" compare equal. Pokémon
+// "185/159" numbers are handled by cardNumbers()/sharesCardNumber().
+function collectorNumbers(s: string): Set<string> {
+  const out = new Set<string>();
+  if (!s) return out;
+  const re = /\((?:[A-Z]{1,4}\d{1,2}-)?(\d{3})\)|\b[A-Z]{1,4}\d{1,2}-(\d{3})\b|#(\d{1,3})\b/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) != null) {
+    const n = m[1] ?? m[2] ?? m[3];
+    if (n) out.add(n.padStart(3, "0"));
+  }
+  return out;
+}
+
+function fullSetCodes(s: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of (s || "").toUpperCase().match(/\b[A-Z]{1,4}\d{1,2}-\d{3}\b/g) || []) out.add(m);
+  return out;
+}
+
+// Words inside parentheses that name a printing variant — "(Alternate Art)",
+// "(Super Alternate Art)", "(Parallel)", "(Manga)", "(Reprint)". Numbers, set
+// codes and language markers are not variants.
+const NON_VARIANT_WORDS = new Set(["jp", "en", "japanese", "english", "girl", "holo", "foil"]);
+function variantWords(s: string): Set<string> {
+  const out = new Set<string>();
+  if (!s) return out;
+  for (const p of s.match(/\(([^)]*)\)/g) || []) {
+    for (const w of p.slice(1, -1).toLowerCase().split(/[^a-z0-9]+/)) {
+      if (!w || /\d/.test(w) || NON_VARIANT_WORDS.has(w)) continue;
+      out.add(w);
+    }
+  }
+  return out;
+}
+
 // Find the best matching TCGplayer productId for an item. Returns null on no match.
 // Pokémon cards that aren't in the English catalogue (Japanese-only sets and
 // numbers like 224/187) get a second pass against TCGplayer's "Pokemon Japan"
@@ -1076,8 +1126,31 @@ async function findTcgplayerProductIdInLines(
       return data?.results?.[0]?.results ?? [];
     };
     if (process.env.DEBUG_TCGP) console.log(`[tcgp:debug] queries base=${JSON.stringify(baseQuery)} name=${JSON.stringify(expandedName)} raw=${JSON.stringify(nameForSearch)} lines=${JSON.stringify(productLines)}`);
+    // TCGplayer's search is lossy: "… Kaido 063 Alternate Art" returns ONLY
+    // "Kaido (062) (Super Alternate Art)" and drops the exact card. Pool the
+    // variant query with the plain query so the real sibling is always a
+    // candidate, then let the scorer pick.
+    const mergeInto = (pool: any[], more: any[]) => {
+      const seen = new Set(pool.map((i: any) => String(i?.productId)));
+      for (const it of more) {
+        const k = String(it?.productId);
+        if (!seen.has(k)) { seen.add(k); pool.push(it); }
+      }
+      return pool;
+    };
     let items: any[] = variantHint ? await runSearch(`${baseQuery} ${variantHint}`) : [];
-    if (!items.length) items = await runSearch(baseQuery);
+    if (variantHint) items = mergeInto(items, await runSearch(baseQuery));
+    else if (!items.length) items = await runSearch(baseQuery);
+    // A listing with an explicit collector number ("(063)", "FB10-057") whose
+    // number no candidate carries: widen with the name-only search.
+    const wantNums = collectorNumbers(nameForSearch);
+    if (wantNums.size && items.length && !items.some((it: any) => {
+      const cn = collectorNumbers(String(it?.productName || ""));
+      for (const n of wantNums) if (cn.has(n)) return true;
+      return false;
+    })) {
+      items = mergeInto(items, await runSearch(expandedName));
+    }
     // Nothing? Drop the set hint, then try the simplified card name.
     let scoreName = expandedName;
     let scoreSet = cleanSet || "";
@@ -1216,6 +1289,43 @@ async function findTcgplayerProductIdInLines(
       // Boost when the card number matches exactly (e.g. 185/159 == 185/159).
       if (sharesCardNumber(rawName, candName)) {
         score = Math.max(score, 0.9);
+      }
+      if (!sealedItem) {
+        // Collector numbers decide between siblings: "Kaido (063)" must never
+        // land on "Kaido (062)", whatever the word overlap says.
+        const qNums = collectorNumbers(rawName);
+        const cNums = collectorNumbers(candName);
+        if (qNums.size && cNums.size) {
+          let hit = false;
+          for (const n of qNums) if (cNums.has(n)) hit = true;
+          score = hit ? Math.max(score, 0.9) : Math.min(score, 0.45);
+          // The full set code ("EB03-001" on both sides) is the strongest
+          // identity we get — it outranks a bare "(001)" from another set.
+          const qCodes = fullSetCodes(rawName);
+          const cCodes = fullSetCodes(candName);
+          let codeHit = false;
+          for (const c of qCodes) if (cCodes.has(c)) codeHit = true;
+          if (codeHit) score = Math.max(score, 1.0) + 0.15;
+        }
+        // A candidate that names a variant the listing doesn't ("(Super
+        // Alternate Art)" vs "(Alternate Art)", "(Alternate Art)" vs plain) is
+        // a different, usually pricier, printing.
+        const qVar = variantWords(rawName);
+        const cVar = variantWords(candName);
+        let extra = 0;
+        let missing = 0;
+        for (const w of cVar) if (!qVar.has(w)) extra++;
+        for (const w of qVar) if (!cVar.has(w)) missing++;
+        if (extra) score -= 0.15;
+        // …and the plain printing is not the "(Alternate Art)" the listing names.
+        if (missing) score -= 0.2;
+        // Between otherwise-equal candidates prefer the one with the fewest
+        // words the listing never mentioned ("Youth/Piccolo // Adolescence"
+        // vs "Adolescence").
+        const qT = nameTokens(rawName);
+        let unexplained = 0;
+        for (const t of nameTokens(candName)) if (!qT.has(t)) unexplained++;
+        score -= Math.min(0.08, 0.02 * unexplained);
       }
       return { item: it, score, full, candName };
     });
@@ -1929,7 +2039,7 @@ export async function fetchTcgplayerPrintings(productId: number): Promise<Tcgpla
 // (marketValueSource === "manual"). Graded slabs keep their graded estimate.
 export function shouldFollowTcgplayer(item: Inventory, points: TcgplayerPricePoints): boolean {
   if (points.marketPrice == null || points.marketPrice <= 0) return false;
-  if (isGraded(item.condition)) return false;
+  if (isGraded(item)) return false;
   if ((item as any).marketValueSource === "manual" && item.marketValue != null) return false;
   // Mismatch guard: if a pre-existing (non-synced) value is wildly different
   // from the matched product's price, the TCGplayer match is probably wrong.

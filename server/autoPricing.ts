@@ -28,6 +28,7 @@ import {
   tcgplayerImageUrl,
   imageUrlLoads,
 } from "./pricing";
+import { priceGradedItemWithAlt } from "./altPricing";
 import { storage } from "./storage";
 import { broadcast } from "./realtime";
 import type { Inventory } from "@shared/schema";
@@ -84,6 +85,22 @@ function noMatchKey(item: Inventory) {
 
 async function priceItem(item: Inventory): Promise<"updated" | "skipped" | "failed"> {
     try {
+      // Graded slabs: Alt's per-grade value is the market, not TCGplayer's raw
+      // price. Once a day (cached in priceGradedItemWithAlt) — when the key
+      // is missing or Alt has no match we fall through to the old flow.
+      let altPriced = false;
+      if (isGraded(item)) {
+        try {
+          const alt = await Promise.race<any>([
+            priceGradedItemWithAlt(item),
+            new Promise((resolve) => setTimeout(() => resolve(null), PER_ITEM_TIMEOUT_MS)),
+          ]);
+          if (alt?.item) item = alt.item;
+          altPriced = !!alt?.refreshed || (item as any).marketValueSource === "alt";
+        } catch (err) {
+          console.warn("[autoPricing] alt lookup failed", item.id, (err as any)?.message ?? err);
+        }
+      }
       const points = await Promise.race<any>([
         (async () => {
           let pid = item.tcgpProductId ?? null;
@@ -110,10 +127,11 @@ async function priceItem(item: Inventory): Promise<"updated" | "skipped" | "fail
 
       if (points) {
         const patch = pricePointsToPatch(points);
-        if (isGraded(item.condition)) {
-          // Graded: refresh marketValue with AI graded estimate only when
-          // empty, so user-entered values are preserved between cycles.
-          if (item.marketValue == null) {
+        if (isGraded(item)) {
+          // Graded: Alt already set the value when it could. Otherwise the AI
+          // graded estimate fills an empty value — or replaces a raw
+          // TCGplayer price that was following the ungraded card.
+          if (!altPriced && (item.marketValue == null || item.marketValueSource === "tcgp")) {
             const graded = await Promise.race<any>([
               getGradedEstimate({
                 name: item.name,
@@ -133,6 +151,7 @@ async function priceItem(item: Inventory): Promise<"updated" | "skipped" | "fail
               graded.marketValue > 0
             ) {
               (patch as any).marketValue = graded.marketValue;
+              (patch as any).marketValueSource = "ai";
             }
           }
         } else {
@@ -153,7 +172,9 @@ async function priceItem(item: Inventory): Promise<"updated" | "skipped" | "fail
         }
         await storage.updateInventory(item.id, patch as any);
         return "updated";
-      } else if (isGraded(item.condition) && item.marketValue == null) {
+      } else if (altPriced) {
+        return "updated";
+      } else if (isGraded(item) && item.marketValue == null) {
         // No TCGplayer match for a graded slab — pure AI fallback.
         const graded = await Promise.race<any>([
           getGradedEstimate({
@@ -175,6 +196,7 @@ async function priceItem(item: Inventory): Promise<"updated" | "skipped" | "fail
         ) {
           await storage.updateInventory(item.id, {
             marketValue: graded.marketValue,
+            marketValueSource: "ai",
           } as any);
           return "updated";
         } else {

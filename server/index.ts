@@ -11,6 +11,7 @@ import { attachRealtime } from "./realtime";
 import { startAutoImport } from "./autoImport";
 import { startAutoPricing } from "./autoPricing";
 import { startInstagramShows } from "./instagramShows";
+import { startAltScheduler } from "./altPricing";
 
 const app = express();
 app.use(compression());
@@ -78,6 +79,7 @@ app.use((req, res, next) => {
   await startAutoImport();
   startAutoPricing();
   startInstagramShows();
+  startAltScheduler();
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

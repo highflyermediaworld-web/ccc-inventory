@@ -11,6 +11,7 @@ import { SHOWS as DEFAULT_SHOWS, splitShows, type CardShow } from "@/data/shows"
 import { Tent, Plus, Trash2, ArrowUp, ArrowDown, RotateCcw, Save, ExternalLink, Calculator, Radio, BookUser, MessageSquare, Wallet } from "lucide-react";
 import { PAYMENT_OPTIONS } from "@/data/payments";
 import { InstagramShowsCard } from "@/components/InstagramShowsCard";
+import { AltPricingCard } from "@/components/AltPricingCard";
 import { Link } from "wouter";
 
 type ShowsResponse = { source: "default" | "settings"; shows: CardShow[] | null };
@@ -98,6 +99,7 @@ export default function ShopSettings() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <InstagramShowsCard />
+        <AltPricingCard />
         <Card data-testid="card-ways-to-pay">
           <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Wallet className="size-4 text-gold" /> Ways to pay</CardTitle></CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-1">
