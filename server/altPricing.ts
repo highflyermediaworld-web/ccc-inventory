@@ -181,7 +181,9 @@ function words(s: string | null | undefined): string[] {
     .toLowerCase()
     .replace(/[’']/g, "")
     .split(/[^a-z0-9]+/)
-    .filter((w) => w.length >= 2 && !NOISE.has(w) && !/^\d+$/.test(w));
+    .filter((w) => w.length >= 2 && !NOISE.has(w) && !/^\d+$/.test(w))
+    // "promos"/"promo", "cards"/"card", "mcdonalds"/"mcdonald" — compare stems.
+    .map((w) => (w.length > 3 && /[^s]s$/.test(w) ? w.slice(0, -1) : w));
 }
 
 /** "176", "002/019" → "2", "FB07-049" → "FB07-049", "SV006/SV122" → "SV006". */
@@ -284,7 +286,10 @@ export function scoreAltRow(item: Pick<Inventory, "name" | "setName">, row: AltR
   let setHits = 0;
   if (setWords.length) {
     for (const w of setWords) if (hayWords.has(w)) setHits++;
-    score += 0.2 * (setHits / setWords.length);
+    // Agreeing set words help; a set that shares nothing with the row is a
+    // real signal against it (the "#020 Figure Collection" Pikachu is not
+    // the "#020 McDonald's" Pikachu).
+    score += setHits ? 0.2 * (setHits / setWords.length) : -0.25;
   }
 
   // Language: a German/Japanese print is a different card unless the
@@ -300,7 +305,7 @@ export function scoreAltRow(item: Pick<Inventory, "name" | "setName">, row: AltR
     // A Japanese row is plausible only when the listing says JP or its set
     // name is recognisably the same set ("Terastal Fest", "High Class Deck",
     // "McDonald's"). A Japanese #126 from another set is not our 126/193.
-    score += itemJp ? 0.15 : setHits > 0 ? -0.3 : -0.8;
+    score += itemJp ? 0.15 : setHits > 0 ? -0.1 : -0.8;
   } else if (itemJp || itemLang) {
     score -= 0.2;
   }
@@ -453,7 +458,7 @@ export async function listGradedItems(): Promise<Inventory[]> {
 }
 
 let running = false;
-export async function refreshAllGraded(opts: { force?: boolean } = {}): Promise<AltState> {
+export async function refreshAllGraded(opts: { force?: boolean; ids?: string[] } = {}): Promise<AltState> {
   const st = await loadState();
   if (running) return st;
   if (!(await getAltKey())) {
@@ -463,7 +468,11 @@ export async function refreshAllGraded(opts: { force?: boolean } = {}): Promise<
   }
   running = true;
   try {
-    const items = await listGradedItems();
+    let items = await listGradedItems();
+    if (opts.ids?.length) {
+      const want = new Set(opts.ids.map((x) => String(x).toUpperCase()));
+      items = items.filter((it) => want.has(String(it.id).toUpperCase()));
+    }
     let priced = 0;
     let unmatched = 0;
     let checked = 0;

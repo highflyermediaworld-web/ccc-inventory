@@ -580,7 +580,8 @@ export async function registerRoutes(
   app.post("/api/admin/alt/refresh", requireAuth, async (req, res) => {
     try {
       const force = req.body?.force === true;
-      const st = await altPricing.refreshAllGraded({ force });
+      const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).slice(0, 200) : undefined;
+      const st = await altPricing.refreshAllGraded({ force, ids });
       broadcast({ type: "inventory:bulk", payload: {} });
       res.json(st);
     } catch (err: any) { res.status(500).json({ message: err?.message || "Refresh failed" }); }
