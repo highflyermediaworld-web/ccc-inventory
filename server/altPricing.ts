@@ -102,7 +102,10 @@ async function reefPost<T>(action: string, body: Record<string, unknown>, keyOve
   if (!keyOverride) {
     const st = await loadState();
     if (remaining != null) st.creditsRemaining = remaining;
-    const cost = typeof credits?.cost === "number" ? credits.cost : typeof credits?.used === "number" ? credits.used : 3;
+    const cost =
+      typeof env.meta?.charged_credits === "number" ? env.meta.charged_credits
+      : typeof credits?.cost === "number" ? credits.cost
+      : typeof credits?.used === "number" ? credits.used : 3;
     st.creditsUsed += cost;
     await saveState(st);
   }
@@ -159,7 +162,13 @@ export function altCategoryFor(franchise: string | null | undefined): string {
   return "tcg";
 }
 
-const LANG_WORDS = /\b(german|japanese|chinese|korean|thai|italian|french|spanish|portuguese|indonesian|russian|dutch)\b/i;
+// Non-English prints are different cards. Japanese is a soft penalty (many
+// of the shop's slabs ARE Japanese sets — High Class Decks, SV8a, M-P promos
+// — even when the listing doesn't say so, and an English row still outranks
+// it when one exists); everything else is a hard reject unless the listing
+// names that language.
+const JP_WORDS = /\b(japanese|japan)\b/i;
+const LANG_WORDS = /\b(german|chinese|korean|thai|italian|french|spanish|portuguese|indonesian|russian|dutch|polish|taiwan|hong kong)\b/i;
 const NOISE = new Set([
   "the", "and", "of", "ex", "gx", "v", "vmax", "vstar", "card", "cards", "promo", "promos", "promotional",
   "sv", "swsh", "set", "base", "alternate", "art", "full", "parallel", "super", "manga", "jp", "en",
@@ -224,12 +233,21 @@ function cleanSet(set: string | null | undefined): string {
     .trim();
 }
 
+// Alt's search is AND-keyword: every word must appear in the row, and Alt
+// names sets its own way ("Black Star Promo" vs our "Mega Evolution Promos").
+// So the primary query is just character + number — that returns every
+// language print of the card and the scorer picks the right one. The set
+// only goes into the query when the listing has no number.
 export function altQueryFor(item: Pick<Inventory, "name" | "setName" | "franchise">): string {
-  const parts = [characterOf(item.name)];
+  const character = characterOf(item.name);
   const num = itemCardNumber(item.name);
-  if (num) parts.push(num);
-  parts.push(cleanSet(item.setName));
-  return parts.filter(Boolean).join(" ").trim();
+  if (num) return `${character} ${num}`.trim();
+  return `${character} ${cleanSet(item.setName)}`.trim();
+}
+/** Second try when the first query returns nothing: character + set words. */
+export function altFallbackQueryFor(item: Pick<Inventory, "name" | "setName" | "franchise">): string | null {
+  const q = `${characterOf(item.name)} ${cleanSet(item.setName)}`.trim();
+  return q && q !== altQueryFor(item) ? q : null;
 }
 
 // ── Scoring ────────────────────────────────────────────────────────
@@ -263,20 +281,27 @@ export function scoreAltRow(item: Pick<Inventory, "name" | "setName">, row: AltR
 
   // Set words.
   const setWords = words(cleanSet(item.setName));
+  let setHits = 0;
   if (setWords.length) {
-    let hits = 0;
-    for (const w of setWords) if (hayWords.has(w)) hits++;
-    score += 0.2 * (hits / setWords.length);
+    for (const w of setWords) if (hayWords.has(w)) setHits++;
+    score += 0.2 * (setHits / setWords.length);
   }
 
   // Language: a German/Japanese print is a different card unless the
   // listing says so.
-  const itemLang = (item.name + " " + (item.setName || "")).match(/\b(JP|JPN|Japanese|German|Chinese|Korean)\b/i)?.[1]?.toLowerCase();
-  const rowLang = hay.match(LANG_WORDS)?.[1]?.toLowerCase();
+  const itemText = `${item.name} ${item.setName || ""}`;
+  const itemJp = /\b(JP|JPN|Japanese)\b/i.test(itemText);
+  const itemLang = itemText.match(LANG_WORDS)?.[1]?.toLowerCase() ?? null;
+  const rowJp = JP_WORDS.test(hay);
+  const rowLang = hay.match(LANG_WORDS)?.[1]?.toLowerCase() ?? null;
   if (rowLang) {
-    const itemSays = itemLang && (itemLang === rowLang || (/^jp/.test(itemLang) && rowLang === "japanese"));
-    score += itemSays ? 0.15 : -0.5;
-  } else if (itemLang) {
+    score += itemLang === rowLang ? 0.15 : -0.8;
+  } else if (rowJp) {
+    // A Japanese row is plausible only when the listing says JP or its set
+    // name is recognisably the same set ("Terastal Fest", "High Class Deck",
+    // "McDonald's"). A Japanese #126 from another set is not our 126/193.
+    score += itemJp ? 0.15 : setHits > 0 ? -0.3 : -0.8;
+  } else if (itemJp || itemLang) {
     score -= 0.2;
   }
 
@@ -316,14 +341,17 @@ export async function altSearchForItem(item: Inventory): Promise<AltQuote | null
   const g = gradeOfItem(item);
   if (!g) return null;
   const grade = altGradeFor(g);
+  const category = altCategoryFor(item.franchise);
   const query = altQueryFor(item);
-  const { data } = await reefPost<{ rows: AltRow[] }>("search", {
-    query,
-    category: altCategoryFor(item.franchise),
-    grade,
-    limit: 20,
-  });
-  const rows = Array.isArray(data?.rows) ? data.rows : [];
+  const search = async (q: string) => {
+    const { data } = await reefPost<{ rows: AltRow[] }>("search", { query: q, category, grade, limit: 20 });
+    return Array.isArray(data?.rows) ? data.rows : [];
+  };
+  let rows = await search(query);
+  if (!rows.length) {
+    const fb = altFallbackQueryFor(item);
+    if (fb) rows = await search(fb);
+  }
   if (process.env.DEBUG_ALT) console.log(`[alt:debug] ${item.id} q=${JSON.stringify(query)} grade=${grade} rows=${rows.length}`);
   let best: { row: AltRow; score: number } | null = null;
   for (const row of rows) {
@@ -387,8 +415,18 @@ export async function priceGradedItemWithAlt(
   }
   if (!quote) quote = await altSearchForItem(item);
   if (!quote) {
-    await storage.updateInventory(item.id, { altPricedAt: now } as any);
-    return { item: { ...item, altPricedAt: now } as any, refreshed: false, quote: null, reason: "no match" };
+    // No match: drop any earlier Alt match so a stale (or wrong) Alt value
+    // can't linger; the AI graded estimate takes over on the next cycle.
+    const clear: Record<string, any> = { altPricedAt: now };
+    if (it.altCardId || it.altValue != null) {
+      Object.assign(clear, { altCardId: null, altName: null, altUrl: null, altValue: null, altValueLow: null, altValueHigh: null, altPop: null, altLastSalePrice: null, altLastSaleDate: null });
+    }
+    if (it.marketValueSource === "alt") {
+      clear.marketValue = null;
+      clear.marketValueSource = null;
+    }
+    const updated = await storage.updateInventory(item.id, clear as any);
+    return { item: (updated as Inventory) ?? ({ ...item, ...clear } as any), refreshed: false, quote: null, reason: "no match" };
   }
   const patch = altPatchFor(quote);
   if (quote.price != null && it.marketValueSource !== "manual") {
