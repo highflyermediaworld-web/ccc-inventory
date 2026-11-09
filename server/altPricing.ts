@@ -295,7 +295,12 @@ export function scoreAltRow(item: Pick<Inventory, "name" | "setName">, row: AltR
   // Language: a German/Japanese print is a different card unless the
   // listing says so.
   const itemText = `${item.name} ${item.setName || ""}`;
-  const itemJp = /\b(JP|JPN|Japanese)\b/i.test(itemText);
+  // Japanese markers: the word itself, or Japanese-only numbering such as
+  // "020/M-P" (Mega promo), "SV-P", "S-P", "SM-P" and "sv8a:"-style set codes.
+  const itemJp = /\b(JP|JPN|Japanese)\b/i.test(itemText)
+    || /\/\s*(M|SV|S|SM|XY|BW)-P\b/i.test(itemText)
+    || /\b(M|SV|S|SM|XY|BW)-P Promo/i.test(itemText)
+    || /\b(sv|s|sm)\d{1,2}[a-z]?:/i.test(itemText);
   const itemLang = itemText.match(LANG_WORDS)?.[1]?.toLowerCase() ?? null;
   const rowJp = JP_WORDS.test(hay);
   const rowLang = hay.match(LANG_WORDS)?.[1]?.toLowerCase() ?? null;
@@ -305,8 +310,14 @@ export function scoreAltRow(item: Pick<Inventory, "name" | "setName">, row: AltR
     // A Japanese row is plausible only when the listing says JP or its set
     // name is recognisably the same set ("Terastal Fest", "High Class Deck",
     // "McDonald's"). A Japanese #126 from another set is not our 126/193.
-    score += itemJp ? 0.15 : setHits > 0 ? -0.1 : -0.8;
-  } else if (itemJp || itemLang) {
+    // Even for a JP listing, a JP row from an unrelated set (25th
+    // Anniversary Pikachu V #020 vs McDonald's #020) is not the card.
+    if (itemJp) score += setHits > 0 || !setWords.length ? 0.15 : -0.3;
+    else score += setHits > 0 ? -0.1 : -0.8;
+  } else if (itemJp) {
+    // Listing is Japanese, row is not: a different print.
+    score -= 0.4;
+  } else if (itemLang) {
     score -= 0.2;
   }
 
