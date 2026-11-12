@@ -74,7 +74,11 @@ export const FAQ_GROUPS: FaqGroup[] = [
     id: "shipping",
     title: "Shipping & guarantee",
     items: [
-      { q: "How fast do orders ship?", a: "Orders ship within 48 hours of payment, anywhere in the United States." },
+      { q: "How fast do orders ship?", a: "Orders ship within 48 hours of payment by USPS Ground Advantage (2–5 business days), anywhere in the United States." },
+      {
+        q: "How much is shipping?",
+        a: "Shipping is USPS Ground Advantage at USPS's current retail rate, based on how far you are from California and the weight of your order — one card to the Bay Area is about $8.40, a bundle of slabs to the East Coast runs more. Enter your ZIP code in the cart to see the exact amount before you pay. Shipping is added before tax, and sales tax applies to the cards only.",
+      },
       {
         q: "How are cards packed?",
         a: "Every card goes in a penny sleeve and toploader, then a team bag and a bubble mailer at minimum. High-value cards ship insured with tracking.",

@@ -23,6 +23,7 @@ type Confirm = {
   imageUrl: string | null;
   quantity: number;
   subtotal: number;
+  shipping?: number;
   tax: number;
   total: number;
   email: string | null;
@@ -114,6 +115,9 @@ export function CheckoutSuccessPage() {
             <div className="px-5 py-5 text-sm">
               <dl className="grid grid-cols-[1fr_auto] gap-y-1 text-muted-foreground">
                 <dt>Subtotal</dt><dd className="text-right tabular-nums text-foreground">{formatCurrency(state.data.subtotal)}</dd>
+                {state.data.shipping != null && (
+                  <><dt>Shipping (USPS Ground Advantage)</dt><dd className="text-right tabular-nums text-foreground">{state.data.shipping > 0 ? formatCurrency(state.data.shipping) : "Free"}</dd></>
+                )}
                 <dt>Sales tax</dt><dd className="text-right tabular-nums text-foreground">{formatCurrency(state.data.tax)}</dd>
                 <dt className="font-semibold text-foreground">Total charged</dt><dd className="text-right tabular-nums font-semibold text-foreground">{formatCurrency(state.data.total)}</dd>
               </dl>

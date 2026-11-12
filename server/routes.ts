@@ -60,6 +60,7 @@ import { randomUUID } from "node:crypto";
 import { aiHealth } from "./ai";
 import { applyManualImages } from "./manualImages";
 import { registerStripeCheckoutRoutes } from "./stripeCheckout";
+import { registerShippingRoutes } from "./shipping";
 import { registerStorefrontRoutes } from "./storefront";
 import {
   requireAuth,
@@ -125,6 +126,7 @@ export async function registerRoutes(
   // ===== Storefront content (About page editor) + shop assistant =====
   registerStorefrontRoutes(app, UPLOADS_DIR);
   registerStripeCheckoutRoutes(app);
+  registerShippingRoutes(app);
 
   // ===== AUTH (public) =====
   // Signup is gated by ADMIN_INVITE_CODE env var. The status endpoint lets the

@@ -12,6 +12,7 @@ import { Tent, Plus, Trash2, ArrowUp, ArrowDown, RotateCcw, Save, ExternalLink, 
 import { PAYMENT_OPTIONS } from "@/data/payments";
 import { InstagramShowsCard } from "@/components/InstagramShowsCard";
 import { AltPricingCard } from "@/components/AltPricingCard";
+import { ShippingSettingsCard } from "@/components/ShippingSettingsCard";
 import { Link } from "wouter";
 
 type ShowsResponse = { source: "default" | "settings"; shows: CardShow[] | null };
@@ -96,6 +97,8 @@ export default function ShopSettings() {
           </div>
         }
       />
+
+      <ShippingSettingsCard />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <InstagramShowsCard />

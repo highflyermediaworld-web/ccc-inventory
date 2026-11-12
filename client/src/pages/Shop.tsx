@@ -254,6 +254,84 @@ const byNewest = stockFirst((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
 const byName = stockFirst((a, b) => a.name.localeCompare(b.name));
 
 // ---------- Page ----------
+/* ------------------------------------------------------------------ */
+/*  Shipping quote (USPS Ground Advantage by ZIP + weight)             */
+/* ------------------------------------------------------------------ */
+
+type ShipQuote =
+  | { ok: true; service: string; zone: number; miles: number; ounces: number; tier: string; postage: number; handling: number; amount: number; free: boolean; destZip: string }
+  | { ok: false; reason: string };
+type ShipQuoteResponse = { enabled: boolean; service: string; days: string; freeOver: number | null; quote: ShipQuote };
+
+const SHIP_ZIP_KEY = "ccc.shipZip";
+function readSavedZip(): string {
+  try { return localStorage.getItem(SHIP_ZIP_KEY) ?? ""; } catch { return ""; }
+}
+function saveZip(z: string) {
+  try { localStorage.setItem(SHIP_ZIP_KEY, z); } catch {}
+}
+const zipValid = (z: string) => /^\d{5}$/.test(z);
+
+function useShippingQuote(zip: string, items: { id: string; qty: number }[]) {
+  const key = items.map((i) => `${i.id}:${i.qty}`).join(",");
+  const enabled = zipValid(zip) && items.length > 0;
+  const q = useQuery<ShipQuoteResponse>({
+    queryKey: ["/api/shop/shipping/quote", zip, key],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/shop/shipping/quote?zip=${encodeURIComponent(zip)}&items=${encodeURIComponent(key)}`, { credentials: "omit" });
+      if (!r.ok) throw new Error("Couldn't quote shipping");
+      return r.json();
+    },
+    enabled,
+    staleTime: 60_000,
+  });
+  // Shipping switched off by the owner → treat as $0 without needing a ZIP.
+  const cfg = useQuery<ShipQuoteResponse>({
+    queryKey: ["/api/shop/shipping/quote", "config"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/shop/shipping/quote?zip=00000&items=`, { credentials: "omit" });
+      return r.json();
+    },
+    staleTime: 5 * 60_000,
+  });
+  const shippingEnabled = cfg.data?.enabled !== false;
+  const quote = q.data?.quote;
+  const amount = !shippingEnabled ? 0 : quote && quote.ok ? quote.amount : null;
+  return { shippingEnabled, quote, amount, loading: enabled && q.isFetching && !q.data, days: q.data?.days ?? cfg.data?.days ?? "2–5 business days", freeOver: cfg.data?.freeOver ?? null, needsZip: shippingEnabled && !zipValid(zip) };
+}
+
+function ShipZipField({ zip, onChange, quote, loading, shippingEnabled, testId }: { zip: string; onChange: (z: string) => void; quote: ShipQuote | undefined; loading: boolean; shippingEnabled: boolean; testId: string }) {
+  if (!shippingEnabled) return null;
+  return (
+    <div data-testid={`${testId}-wrap`}>
+      <Label className="text-xs">Ship to ZIP code</Label>
+      <Input
+        inputMode="numeric"
+        autoComplete="postal-code"
+        maxLength={5}
+        value={zip}
+        onChange={(e) => onChange(e.target.value.replace(/\D/g, "").slice(0, 5))}
+        placeholder="e.g. 94110"
+        className="mt-1 tabular-nums"
+        data-testid={testId}
+      />
+      <p className="mt-1 text-[11px] text-muted-foreground" data-testid={`${testId}-hint`}>
+        {!zipValid(zip)
+          ? "USPS Ground Advantage, priced by distance and weight. Enter your ZIP to see the exact cost."
+          : loading
+            ? "Checking USPS rates…"
+            : quote && !quote.ok
+              ? quote.reason
+              : quote && quote.ok
+                ? quote.free
+                  ? `Free shipping — USPS Ground Advantage to ${quote.destZip}.`
+                  : `USPS Ground Advantage to ${quote.destZip} · zone ${quote.zone} · ${quote.tier} parcel. Added before tax; shipping isn't taxed.`
+                : ""}
+      </p>
+    </div>
+  );
+}
+
 export default function ShopPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -2355,6 +2433,9 @@ function CartDrawer({
 
   const [cardPending, setCardPending] = useState(false);
   const [mode, setMode] = useState<"cart" | "request" | "sent">("cart");
+  const [shipZip, setShipZip] = useState(readSavedZip);
+  const ship = useShippingQuote(shipZip, okRows.map((r) => ({ id: r.id, qty: r.qty })));
+  const shippingLine = ship.amount ?? 0;
   const [form, setForm] = useState({
     customerName: "",
     customerEmail: "",
@@ -2384,6 +2465,7 @@ function CartDrawer({
         body: JSON.stringify({
           items: okRows.map((row) => ({ itemId: row.id, quantity: row.qty })),
           customerEmail: form.customerEmail.trim() || undefined,
+          shipZip: shipZip || undefined,
         }),
       });
       const body = await r.json().catch(() => ({}));
@@ -2404,7 +2486,10 @@ function CartDrawer({
     setErrors(e);
     if (Object.keys(e).length || !okRows.length) return;
     setSending(true);
-    const label = `Cart order · ${count} item${count === 1 ? "" : "s"} · ${formatCurrency(subtotal)} before tax/shipping`;
+    const shipNote = ship.quote && ship.quote.ok
+      ? ship.quote.free ? " · free shipping" : ` · est. shipping ${formatCurrency(ship.quote.amount)} (USPS Ground Advantage to ${ship.quote.destZip})`
+      : zipValid(shipZip) ? ` · ship to ${shipZip}` : "";
+    const label = `Cart order · ${count} item${count === 1 ? "" : "s"} · ${formatCurrency(subtotal)} before tax${shipNote}`;
     const failures: string[] = [];
     for (const row of okRows) {
       try {
@@ -2528,13 +2613,19 @@ function CartDrawer({
             </div>
 
             <div className={cn("border-t border-border px-5 py-4 space-y-3 bg-white shrink-0", mode === "request" && "overflow-y-auto max-h-[78dvh]")}>
+              {mode === "cart" && okRows.length > 0 && (
+                <ShipZipField zip={shipZip} onChange={(z) => { setShipZip(z); if (zipValid(z)) saveZip(z); }} quote={ship.quote} loading={ship.loading} shippingEnabled={ship.shippingEnabled} testId="input-cart-zip" />
+              )}
               <div className="text-sm space-y-1">
                 <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-semibold tabular-nums" data-testid="text-cart-subtotal">{formatCurrency(subtotal)}</span></div>
+                {ship.shippingEnabled && (
+                  <div className="flex justify-between text-muted-foreground"><span>Shipping{ship.quote && ship.quote.ok ? "" : " (enter ZIP)"}</span><span className="tabular-nums" data-testid="text-cart-shipping">{ship.amount == null ? "—" : ship.amount === 0 ? "Free" : formatCurrency(ship.amount)}</span></div>
+                )}
                 {cardEnabled && taxPct > 0 && (
                   <div className="flex justify-between text-muted-foreground"><span>Est. CA sales tax ({taxPct}%)</span><span className="tabular-nums">{formatCurrency(taxEstimate)}</span></div>
                 )}
-                <div className="flex justify-between text-base font-bold pt-1 border-t border-border"><span>Total</span><span className="tabular-nums" data-testid="text-cart-total">{formatCurrency(subtotal + (cardEnabled ? taxEstimate : 0))}</span></div>
-                <p className="text-[11px] text-muted-foreground">Shipping is arranged after purchase. Ships within 48 hours.</p>
+                <div className="flex justify-between text-base font-bold pt-1 border-t border-border"><span>Total</span><span className="tabular-nums" data-testid="text-cart-total">{formatCurrency(subtotal + shippingLine + (cardEnabled ? taxEstimate : 0))}</span></div>
+                <p className="text-[11px] text-muted-foreground">Ships USPS Ground Advantage within 48 hours, {ship.days}.</p>
               </div>
 
               {mode === "cart" ? (
@@ -2551,10 +2642,14 @@ function CartDrawer({
                     <Button
                       className="w-full"
                       onClick={payWithCard}
-                      disabled={cardPending || !okRows.length || problemRows.length > 0 || belowMinimum}
+                      disabled={cardPending || !okRows.length || problemRows.length > 0 || belowMinimum || ship.needsZip || (ship.shippingEnabled && ship.amount == null)}
                       data-testid="button-cart-pay-card"
                     >
-                      {cardPending ? "Opening secure checkout…" : `Pay with card — ${formatCurrency(subtotal)} + tax`}
+                      {cardPending
+                        ? "Opening secure checkout…"
+                        : ship.needsZip
+                          ? "Enter your ZIP to pay with card"
+                          : `Pay with card — ${formatCurrency(subtotal + shippingLine)} + tax`}
                     </Button>
                   )}
                   <Button
@@ -2675,6 +2770,8 @@ function BuyDialog({
     staleTime: 5 * 60 * 1000,
   });
   const cardEnabled = !!checkoutCfg?.enabled;
+  const [shipZip, setShipZip] = useState(readSavedZip);
+  const ship = useShippingQuote(shipZip, [{ id: listing.id, qty: form.quantity }]);
 
   // Card checkout: Stripe hosts the payment page; we only start the session.
   async function payWithCard() {
@@ -2688,6 +2785,7 @@ function BuyDialog({
           itemId: listing.id,
           quantity: form.quantity,
           customerEmail: form.customerEmail.trim() || undefined,
+          shipZip: shipZip || undefined,
         }),
       });
       const body = await r.json().catch(() => ({}));
@@ -2758,7 +2856,12 @@ function BuyDialog({
       paymentMethod: form.paymentMethod || null,
       quantity: form.quantity,
       offerPrice: listing.askingPrice,
-      message: form.message.trim() || null,
+      message: [
+        ship.quote && ship.quote.ok
+          ? ship.quote.free ? "Free shipping" : `Est. shipping ${formatCurrency(ship.quote.amount)} (USPS Ground Advantage to ${ship.quote.destZip})`
+          : zipValid(shipZip) ? `Ship to ${shipZip}` : "",
+        form.message.trim(),
+      ].filter(Boolean).join("\n") || null,
     });
   }
 
@@ -2867,6 +2970,7 @@ function BuyDialog({
                   </div>
                 )}
               </div>
+              <ShipZipField zip={shipZip} onChange={(z) => { setShipZip(z); if (zipValid(z)) saveZip(z); }} quote={ship.quote} loading={ship.loading} shippingEnabled={ship.shippingEnabled} testId="input-buy-zip" />
               <div>
                 <Label className="text-xs">How would you like to pay?</Label>
                 <Select
@@ -2902,16 +3006,26 @@ function BuyDialog({
             </div>
             {cardEnabled && !belowCardMinimum && (
               <div className="mt-4 border border-border p-3" data-testid="card-checkout">
+                {ship.shippingEnabled && (
+                  <div className="mb-3 text-sm space-y-1">
+                    <div className="flex justify-between"><span className="text-muted-foreground">Card{form.quantity > 1 ? `s ×${form.quantity}` : ""}</span><span className="tabular-nums">{formatCurrency(cardTotal)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Shipping{ship.amount == null ? " (enter ZIP)" : ""}</span><span className="tabular-nums" data-testid="text-buy-shipping">{ship.amount == null ? "—" : ship.amount === 0 ? "Free" : formatCurrency(ship.amount)}</span></div>
+                  </div>
+                )}
                 <Button
                   className="w-full"
                   onClick={payWithCard}
-                  disabled={cardPending || mutation.isPending}
+                  disabled={cardPending || mutation.isPending || ship.needsZip || (ship.shippingEnabled && ship.amount == null)}
                   data-testid="button-pay-card"
                 >
-                  {cardPending ? "Opening secure checkout…" : `Pay with card — ${formatCurrency(cardTotal)} + tax`}
+                  {cardPending
+                    ? "Opening secure checkout…"
+                    : ship.needsZip
+                      ? "Enter your ZIP to pay with card"
+                      : `Pay with card — ${formatCurrency(cardTotal + (ship.amount ?? 0))} + tax`}
                 </Button>
                 <p className="mt-2 text-[11px] text-muted-foreground">
-                  Credit or debit, Apple Pay and Google Pay on Stripe's secure page. {checkoutCfg?.taxPercent}% CA sales tax is added at checkout. Ships in 48 hours.
+                  Credit or debit, Apple Pay and Google Pay on Stripe's secure page. Shipping is added before tax; {checkoutCfg?.taxPercent}% CA sales tax applies to the cards only. Ships in 48 hours.
                 </p>
                 {onAddToCart && (
                   <button type="button" onClick={onAddToCart} className="mt-2 text-xs font-semibold underline underline-offset-2 text-foreground/80 hover:text-foreground" data-testid="button-buy-add-cart">

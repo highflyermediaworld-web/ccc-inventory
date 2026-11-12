@@ -12,6 +12,8 @@ import { requireAuth } from "./auth";
 import { storage } from "./storage";
 import { broadcast } from "./realtime";
 import type { Inventory } from "@shared/schema";
+import { quoteForLines } from "./shipping";
+import { SHIPPING_SERVICE } from "@shared/shipping";
 
 const SECRET = process.env.STRIPE_SECRET_KEY || "";
 // California sales tax, as a percentage. Override with SALES_TAX_PERCENT.
@@ -89,6 +91,7 @@ export type PaidSummary = {
   imageUrl: string | null;
   quantity: number;
   subtotal: number;
+  shipping: number;
   tax: number;
   total: number;
   email: string | null;
@@ -126,6 +129,7 @@ export async function recordPaidSession(session: Stripe.Checkout.Session): Promi
   const metaTax = Number(session.metadata?.tax);
   const taxAmount = isRegister && Number.isFinite(metaTax) ? metaTax : (session.total_details?.amount_tax ?? 0) / 100;
   const subtotal = isRegister ? Math.max(0, total - taxAmount) : (session.amount_subtotal ?? 0) / 100;
+  const shippingAmount = isRegister ? 0 : (session.total_details?.amount_shipping ?? session.shipping_cost?.amount_total ?? 0) / 100;
   const details = session.customer_details;
   const registerNotes = (session.metadata?.notes ?? "").trim();
   const counterpartyOverride = (session.metadata?.counterparty ?? "").trim();
@@ -152,6 +156,7 @@ export async function recordPaidSession(session: Stripe.Checkout.Session): Promi
     imageUrl: first?.imageUrl ?? null,
     quantity: summaryItems.reduce((n, i) => n + i.quantity, 0),
     subtotal,
+    shipping: shippingAmount,
     tax: taxAmount,
     total,
     email: details?.email ?? session.customer_email ?? null,
@@ -193,7 +198,7 @@ export async function recordPaidSession(session: Stripe.Checkout.Session): Promi
       counterparty: counterpartyOverride || details?.name || details?.email || (isRegister ? "Walk-up customer" : "Online order"),
       price: lineSubtotal,
       pnl: Math.round((lineSubtotal - costShare) * 100) / 100,
-      notes: `Paid via ${PAYMENT_LABEL}${isRegister ? " at register" : ""}${orderLabel} \u00b7 tax ${lineTax.toFixed(2)} \u00b7 order total ${total.toFixed(2)} \u00b7 ${sessionId}${shipTo ? ` \u00b7 ship to ${shipTo}` : ""}${registerNotes ? ` \u00b7 ${registerNotes}` : ""}`,
+      notes: `Paid via ${PAYMENT_LABEL}${isRegister ? " at register" : ""}${orderLabel} \u00b7 tax ${lineTax.toFixed(2)}${shippingAmount > 0 && l === resolved[0] ? ` \u00b7 shipping ${shippingAmount.toFixed(2)} (${SHIPPING_SERVICE})` : ""} \u00b7 order total ${total.toFixed(2)} \u00b7 ${sessionId}${shipTo ? ` \u00b7 ship to ${shipTo}` : ""}${registerNotes ? ` \u00b7 ${registerNotes}` : ""}`,
     } as any);
     // Online orders also land in Requests so Chris sees the ship-to details;
     // register sales are already in hand.
@@ -207,7 +212,7 @@ export async function recordPaidSession(session: Stripe.Checkout.Session): Promi
       quantity: l.quantity,
       offerPrice: unit,
       paymentMethod: PAYMENT_LABEL,
-      message: `PAID online${orderLabel} \u2014 ${total.toFixed(2)} order total (${taxAmount.toFixed(2)} tax).${shipTo ? ` Ship to: ${shipTo}.` : ""} Stripe ${sessionId}`,
+      message: `PAID online${orderLabel} \u2014 ${total.toFixed(2)} order total (${shippingAmount > 0 ? `${shippingAmount.toFixed(2)} shipping, ` : shippingAmount === 0 && !isRegister ? "free shipping, " : ""}${taxAmount.toFixed(2)} tax).${shipTo ? ` Ship to: ${shipTo}.` : ""} Stripe ${sessionId}`,
       status: "Accepted",
     } as any);
     if (updated) broadcast({ type: "inventory:update", payload: updated });
@@ -471,6 +476,14 @@ export function registerStripeCheckoutRoutes(app: Express) {
         });
       }
 
+      // Shipping: USPS Ground Advantage by zone + weight, quoted server-side
+      // from the destination ZIP the shopper typed in the cart. Charged before
+      // tax and untaxed (separately stated carrier charge).
+      const shipZip = String(req.body?.shipZip ?? "").trim();
+      const quote = await quoteForLines(lines, shipZip);
+      if (!quote.ok) return res.status(400).json({ code: "ship_zip", message: quote.reason });
+      const shippingCents = Math.round(quote.amount * 100);
+
       const tax = await taxRateId();
       // Compact "ID×qty" list so the confirm step can record every line even
       // if an item is renamed later. Stripe metadata values max out at 500 chars.
@@ -478,6 +491,20 @@ export function registerStripeCheckoutRoutes(app: Express) {
       const session = await client().checkout.sessions.create({
         mode: "payment",
         customer_email: email,
+        shipping_options: [
+          {
+            shipping_rate_data: {
+              type: "fixed_amount",
+              fixed_amount: { amount: shippingCents, currency: "usd" },
+              display_name: quote.free ? `${SHIPPING_SERVICE} — free` : SHIPPING_SERVICE,
+              delivery_estimate: {
+                minimum: { unit: "business_day", value: 2 },
+                maximum: { unit: "business_day", value: 5 },
+              },
+              tax_behavior: "exclusive",
+            },
+          },
+        ],
         line_items: lines.map((l) => ({
           quantity: l.quantity,
           ...(tax ? { tax_rates: [tax] } : {}),
@@ -497,6 +524,10 @@ export function registerStripeCheckoutRoutes(app: Express) {
         metadata: {
           items: manifest.slice(0, 500),
           lineCount: String(lines.length),
+          shipZip: quote.destZip,
+          shipping: quote.amount.toFixed(2),
+          shipZone: String(quote.zone),
+          shipOunces: String(quote.ounces),
           // Legacy single-item fields, kept for the first line.
           itemId: lines[0].item.id,
           quantity: String(lines[0].quantity),
