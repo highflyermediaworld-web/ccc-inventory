@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -107,7 +108,7 @@ export default function ShipmentsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {visible.map((s) => <ShipmentCard key={s.id} s={s} onPatch={(body) => patch.mutate({ id: s.id, body })} onDelete={() => { if (confirm("Remove this shipment? The order itself is not affected.")) remove.mutate(s.id); }} busy={patch.isPending} />)}
+          {visible.map((s) => <ShipmentCard key={s.id} s={s} onPatch={(body) => patch.mutate({ id: s.id, body })} onDelete={() => remove.mutate(s.id)} busy={patch.isPending} />)}
         </div>
       )}
 
@@ -123,11 +124,16 @@ function ShipmentCard({ s, onPatch, onDelete, busy }: { s: Row; onPatch: (b: Rec
   const shipped = s.status === "Shipped";
   const label = `${API_BASE}/api/admin/shipments/${s.id}/label`;
   const slip = `${API_BASE}/api/admin/shipments/${s.id}/packing-slip`;
+  // On phones open in the same tab so the "← Shipping" button brings you back;
+  // on desktop a new tab keeps the queue open while printing.
+  const newTab = typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
+  const tgt = newTab ? { target: "_blank", rel: "noopener noreferrer" } : {};
   async function copy() {
     try { await navigator.clipboard.writeText(addressText(s)); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
   }
+  const [confirmDelete, setConfirmDelete] = useState(false);
   return (
-    <div className="border border-border bg-card p-4 grid gap-4 lg:grid-cols-[1.2fr_1fr_auto]" data-testid={`shipment-${s.id}`}>
+    <div className="border border-border bg-card p-4 grid gap-4 lg:grid-cols-[1.2fr_1fr_14rem] min-w-0 overflow-hidden" data-testid={`shipment-${s.id}`}>
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className={cn("text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5", shipped ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-200" : "bg-primary text-primary-foreground")}>{s.status}</span>
@@ -137,31 +143,43 @@ function ShipmentCard({ s, onPatch, onDelete, busy }: { s: Row; onPatch: (b: Rec
         <pre className="mt-2 font-sans text-sm leading-snug whitespace-pre-wrap" data-testid={`shipment-address-${s.id}`}>{addressText(s)}</pre>
         {(s.customerEmail || s.customerPhone) && <div className="mt-1 text-xs text-muted-foreground">{[s.customerEmail, s.customerPhone].filter(Boolean).join(" · ")}</div>}
       </div>
-      <div className="text-sm">
+      <div className="text-sm min-w-0">
         <ul className="space-y-0.5">
-          {s.items.map((i, idx) => <li key={idx} className="flex justify-between gap-3"><span className="truncate">{i.quantity > 1 ? `${i.quantity}× ` : ""}{i.name}{i.setName ? <span className="text-muted-foreground"> · {i.setName}</span> : null}</span>{i.unitPrice != null && <span className="tabular-nums text-muted-foreground shrink-0">{formatCurrency(i.unitPrice * i.quantity)}</span>}</li>)}
+          {s.items.map((i, idx) => <li key={idx} className="flex justify-between gap-3 min-w-0"><span className="truncate min-w-0">{i.quantity > 1 ? `${i.quantity}× ` : ""}{i.name}{i.setName ? <span className="text-muted-foreground"> · {i.setName}</span> : null}</span>{i.unitPrice != null && <span className="tabular-nums text-muted-foreground shrink-0">{formatCurrency(i.unitPrice * i.quantity)}</span>}</li>)}
         </ul>
         <div className="mt-2 text-xs text-muted-foreground">
           {s.service} · {weightLabel(s.ounces)} · {count} item{count === 1 ? "" : "s"}{s.zone ? ` · zone ${s.zone}` : ""}
           {s.postageEstimate != null && <> · est. postage <b className="text-foreground">{formatCurrency(s.postageEstimate)}</b></>}
           {s.shippingCharged != null && <> · customer paid {s.shippingCharged > 0 ? formatCurrency(s.shippingCharged) : "free"}</>}
         </div>
-        {s.tracking && <div className="mt-1 text-xs">Tracking: <a className="underline" href={`https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(s.tracking)}`} target="_blank" rel="noopener noreferrer">{s.tracking}</a></div>}
+        {s.tracking && <div className="mt-1 text-xs break-all">Tracking: <a className="underline" href={`https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(s.tracking)}`} target="_blank" rel="noopener noreferrer">{s.tracking}</a></div>}
         {s.note && <div className="mt-1 text-xs text-muted-foreground">{s.note}</div>}
       </div>
-      <div className="flex flex-col gap-2 lg:w-56">
-        <a href={label} target="_blank" rel="noopener noreferrer"><Button className="w-full" size="sm" data-testid={`button-label-${s.id}`}><Printer className="size-4 mr-2" /> Print label</Button></a>
-        <a href={slip} target="_blank" rel="noopener noreferrer"><Button className="w-full" variant="outline" size="sm"><FileText className="size-4 mr-2" /> Packing slip</Button></a>
+      <div className="flex flex-col gap-2 min-w-0">
+        <a href={label} {...tgt}><Button className="w-full" size="sm" data-testid={`button-label-${s.id}`}><Printer className="size-4 mr-2" /> Print label</Button></a>
+        <a href={slip} {...tgt}><Button className="w-full" variant="outline" size="sm"><FileText className="size-4 mr-2" /> Packing slip</Button></a>
         <Button variant="outline" size="sm" onClick={copy}>{copied ? <CheckIcon className="size-4 mr-2" /> : <Copy className="size-4 mr-2" />}{copied ? "Copied" : "Copy address"}</Button>
         {!shipped ? (
-          <div className="flex gap-1">
-            <Input value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="Tracking # (optional)" className="h-8 text-xs" data-testid={`input-tracking-${s.id}`} />
-            <Button size="sm" className="h-8 shrink-0" disabled={busy} onClick={() => onPatch({ status: "Shipped", tracking: tracking.trim() || null })} data-testid={`button-shipped-${s.id}`}><PackageCheck className="size-4 mr-1" /> Shipped</Button>
+          <div className="flex gap-1 min-w-0">
+            <Input value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="Tracking # (optional)" className="h-9 text-xs min-w-0 flex-1" data-testid={`input-tracking-${s.id}`} />
+            <Button size="sm" className="h-9 shrink-0" disabled={busy} onClick={() => onPatch({ status: "Shipped", tracking: tracking.trim() || null })} data-testid={`button-shipped-${s.id}`}><PackageCheck className="size-4 mr-1" /> Shipped</Button>
           </div>
         ) : (
           <Button variant="ghost" size="sm" disabled={busy} onClick={() => onPatch({ status: "To ship" })}><Undo2 className="size-4 mr-2" /> Back to “To ship”</Button>
         )}
-        <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onDelete}><Trash2 className="size-4 mr-2" /> Remove</Button>
+        <Button variant="outline" size="sm" className="border-destructive/50 text-destructive hover:bg-destructive/10" onClick={() => setConfirmDelete(true)} data-testid={`button-delete-${s.id}`}><Trash2 className="size-4 mr-2" /> Delete label</Button>
+        <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this shipping label?</AlertDialogTitle>
+              <AlertDialogDescription>Removes label #{s.id} for {s.customerName}. The order, payment and inventory are not affected — you can recreate it with New shipment.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep</AlertDialogCancel>
+              <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={onDelete} data-testid={`button-delete-confirm-${s.id}`}>Delete</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

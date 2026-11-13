@@ -157,12 +157,25 @@ const LABEL_CSS = `
   .postage { border: 2px dashed #000; padding: 0.08in; text-align: center; font-size: 9pt; line-height: 1.3; }
   .postage b { display: block; font-size: 10.5pt; letter-spacing: 0.08em; }
   .meta { margin-top: 0.1in; display: flex; justify-content: space-between; font-size: 8pt; color: #333; border-top: 1px solid #000; padding-top: 0.06in; }
-  .toolbar { position: fixed; top: 0; left: 0; right: 0; background: #101013; color: #fff; padding: 10px 16px; display: flex; gap: 10px; align-items: center; font-size: 13px; z-index: 9; }
-  .toolbar button, .toolbar a { background: #d32f2f; color: #fff; border: 0; padding: 8px 14px; font-weight: 700; cursor: pointer; text-decoration: none; font-size: 13px; }
-  .toolbar a.ghost { background: transparent; border: 1px solid #555; }
+  .toolbar { position: sticky; top: 0; background: #101013; color: #fff; padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; z-index: 9; }
+  .toolbar button, .toolbar a { background: #d32f2f; color: #fff; border: 0; padding: 10px 14px; font-weight: 700; cursor: pointer; text-decoration: none; font-size: 13px; line-height: 1; }
+  .toolbar a.ghost, .toolbar button.ghost { background: transparent; border: 1px solid #555; }
+  .toolbar button.danger { background: transparent; border: 1px solid #d32f2f; color: #ff8a80; }
   .toolbar .sp { flex: 1; }
-  body.has-toolbar .label:first-of-type { margin-top: 60px; }
+  .toolbar .t { flex-basis: 100%; font-size: 12px; color: #bbb; }
+  @media (min-width: 720px) { .toolbar .t { flex-basis: auto; color: #fff; } }
+  @media screen and (max-width: 400px) { .label { zoom: 0.92; } }
+  .hint { text-align: center; font-size: 12px; color: #555; padding: 0 16px 24px; }
+  @media print { .hint { display: none; } }
 `;
+
+const TOOLBAR_JS = (id: number) => `<script>
+async function delShipment() {
+  if (!confirm("Delete this shipping label? The order and inventory are not affected.")) return;
+  const r = await fetch("/api/admin/shipments/${id}", { method: "DELETE", credentials: "include" });
+  if (r.ok) location.href = "/#/admin/shipping"; else alert("Couldn't delete — please try again from the Shipping page.");
+}
+</script>`;
 
 function renderLabel(s: Shipment, settings: ShippingSettings): string {
   const items = parseItems(s);
@@ -176,15 +189,17 @@ function renderLabel(s: Shipment, settings: ShippingSettings): string {
   const toLines = [uspsLine(s.customerName), uspsLine(s.line1), uspsLine(s.line2)].filter(Boolean);
   const cityLine = `${uspsLine(s.city)} ${uspsLine(s.state)} ${s.zip}`.trim();
   const missingFrom = !settings.fromLine1;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Label #${s.id} — ${esc(s.customerName)}</title><style>${LABEL_CSS}</style></head>
-<body class="has-toolbar">
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Label #${s.id} — ${esc(s.customerName)}</title><style>${LABEL_CSS}</style></head>
+<body>
 <div class="toolbar">
-  <span>Shipping label #${s.id} · ${esc(s.customerName)} · ${weightLabel(s.ounces)} · zone ${s.zone ?? "?"}</span>
+  <a class="ghost" href="/#/admin/shipping">&larr; Shipping</a>
   <span class="sp"></span>
-  ${missingFrom ? `<span style="color:#ffb4b4">Add your return address in Shop settings → Shipping</span>` : ""}
   <a class="ghost" href="/api/admin/shipments/${s.id}/packing-slip">Packing slip</a>
-  <button onclick="window.print()">Print label</button>
+  <button class="danger" onclick="delShipment()">Delete</button>
+  <button onclick="window.print()">Print / Save PDF</button>
+  <span class="t">Label #${s.id} · ${esc(s.customerName)} · ${weightLabel(s.ounces)} · zone ${s.zone ?? "?"}${missingFrom ? ` · <span style="color:#ffb4b4">add your return address in Shop settings → Shipping</span>` : ""}</span>
 </div>
+${TOOLBAR_JS(s.id)}
 <div class="label">
   <div class="from">${fromLines.map((l, i) => `<div class="${i === 0 ? "n" : ""}">${esc(l)}</div>`).join("")}${missingFrom ? `<div style="color:#999">[RETURN ADDRESS — set in Shop settings]</div>` : ""}</div>
   <div class="svc"><b>${esc(s.service.toUpperCase())}</b><span>${weightLabel(s.ounces)}<br>${count} item${count === 1 ? "" : "s"}${s.zone ? ` · Zone ${s.zone}` : ""}</span></div>
@@ -196,6 +211,7 @@ function renderLabel(s: Shipment, settings: ShippingSettings): string {
   <div class="postage"><b>POSTAGE PAID AT COUNTER</b>${s.postageEstimate != null ? `Est. retail ${esc(s.service)}: $${s.postageEstimate.toFixed(2)}` : "Ask for Ground Advantage"}</div>
   <div class="meta"><span>Order ${esc(s.orderRef ? shortRef(s.orderRef) : `#${s.id}`)}</span><span>${new Date(s.createdAt * 1000).toLocaleDateString("en-US", { timeZone: "America/Los_Angeles" })}</span><span>${esc(settings.fromName)}</span></div>
 </div>
+<p class="hint">Prints at 4 × 6 in. On iPhone, tap Print / Save PDF, then use the share icon to save or AirPrint.</p>
 </body></html>`;
 }
 
@@ -208,12 +224,14 @@ const SLIP_CSS = `
   * { box-sizing: border-box; }
   body { font-family: "Helvetica Neue", Arial, sans-serif; color: #111; margin: 0; padding: 0.6in; max-width: 8.5in; }
   @media print { body { padding: 0; } .toolbar { display: none !important; } }
-  .toolbar { position: fixed; top: 0; left: 0; right: 0; background: #101013; color: #fff; padding: 10px 16px; display: flex; gap: 10px; align-items: center; font-size: 13px; }
-  .toolbar button, .toolbar a { background: #d32f2f; color: #fff; border: 0; padding: 8px 14px; font-weight: 700; cursor: pointer; text-decoration: none; font-size: 13px; }
+  .toolbar { position: sticky; top: 0; margin: -0.6in -0.6in 0.4in; background: #101013; color: #fff; padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; z-index: 9; }
+  .toolbar button, .toolbar a { background: #d32f2f; color: #fff; border: 0; padding: 10px 14px; font-weight: 700; cursor: pointer; text-decoration: none; font-size: 13px; line-height: 1; }
   .toolbar a.ghost { background: transparent; border: 1px solid #555; }
   .toolbar .sp { flex: 1; }
-  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #000; padding-bottom: 14px; margin-top: 50px; }
-  @media print { .head { margin-top: 0; } }
+  .toolbar .t { flex-basis: 100%; font-size: 12px; color: #bbb; }
+  @media (min-width: 720px) { .toolbar .t { flex-basis: auto; color: #fff; } }
+  @media (max-width: 600px) { body { padding: 0.35in; } .toolbar { margin: -0.35in -0.35in 0.3in; } .cols { grid-template-columns: 1fr; } }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #000; padding-bottom: 14px; }
   .brand { font-size: 26px; font-weight: 900; letter-spacing: -0.01em; }
   .brand small { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.2em; color: #d32f2f; }
   .meta { text-align: right; font-size: 12px; line-height: 1.5; }
@@ -236,9 +254,9 @@ function renderSlip(s: Shipment, settings: ShippingSettings): string {
   const total = s.orderTotal ?? sub + ship;
   const tax = Math.max(0, Math.round((total - sub - ship) * 100) / 100);
   const money = (n: number) => `$${n.toFixed(2)}`;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Packing slip #${s.id}</title><style>${SLIP_CSS}</style></head>
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Packing slip #${s.id}</title><style>${SLIP_CSS}</style></head>
 <body>
-<div class="toolbar"><span>Packing slip #${s.id} · ${esc(s.customerName)}</span><span class="sp"></span><a class="ghost" href="/api/admin/shipments/${s.id}/label">Label</a><button onclick="window.print()">Print</button></div>
+<div class="toolbar"><a class="ghost" href="/#/admin/shipping">&larr; Shipping</a><span class="sp"></span><a class="ghost" href="/api/admin/shipments/${s.id}/label">Label</a><button onclick="window.print()">Print / Save PDF</button><span class="t">Packing slip #${s.id} · ${esc(s.customerName)}</span></div>
 <div class="head">
   <div class="brand">${esc(settings.fromName)}<small>PACKING SLIP</small></div>
   <div class="meta">Order ${esc(s.orderRef ? shortRef(s.orderRef) : `#${s.id}`)}<br>${new Date(s.createdAt * 1000).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "America/Los_Angeles" })}<br>${esc(s.service)} · ${weightLabel(s.ounces)}</div>
