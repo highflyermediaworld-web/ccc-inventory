@@ -117,9 +117,29 @@ export function zoneForMiles(miles: number): number {
   return 8;
 }
 
+/**
+ * Centroid for a 3-digit prefix. Unique / PO-box-only prefixes (e.g. 733
+ * Austin, 005 Holtsville, military 090–098) have no ZCTA, so fall back to
+ * the nearest numeric neighbour — USPS assigns prefixes regionally, so a
+ * neighbour within ±10 sits in the same sectional center facility area.
+ */
+function centroid(zip: string): [number, number] | null {
+  const p = zip.slice(0, 3);
+  if (ZIP3[p]) return ZIP3[p];
+  const n = Number(p);
+  if (!Number.isFinite(n) || n < 5) return null; // nothing below 00501 exists
+  for (let d = 1; d <= 10; d++) {
+    const lo = ZIP3[String(n - d).padStart(3, "0")];
+    if (lo) return lo;
+    const hi = ZIP3[String(n + d).padStart(3, "0")];
+    if (hi) return hi;
+  }
+  return null;
+}
+
 export function zoneBetween(originZip: string, destZip: string): { zone: number; miles: number } | null {
-  const o = ZIP3[originZip.slice(0, 3)];
-  const d = ZIP3[destZip.slice(0, 3)];
+  const o = centroid(originZip);
+  const d = centroid(destZip);
   if (!o || !d) return null;
   if (originZip.slice(0, 3) === destZip.slice(0, 3)) return { zone: 1, miles: 0 };
   const miles = haversineMiles(o, d);
