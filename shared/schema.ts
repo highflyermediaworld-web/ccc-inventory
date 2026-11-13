@@ -178,6 +178,37 @@ export const insertCustomerRequestSchema = createInsertSchema(customerRequests).
 export type InsertCustomerRequest = z.infer<typeof insertCustomerRequestSchema>;
 export type CustomerRequest = typeof customerRequests.$inferSelect;
 
+// ── Shipments: one per paid online order (or created by hand) ────
+export const shipments = sqliteTable("shipments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  orderRef: text("order_ref"), // Stripe session id or free text (e.g. "Zelle 11/12")
+  customerName: text("customer_name").notNull(),
+  customerEmail: text("customer_email"),
+  customerPhone: text("customer_phone"),
+  line1: text("line1").notNull(),
+  line2: text("line2"),
+  city: text("city").notNull(),
+  state: text("state").notNull(),
+  zip: text("zip").notNull(),
+  items: text("items").notNull(), // JSON [{itemId,name,setName,quantity,category,unitPrice}]
+  ounces: real("ounces").notNull(),
+  service: text("service").notNull().default("USPS Ground Advantage"),
+  zone: integer("zone"),
+  postageEstimate: real("postage_estimate"),
+  shippingCharged: real("shipping_charged"),
+  orderTotal: real("order_total"),
+  status: text("status").notNull().default("To ship"), // To ship | Shipped | Cancelled
+  tracking: text("tracking"),
+  note: text("note"),
+  shippedAt: integer("shipped_at"),
+  createdAt: integer("created_at")
+    .notNull()
+    .$defaultFn(() => Math.floor(Date.now() / 1000)),
+});
+export type Shipment = typeof shipments.$inferSelect;
+export type InsertShipment = typeof shipments.$inferInsert;
+export type ShipmentItem = { itemId: string | null; name: string; setName: string | null; quantity: number; category: string; unitPrice: number | null };
+
 // ── Auth: users + sessions ───────────────────────────────────────
 export const users = sqliteTable("users", {
   id: integer("id").primaryKey({ autoIncrement: true }),

@@ -47,6 +47,11 @@ const settingsSchema = z.object({
   ozSlab: z.coerce.number().min(0.1).max(64),
   ozSealed: z.coerce.number().min(0.1).max(1120),
   ozPackaging: z.coerce.number().min(0).max(64),
+  fromName: z.string().trim().max(80).optional(),
+  fromLine1: z.string().trim().max(80).optional(),
+  fromLine2: z.string().trim().max(80).optional(),
+  fromCity: z.string().trim().max(60).optional(),
+  fromState: z.string().trim().max(2).optional(),
 });
 
 export function registerShippingRoutes(app: Express) {

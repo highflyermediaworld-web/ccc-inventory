@@ -34,6 +34,12 @@ export type ShippingSettings = {
   ozSealed: number;
   /** Mailer / box / padding, ounces per parcel. */
   ozPackaging: number;
+  /** Return address printed on labels (ZIP comes from originZip). */
+  fromName: string;
+  fromLine1: string;
+  fromLine2: string;
+  fromCity: string;
+  fromState: string;
 };
 
 export const DEFAULT_SHIPPING: ShippingSettings = {
@@ -45,6 +51,11 @@ export const DEFAULT_SHIPPING: ShippingSettings = {
   ozSlab: 3.5,     // PSA/CGC/BGS slab in a sleeve
   ozSealed: 12,    // blister / small box; owner can raise for ETBs
   ozPackaging: 2,  // bubble mailer + cardboard sandwich
+  fromName: "Chris Collects Co",
+  fromLine1: "",
+  fromLine2: "",
+  fromCity: "Oakland",
+  fromState: "CA",
 };
 
 export function mergeShippingSettings(saved: Partial<ShippingSettings> | null | undefined): ShippingSettings {
@@ -54,6 +65,7 @@ export function mergeShippingSettings(saved: Partial<ShippingSettings> | null | 
     return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : d;
   };
   const zip = String(s.originZip ?? "").replace(/\D/g, "").slice(0, 5);
+  const str = (v: unknown, d: string) => (typeof v === "string" ? v.trim().slice(0, 80) : d);
   return {
     enabled: s.enabled === undefined ? DEFAULT_SHIPPING.enabled : !!s.enabled,
     originZip: zip.length === 5 ? zip : DEFAULT_SHIPPING.originZip,
@@ -63,6 +75,11 @@ export function mergeShippingSettings(saved: Partial<ShippingSettings> | null | 
     ozSlab: num(s.ozSlab, DEFAULT_SHIPPING.ozSlab, 0.1, 64),
     ozSealed: num(s.ozSealed, DEFAULT_SHIPPING.ozSealed, 0.1, 1120),
     ozPackaging: num(s.ozPackaging, DEFAULT_SHIPPING.ozPackaging, 0, 64),
+    fromName: str(s.fromName, DEFAULT_SHIPPING.fromName),
+    fromLine1: str(s.fromLine1, ""),
+    fromLine2: str(s.fromLine2, ""),
+    fromCity: str(s.fromCity, DEFAULT_SHIPPING.fromCity),
+    fromState: str(s.fromState, DEFAULT_SHIPPING.fromState).toUpperCase().slice(0, 2),
   };
 }
 

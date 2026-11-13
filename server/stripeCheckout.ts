@@ -13,6 +13,7 @@ import { storage } from "./storage";
 import { broadcast } from "./realtime";
 import type { Inventory } from "@shared/schema";
 import { quoteForLines } from "./shipping";
+import { createShipmentForOrder, addressFromSession } from "./shipments";
 import { SHIPPING_SERVICE } from "@shared/shipping";
 
 const SECRET = process.env.STRIPE_SECRET_KEY || "";
@@ -221,6 +222,31 @@ export async function recordPaidSession(session: Stripe.Checkout.Session): Promi
     console.log(`[stripe] recorded sale ${item.id} \u00d7${l.quantity} line ${lineSubtotal.toFixed(2)} (${sessionId})`);
   }
   if (touchedInventory) broadcast({ type: "transactions:update", payload: {} });
+  // Online orders get a ready-to-print shipping label in Admin → Shipping.
+  if (!isRegister) {
+    const address = addressFromSession(session);
+    if (address) {
+      await createShipmentForOrder({
+        orderRef: sessionId,
+        address,
+        email: summary.email,
+        phone: details?.phone ?? null,
+        items: resolved.map((l) => ({
+          itemId: l.itemId,
+          name: l.item?.name ?? l.itemId,
+          setName: l.item?.setName ?? null,
+          quantity: l.quantity,
+          category: l.item?.category ?? "Raw",
+          unitPrice: l.unit ?? (l.item ? shopPrice(l.item) : null),
+        })),
+        shippingCharged: shippingAmount,
+        orderTotal: total,
+      }).then((row) => { if (row) broadcast({ type: "shipments:update", payload: { id: row.id } }); })
+        .catch((err: any) => console.warn(`[ship] couldn't create shipment for ${sessionId}:`, err?.message ?? err));
+    } else {
+      console.warn(`[ship] paid session ${sessionId} has no shipping address; add the label by hand`);
+    }
+  }
   await sendReceipt(session, summary.email).catch((err: any) =>
     console.warn(`[stripe] receipt email failed for ${sessionId}:`, err?.message ?? err)
   );

@@ -12,6 +12,7 @@ import ShopSettings from "@/pages/ShopSettings";
 import AboutSettings from "@/pages/AboutSettings";
 import SystemHealth from "@/pages/SystemHealth";
 import Requests from "@/pages/Requests";
+import Shipments from "@/pages/Shipments";
 import Users from "@/pages/Users";
 import AutoImport from "@/pages/AutoImport";
 import AdminLive from "@/pages/AdminLive";
@@ -33,6 +34,7 @@ export default function AdminShell() {
           <Route path="/admin/transactions" component={Transactions} />
           <Route path="/admin/scan" component={Scan} />
           <Route path="/admin/requests" component={Requests} />
+          <Route path="/admin/shipping" component={Shipments} />
           <Route path="/admin/users" component={Users} />
           <Route path="/admin/auto-import" component={AutoImport} />
           <Route path="/admin/live" component={AdminLive} />

@@ -61,6 +61,7 @@ import { aiHealth } from "./ai";
 import { applyManualImages } from "./manualImages";
 import { registerStripeCheckoutRoutes } from "./stripeCheckout";
 import { registerShippingRoutes } from "./shipping";
+import { registerShipmentRoutes } from "./shipments";
 import { registerStorefrontRoutes } from "./storefront";
 import {
   requireAuth,
@@ -127,6 +128,7 @@ export async function registerRoutes(
   registerStorefrontRoutes(app, UPLOADS_DIR);
   registerStripeCheckoutRoutes(app);
   registerShippingRoutes(app);
+  registerShipmentRoutes(app);
 
   // ===== AUTH (public) =====
   // Signup is gated by ADMIN_INVITE_CODE env var. The status endpoint lets the

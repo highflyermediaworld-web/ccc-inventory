@@ -40,6 +40,11 @@ export function ShippingSettingsCard() {
         ozSlab: String(s.ozSlab),
         ozSealed: String(s.ozSealed),
         ozPackaging: String(s.ozPackaging),
+        fromName: s.fromName ?? "",
+        fromLine1: s.fromLine1 ?? "",
+        fromLine2: s.fromLine2 ?? "",
+        fromCity: s.fromCity ?? "",
+        fromState: s.fromState ?? "",
       });
     }
   }, [q.data]);
@@ -108,6 +113,34 @@ export function ShippingSettingsCard() {
             <Input type="number" step="1" min={0} value={String(form.freeOver ?? "")} onChange={(e) => set("freeOver", e.target.value)} placeholder="Never" className="mt-1 tabular-nums" data-testid="input-ship-freeover" />
             <p className="mt-1 text-[11px] text-muted-foreground">Leave blank to always charge.</p>
           </div>
+        </div>
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Return address (printed on labels)</div>
+          <div className="grid gap-3 sm:grid-cols-2 max-w-3xl">
+            <div>
+              <Label className="text-xs">Name / shop</Label>
+              <Input value={String(form.fromName ?? "")} onChange={(e) => set("fromName", e.target.value)} className="mt-1" data-testid="input-ship-fromName" />
+            </div>
+            <div>
+              <Label className="text-xs">Street (or PO Box)</Label>
+              <Input value={String(form.fromLine1 ?? "")} onChange={(e) => set("fromLine1", e.target.value)} className="mt-1" placeholder="Required for labels" data-testid="input-ship-fromLine1" />
+            </div>
+            <div>
+              <Label className="text-xs">Apt / suite</Label>
+              <Input value={String(form.fromLine2 ?? "")} onChange={(e) => set("fromLine2", e.target.value)} className="mt-1" />
+            </div>
+            <div className="grid grid-cols-[1fr_80px] gap-3">
+              <div>
+                <Label className="text-xs">City</Label>
+                <Input value={String(form.fromCity ?? "")} onChange={(e) => set("fromCity", e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">State</Label>
+                <Input value={String(form.fromState ?? "")} maxLength={2} onChange={(e) => set("fromState", e.target.value.toUpperCase())} className="mt-1" />
+              </div>
+            </div>
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">ZIP comes from the ship-from ZIP above. Labels print in Admin → Shipping.</p>
         </div>
         <div>
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Weight estimates (ounces)</div>

@@ -15,6 +15,7 @@ import {
   Receipt,
   ScanLine,
   Inbox,
+  Truck,
   Users as UsersIcon,
   FileSpreadsheet,
   Radio,
@@ -49,6 +50,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { path: "/admin/inventory", label: "Inventory", icon: Package, testId: "nav-inventory" },
       { path: "/admin/scan", label: "Scan", icon: ScanLine, testId: "nav-scan" },
       { path: "/admin/requests", label: "Requests", icon: Inbox, testId: "nav-requests" },
+      { path: "/admin/shipping", label: "Shipping", icon: Truck, testId: "nav-shipping" },
     ],
   },
   {

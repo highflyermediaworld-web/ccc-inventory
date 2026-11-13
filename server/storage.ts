@@ -5,6 +5,7 @@ import {
   trades,
   priceHistory,
   customerRequests,
+  shipments,
   users,
   sessions,
   appSettings,
@@ -22,6 +23,8 @@ import type {
   InsertPriceHistory,
   CustomerRequest,
   InsertCustomerRequest,
+  Shipment,
+  InsertShipment,
   User,
   Session,
 } from "@shared/schema";
@@ -216,6 +219,33 @@ export async function runMigrations() {
         value TEXT NOT NULL,
         updated_at INTEGER NOT NULL DEFAULT (unixepoch())
       );
+
+      CREATE TABLE IF NOT EXISTS shipments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_ref TEXT,
+        customer_name TEXT NOT NULL,
+        customer_email TEXT,
+        customer_phone TEXT,
+        line1 TEXT NOT NULL,
+        line2 TEXT,
+        city TEXT NOT NULL,
+        state TEXT NOT NULL,
+        zip TEXT NOT NULL,
+        items TEXT NOT NULL,
+        ounces REAL NOT NULL,
+        service TEXT NOT NULL DEFAULT 'USPS Ground Advantage',
+        zone INTEGER,
+        postage_estimate REAL,
+        shipping_charged REAL,
+        order_total REAL,
+        status TEXT NOT NULL DEFAULT 'To ship',
+        tracking TEXT,
+        note TEXT,
+        shipped_at INTEGER,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_shipments_status ON shipments(status, created_at);
     `);
 
     // ---- Idempotent column additions for richer TCGplayer price points ----
@@ -321,6 +351,12 @@ export interface IStorage {
   listCustomerRequests(status?: string): Promise<CustomerRequest[]>;
   getCustomerRequest(id: number): Promise<CustomerRequest | undefined>;
   createCustomerRequest(r: InsertCustomerRequest): Promise<CustomerRequest>;
+  getShipments(): Promise<Shipment[]>;
+  getShipment(id: number): Promise<Shipment | undefined>;
+  getShipmentByOrderRef(ref: string): Promise<Shipment | undefined>;
+  createShipment(s: InsertShipment): Promise<Shipment>;
+  updateShipment(id: number, patch: Partial<Shipment>): Promise<Shipment | undefined>;
+  deleteShipment(id: number): Promise<void>;
   updateCustomerRequest(
     id: number,
     patch: Partial<CustomerRequest>
@@ -528,6 +564,30 @@ export class DatabaseStorage implements IStorage {
       .where(eq(customerRequests.id, id))
       .returning();
     return result[0] as CustomerRequest | undefined;
+  }
+
+  // ── Shipments ─────────────────────────────────────────────────────
+  async getShipments(): Promise<Shipment[]> {
+    return (await db.select().from(shipments).orderBy(desc(shipments.createdAt)).all()) as Shipment[];
+  }
+  async getShipment(id: number): Promise<Shipment | undefined> {
+    const rows = await db.select().from(shipments).where(eq(shipments.id, id)).all();
+    return rows[0] as Shipment | undefined;
+  }
+  async getShipmentByOrderRef(ref: string): Promise<Shipment | undefined> {
+    const rows = await db.select().from(shipments).where(eq(shipments.orderRef, ref)).all();
+    return rows[0] as Shipment | undefined;
+  }
+  async createShipment(s: InsertShipment): Promise<Shipment> {
+    const result = await db.insert(shipments).values(s).returning();
+    return result[0] as Shipment;
+  }
+  async updateShipment(id: number, patch: Partial<Shipment>): Promise<Shipment | undefined> {
+    const result = await db.update(shipments).set(patch).where(eq(shipments.id, id)).returning();
+    return result[0] as Shipment | undefined;
+  }
+  async deleteShipment(id: number): Promise<void> {
+    await db.delete(shipments).where(eq(shipments.id, id));
   }
 
   // ── Auth ──────────────────────────────────────────────────────────
