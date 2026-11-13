@@ -2434,6 +2434,11 @@ function CartDrawer({
   const [cardPending, setCardPending] = useState(false);
   const [mode, setMode] = useState<"cart" | "request" | "sent">("cart");
   const [shipZip, setShipZip] = useState(readSavedZip);
+  // Pick up a ZIP typed in the Buy dialog after this drawer first mounted.
+  useEffect(() => {
+    if (open && !shipZip) { const z = readSavedZip(); if (z) setShipZip(z); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   const ship = useShippingQuote(shipZip, okRows.map((r) => ({ id: r.id, qty: r.qty })));
   const shippingLine = ship.amount ?? 0;
   const [form, setForm] = useState({
