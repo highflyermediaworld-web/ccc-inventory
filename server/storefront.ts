@@ -19,6 +19,7 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { storage } from "./storage";
+import { getShippingSettings } from "./shipping";
 import { requireAuth } from "./auth";
 import { broadcast } from "./realtime";
 import { aiText, AiError } from "./ai";
@@ -195,7 +196,9 @@ async function buildPrompt(messages: { role: "user" | "assistant"; content: stri
     .sort((a, b) => b.start.localeCompare(a.start))
     .slice(0, 3);
 
-  const faq = FAQ_GROUPS.map((g) => `## ${g.title}\n${g.items.map((f) => `Q: ${f.q}\nA: ${plainText(f.a)}`).join("\n")}`).join("\n\n");
+  const shipCfg = await getShippingSettings();
+  const freeShip = shipCfg.enabled && shipCfg.freeOver != null ? ` Orders over $${shipCfg.freeOver} before tax ship free.` : "";
+  const faq = FAQ_GROUPS.map((g) => `## ${g.title}\n${g.items.map((f) => `Q: ${f.q}\nA: ${plainText(f.a.replace(/\{freeShipping\}/g, freeShip))}`).join("\n")}`).join("\n\n");
 
   const liveStatus = (await storage.getSetting("live_isLive")) === "true";
   const liveUrl = (await storage.getSetting("live_url")) || TIKTOK_URL;

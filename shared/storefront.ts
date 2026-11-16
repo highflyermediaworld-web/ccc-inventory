@@ -77,7 +77,7 @@ export const FAQ_GROUPS: FaqGroup[] = [
       { q: "How fast do orders ship?", a: "Orders ship within 48 hours of payment by USPS Ground Advantage (2–5 business days), anywhere in the United States." },
       {
         q: "How much is shipping?",
-        a: "Shipping is USPS Ground Advantage at USPS's current retail rate, based on how far you are from California and the weight of your order — one card to the Bay Area is about $8.40, a bundle of slabs to the East Coast runs more. Enter your ZIP code in the cart to see the exact amount before you pay. Shipping is added before tax, and sales tax applies to the cards only.",
+        a: "Shipping is USPS Ground Advantage at USPS's current retail rate, based on how far you are from California and the weight of your order — one card to the Bay Area is about $8.40, a bundle of slabs to the East Coast runs more. Enter your ZIP code in the cart to see the exact amount before you pay.{freeShipping} Shipping is added before tax, and sales tax applies to the cards only.",
       },
       {
         q: "How are cards packed?",
@@ -139,6 +139,7 @@ export const FAQ_GROUPS: FaqGroup[] = [
 export function plainText(s: string): string {
   return s
     .replace(/\{handle\}/g, BRAND_HANDLE)
+    .replace(/\{freeShipping\}/g, "")
     .replace(/\*\*(.+?)\*\*/g, "$1")
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1");
 }

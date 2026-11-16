@@ -19,7 +19,8 @@ import {
 } from "lucide-react";
 import { SiTiktok, SiInstagram } from "react-icons/si";
 import { BRAND_HANDLE, TIKTOK_URL, INSTAGRAM_URL } from "@/components/SocialLinks";
-import "../shop.css";
+import "@/shop.css";
+import { FreeShippingNote, MobileShippingStrip, useShippingConfig } from "@/components/ShippingPromo";
 
 /* ------------------------------------------------------------------ */
 /*  Shared shell: compact storefront header + footer                   */
@@ -47,6 +48,7 @@ export function InfoShell({ title, kicker, intro, children, current }: { title: 
             <div className="flex items-center gap-5">
               <span className="inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> California · Ships nationwide</span>
               <span className="inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> Orders ship within 48 hours</span>
+              <FreeShippingNote className="text-white font-semibold" />
             </div>
             <div className="flex items-center gap-1">
               <a href={TIKTOK_URL} target="_blank" rel="noopener noreferrer" aria-label={`${BRAND_HANDLE} on TikTok`} className="pc-icon-btn !h-8 !w-8"><SiTiktok className="h-3.5 w-3.5" /></a>
@@ -70,6 +72,7 @@ export function InfoShell({ title, kicker, intro, children, current }: { title: 
             Shop the vault <ArrowRight className="h-4 w-4" />
           </a>
         </div>
+        <MobileShippingStrip />
       </header>
 
       <section className="pc-dark pc-info-hero">
@@ -129,8 +132,13 @@ export function InfoShell({ title, kicker, intro, children, current }: { title: 
 /*  Rich text: **bold**, [label](url), {handle}                        */
 /* ------------------------------------------------------------------ */
 
+function freeShippingSentence(freeOver: number | null): string {
+  return freeOver == null ? "" : ` **Orders over $${Number.isInteger(freeOver) ? freeOver : freeOver.toFixed(2)} before tax ship free.**`;
+}
+
 export function Rich({ text }: { text: string }) {
-  const src = text.replace(/\{handle\}/g, BRAND_HANDLE);
+  const { freeOver } = useShippingConfig();
+  const src = text.replace(/\{handle\}/g, BRAND_HANDLE).replace(/\{freeShipping\}/g, freeShippingSentence(freeOver));
   const parts: ReactNode[] = [];
   const re = /\*\*(.+?)\*\*|\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
   let last = 0;

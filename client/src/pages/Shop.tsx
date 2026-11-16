@@ -77,6 +77,7 @@ import { cart, useCart, CARD_MINIMUM } from "@/lib/cart";
 import { ToastAction } from "@/components/ui/toast";
 import { PAYMENT_METHODS, PAYMENT_METHODS_SENTENCE } from "@shared/storefront";
 import "@/shop.css";
+import { FreeShippingNote, MobileShippingStrip, FreeShippingProgress, useShippingConfig } from "@/components/ShippingPromo";
 
 // ---------- Types ----------
 type ShopListing = {
@@ -286,18 +287,11 @@ function useShippingQuote(zip: string, items: { id: string; qty: number }[]) {
     staleTime: 60_000,
   });
   // Shipping switched off by the owner → treat as $0 without needing a ZIP.
-  const cfg = useQuery<ShipQuoteResponse>({
-    queryKey: ["/api/shop/shipping/quote", "config"],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/api/shop/shipping/quote?zip=00000&items=`, { credentials: "omit" });
-      return r.json();
-    },
-    staleTime: 5 * 60_000,
-  });
-  const shippingEnabled = cfg.data?.enabled !== false;
+  const cfg = useShippingConfig();
+  const shippingEnabled = cfg.enabled;
   const quote = q.data?.quote;
   const amount = !shippingEnabled ? 0 : quote && quote.ok ? quote.amount : null;
-  return { shippingEnabled, quote, amount, loading: enabled && q.isFetching && !q.data, days: q.data?.days ?? cfg.data?.days ?? "2–5 business days", freeOver: cfg.data?.freeOver ?? null, needsZip: shippingEnabled && !zipValid(zip) };
+  return { shippingEnabled, quote, amount, loading: enabled && q.isFetching && !q.data, days: q.data?.days ?? cfg.days, freeOver: cfg.freeOver, needsZip: shippingEnabled && !zipValid(zip) };
 }
 
 function ShipZipField({ zip, onChange, quote, loading, shippingEnabled, testId }: { zip: string; onChange: (z: string) => void; quote: ShipQuote | undefined; loading: boolean; shippingEnabled: boolean; testId: string }) {
@@ -710,6 +704,7 @@ export default function ShopPage() {
             <div className="flex items-center gap-5">
               <span className="inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> California · Ships nationwide</span>
               <span className="inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> Orders ship within 48 hours</span>
+              <FreeShippingNote className="text-white font-semibold" />
             </div>
             <div className="flex items-center gap-1">
               <a href="#/faq" className="pc-strip-link" data-testid="link-faq">FAQ</a>
@@ -802,6 +797,7 @@ export default function ShopPage() {
             </Sheet>
           </div>
         </div>
+        <MobileShippingStrip />
       </header>
 
       {/* ============ CATEGORY CIRCLES ============ */}
@@ -2618,6 +2614,7 @@ function CartDrawer({
             </div>
 
             <div className={cn("border-t border-border px-5 py-4 space-y-3 bg-white shrink-0", mode === "request" && "overflow-y-auto max-h-[78dvh]")}>
+              {mode === "cart" && okRows.length > 0 && <FreeShippingProgress subtotal={subtotal} />}
               {mode === "cart" && okRows.length > 0 && (
                 <ShipZipField zip={shipZip} onChange={(z) => { setShipZip(z); if (zipValid(z)) saveZip(z); }} quote={ship.quote} loading={ship.loading} shippingEnabled={ship.shippingEnabled} testId="input-cart-zip" />
               )}
@@ -2975,6 +2972,7 @@ function BuyDialog({
                   </div>
                 )}
               </div>
+              <FreeShippingProgress subtotal={cardTotal} />
               <ShipZipField zip={shipZip} onChange={(z) => { setShipZip(z); if (zipValid(z)) saveZip(z); }} quote={ship.quote} loading={ship.loading} shippingEnabled={ship.shippingEnabled} testId="input-buy-zip" />
               <div>
                 <Label className="text-xs">How would you like to pay?</Label>
