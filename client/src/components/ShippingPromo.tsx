@@ -3,7 +3,7 @@ import { Truck, Check } from "lucide-react";
 import { API_BASE } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 
-export type ShippingConfig = { enabled: boolean; service: string; days: string; freeOver: number | null };
+export type ShippingConfig = { enabled: boolean; service: string; days: string; freeOver: number | null; fedexEnabled?: boolean; fedexService?: string; fedexDays?: string; fedexFrom?: number | null };
 
 /** Public shipping config (free-shipping threshold, service, transit days). */
 export function useShippingConfig() {
@@ -17,7 +17,16 @@ export function useShippingConfig() {
   });
   const enabled = q.data?.enabled !== false;
   const freeOver = enabled ? (q.data?.freeOver ?? null) : null;
-  return { enabled, freeOver, service: q.data?.service ?? "USPS Ground Advantage", days: q.data?.days ?? "2–5 business days" };
+  return {
+    enabled,
+    freeOver,
+    service: q.data?.service ?? "USPS Ground Advantage",
+    days: q.data?.days ?? "2–5 business days",
+    fedexEnabled: enabled && !!q.data?.fedexEnabled,
+    fedexService: q.data?.fedexService ?? "FedEx 2Day",
+    fedexDays: q.data?.fedexDays ?? "2 business days",
+    fedexFrom: q.data?.fedexFrom ?? null,
+  };
 }
 
 const whole = (n: number) => (Number.isInteger(n) ? `$${n}` : formatCurrency(n));

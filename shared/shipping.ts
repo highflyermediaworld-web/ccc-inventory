@@ -20,6 +20,34 @@ const ZIP3 = ZIP3_RAW as unknown as Record<string, [number, number]>;
 export const SHIPPING_SERVICE = "USPS Ground Advantage";
 export const SHIPPING_DAYS = "2–5 business days";
 
+/**
+ * FedEx option: FedEx 2Day® at FedEx One Rate® — a flat price per FedEx
+ * packaging type that is the same in every U.S. zone and already includes the
+ * fuel, residential and delivery-area surcharges (holiday demand surcharges
+ * don't apply to One Rate). Prices from fedex.com/one-rate, effective
+ * Sept 11, 2026; the owner can edit them in Shop settings → Shipping.
+ * Paid at a FedEx Office / Ship Center counter, like USPS.
+ */
+export const FEDEX_SERVICE = "FedEx 2Day";
+export const FEDEX_DAYS = "2 business days";
+export type Carrier = "usps" | "fedex";
+export const CARRIERS: Carrier[] = ["usps", "fedex"];
+export function carrierOf(service: string | null | undefined): Carrier {
+  return /fedex/i.test(String(service ?? "")) ? "fedex" : "usps";
+}
+export const FEDEX_PACKAGING = ["Envelope", "Extra Small Box", "Pak", "Small Box", "Medium Box", "Large Box", "Extra Large Box"] as const;
+export type FedexPackaging = (typeof FEDEX_PACKAGING)[number];
+export type FedexPrices = Record<FedexPackaging, number>;
+export const DEFAULT_FEDEX_PRICES: FedexPrices = {
+  "Envelope": 12.75,
+  "Extra Small Box": 13.4,
+  "Pak": 16.3,
+  "Small Box": 19.55,
+  "Medium Box": 24.35,
+  "Large Box": 32.05,
+  "Extra Large Box": 42.75,
+};
+
 export type ShippingSettings = {
   enabled: boolean;
   /** Ship-from ZIP (5 digits). */
@@ -40,6 +68,10 @@ export type ShippingSettings = {
   fromLine2: string;
   fromCity: string;
   fromState: string;
+  /** Offer FedEx 2Day (One Rate) next to USPS at checkout. */
+  fedexEnabled: boolean;
+  /** One Rate price per FedEx packaging type, dollars. */
+  fedexPrices: FedexPrices;
 };
 
 export const DEFAULT_SHIPPING: ShippingSettings = {
@@ -56,6 +88,8 @@ export const DEFAULT_SHIPPING: ShippingSettings = {
   fromLine2: "",
   fromCity: "Oakland",
   fromState: "CA",
+  fedexEnabled: true,
+  fedexPrices: { ...DEFAULT_FEDEX_PRICES },
 };
 
 export function mergeShippingSettings(saved: Partial<ShippingSettings> | null | undefined): ShippingSettings {
@@ -80,6 +114,10 @@ export function mergeShippingSettings(saved: Partial<ShippingSettings> | null | 
     fromLine2: str(s.fromLine2, ""),
     fromCity: str(s.fromCity, DEFAULT_SHIPPING.fromCity),
     fromState: str(s.fromState, DEFAULT_SHIPPING.fromState).toUpperCase().slice(0, 2),
+    fedexEnabled: s.fedexEnabled === undefined ? DEFAULT_SHIPPING.fedexEnabled : !!s.fedexEnabled,
+    fedexPrices: Object.fromEntries(
+      FEDEX_PACKAGING.map((k) => [k, num((s.fedexPrices as any)?.[k], DEFAULT_FEDEX_PRICES[k], 0.01, 1000)]),
+    ) as FedexPrices,
   };
 }
 
@@ -242,11 +280,15 @@ export type ShipItem = { category: string | null | undefined; quantity: number }
 export type ShippingQuote =
   | {
       ok: true;
+      carrier: Carrier;
       service: string;
       zone: number;
       miles: number;
       ounces: number;
+      /** USPS weight tier ("4 oz", "2 lb") or FedEx packaging ("Pak"). */
       tier: string;
+      /** FedEx One Rate packaging type; undefined for USPS. */
+      packaging?: FedexPackaging;
       postage: number;
       handling: number;
       /** What the customer pays (0 when free shipping applies). */
@@ -255,7 +297,49 @@ export type ShippingQuote =
       destZip: string;
       rates: string;
     }
-  | { ok: false; reason: string };
+  | { ok: false; carrier?: Carrier; reason: string };
+
+/** One quote per offered carrier, USPS first. */
+export type ShippingOption = { carrier: Carrier; service: string; days: string; quote: ShippingQuote };
+
+/** Item counts by category. */
+export function countByCategory(items: ShipItem[]): { raw: number; slab: number; sealed: number } {
+  const out = { raw: 0, slab: 0, sealed: 0 };
+  for (const it of items) {
+    const q = Math.max(0, Math.floor(it.quantity || 0));
+    const c = String(it.category ?? "").toLowerCase();
+    if (c === "slab") out.slab += q; else if (c === "sealed") out.sealed += q; else out.raw += q;
+  }
+  return out;
+}
+
+/**
+ * Smallest FedEx packaging the order fits in, from the published inside
+ * dimensions: Envelope 9½×12½ (flat cards), Extra Small Box 7¼×2½×4¹¹⁄₁₆
+ * (a few slabs stacked), Pak 10¼×12¾ (soft), Small Box 10⅞×1½×12⅜,
+ * Medium Box 8¾×4⅜×11¼ (one ETB), Large Box 8¾×7¾×11¼ (two ETBs / a booster
+ * box), Extra Large 11⅞×10¾×11. Returns null when it won't fit One Rate.
+ */
+export function fedexPackagingFor(items: ShipItem[]): FedexPackaging | null {
+  const { raw, slab, sealed } = countByCategory(items);
+  if (sealed > 0) {
+    if (sealed <= 1 && slab <= 4 && raw <= 60) return "Medium Box";
+    if (sealed <= 2 && slab <= 8 && raw <= 120) return "Large Box";
+    if (sealed <= 4) return "Extra Large Box";
+    return null;
+  }
+  if (slab > 0) {
+    if (slab <= 4 && raw <= 30) return "Extra Small Box";
+    if (slab <= 12 && raw <= 100) return "Small Box";
+    if (slab <= 30) return "Medium Box";
+    if (slab <= 60) return "Large Box";
+    return null;
+  }
+  if (raw <= 30) return "Envelope";
+  if (raw <= 300) return "Small Box";
+  if (raw <= 800) return "Medium Box";
+  return "Large Box";
+}
 
 export function ouncesFor(items: ShipItem[], s: ShippingSettings): number {
   let oz = s.ozPackaging;
@@ -273,9 +357,11 @@ export function quoteShipping(
   settings: ShippingSettings,
   merchandiseSubtotal: number,
   date = new Date(),
+  carrier: Carrier = "usps",
 ): ShippingQuote {
+  if (carrier === "fedex") return quoteFedex(items, destZipInput, settings);
   if (!settings.enabled) {
-    return { ok: true, service: SHIPPING_SERVICE, zone: 0, miles: 0, ounces: 0, tier: "", postage: 0, handling: 0, amount: 0, free: true, destZip: "", rates: "" };
+    return { ok: true, carrier: "usps", service: SHIPPING_SERVICE, zone: 0, miles: 0, ounces: 0, tier: "", postage: 0, handling: 0, amount: 0, free: true, destZip: "", rates: "" };
   }
   const destZip = normalizeZip(destZipInput);
   if (!destZip) return { ok: false, reason: "Enter a 5-digit US ZIP code." };
@@ -289,6 +375,7 @@ export function quoteShipping(
   const amount = free ? 0 : Math.round((rate.postage + handling) * 100) / 100;
   return {
     ok: true,
+    carrier: "usps",
     service: SHIPPING_SERVICE,
     zone: zb.zone,
     miles: zb.miles,
@@ -301,4 +388,56 @@ export function quoteShipping(
     destZip,
     rates: rateTableFor(date).label,
   };
+}
+
+/**
+ * FedEx 2Day at One Rate: flat by packaging, same price in every zone, so the
+ * ZIP only has to be a real one. The free-shipping threshold covers USPS;
+ * FedEx is always a paid upgrade (the handling fee still applies).
+ */
+export function quoteFedex(items: ShipItem[], destZipInput: string | null | undefined, settings: ShippingSettings): ShippingQuote {
+  if (!settings.enabled || !settings.fedexEnabled) return { ok: false, carrier: "fedex", reason: "FedEx isn't offered right now." };
+  const destZip = normalizeZip(destZipInput);
+  if (!destZip) return { ok: false, carrier: "fedex", reason: "Enter a 5-digit US ZIP code." };
+  const zb = zoneBetween(settings.originZip, destZip);
+  if (!zb) return { ok: false, carrier: "fedex", reason: "We can't find that ZIP code. Double-check it, or DM us for a quote." };
+  const packaging = fedexPackagingFor(items);
+  if (!packaging) return { ok: false, carrier: "fedex", reason: "That order is too big for FedEx One Rate — DM us for a FedEx quote." };
+  const ounces = ouncesFor(items, settings);
+  if (ounces > (packaging === "Envelope" ? 160 : 800)) return { ok: false, carrier: "fedex", reason: "That order is too heavy for FedEx One Rate — DM us for a quote." };
+  const handling = Math.round(settings.handlingFee * 100) / 100;
+  const postage = Math.round(settings.fedexPrices[packaging] * 100) / 100;
+  return {
+    ok: true,
+    carrier: "fedex",
+    service: FEDEX_SERVICE,
+    zone: zb.zone,
+    miles: zb.miles,
+    ounces,
+    tier: packaging,
+    packaging,
+    postage,
+    handling,
+    amount: Math.round((postage + handling) * 100) / 100,
+    free: false,
+    destZip,
+    rates: "FedEx One Rate, effective Sept 11, 2026",
+  };
+}
+
+/** Every carrier the shop offers, USPS first; FedEx is omitted when switched off. */
+export function quoteShippingOptions(
+  items: ShipItem[],
+  destZipInput: string | null | undefined,
+  settings: ShippingSettings,
+  merchandiseSubtotal: number,
+  date = new Date(),
+): ShippingOption[] {
+  const out: ShippingOption[] = [
+    { carrier: "usps", service: SHIPPING_SERVICE, days: SHIPPING_DAYS, quote: quoteShipping(items, destZipInput, settings, merchandiseSubtotal, date, "usps") },
+  ];
+  if (settings.enabled && settings.fedexEnabled) {
+    out.push({ carrier: "fedex", service: FEDEX_SERVICE, days: FEDEX_DAYS, quote: quoteFedex(items, destZipInput, settings) });
+  }
+  return out;
 }

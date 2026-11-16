@@ -3,8 +3,8 @@
 // Paid Stripe orders create one automatically (address comes from Stripe's
 // shipping-address collection). Zelle/Venmo/etc. orders can be added by hand.
 // Each shipment has a printable 4×6 address label and a packing slip; postage
-// is paid at the USPS counter or on Click-N-Ship, so no carrier account is
-// needed. Weight / zone / estimated postage are pre-computed so the clerk (or
+// is paid at the USPS counter / Click-N-Ship or at a FedEx Office counter
+// (FedEx 2Day at One Rate), so no carrier account is needed. Weight / zone / estimated postage are pre-computed so the clerk (or
 // Click-N-Ship form) can be filled in quickly.
 //
 //   GET    /api/admin/shipments                 list (newest first)
@@ -20,7 +20,7 @@ import { requireAuth } from "./auth";
 import { storage } from "./storage";
 import { getShippingSettings } from "./shipping";
 import type { Shipment, ShipmentItem } from "@shared/schema";
-import { ouncesFor, zoneBetween, groundAdvantagePostage, normalizeZip, SHIPPING_SERVICE, type ShippingSettings } from "@shared/shipping";
+import { ouncesFor, zoneBetween, groundAdvantagePostage, normalizeZip, fedexPackagingFor, carrierOf, SHIPPING_SERVICE, FEDEX_SERVICE, type Carrier, type ShippingSettings } from "@shared/shipping";
 
 export type ShipAddress = {
   name: string;
@@ -48,11 +48,16 @@ export function addressFromSession(session: Stripe.Checkout.Session): ShipAddres
   };
 }
 
-function compute(items: ShipmentItem[], zip: string, settings: ShippingSettings) {
-  const ounces = ouncesFor(items.map((i) => ({ category: i.category, quantity: i.quantity })), settings);
+function compute(items: ShipmentItem[], zip: string, settings: ShippingSettings, carrier: Carrier = "usps", ouncesOverride?: number | null) {
+  const shipItems = items.map((i) => ({ category: i.category, quantity: i.quantity }));
+  const ounces = ouncesOverride ?? ouncesFor(shipItems, settings);
   const z = zoneBetween(settings.originZip, zip);
+  if (carrier === "fedex") {
+    const packaging = fedexPackagingFor(shipItems);
+    return { ounces, zone: z?.zone ?? null, service: FEDEX_SERVICE, packaging, postageEstimate: packaging ? settings.fedexPrices[packaging] : null };
+  }
   const postage = z ? groundAdvantagePostage(ounces, z.zone) : null;
-  return { ounces, zone: z?.zone ?? null, postageEstimate: postage?.postage ?? null };
+  return { ounces, zone: z?.zone ?? null, service: SHIPPING_SERVICE, packaging: null, postageEstimate: postage?.postage ?? null };
 }
 
 /** Create the shipment for a paid online order. Idempotent per order ref. */
@@ -64,11 +69,12 @@ export async function createShipmentForOrder(opts: {
   items: ShipmentItem[];
   shippingCharged: number;
   orderTotal: number;
+  carrier?: Carrier;
 }): Promise<Shipment | null> {
   const existing = await storage.getShipmentByOrderRef(opts.orderRef);
   if (existing) return existing;
   const settings = await getShippingSettings();
-  const c = compute(opts.items, opts.address.zip, settings);
+  const c = compute(opts.items, opts.address.zip, settings, opts.carrier ?? "usps");
   const row = await storage.createShipment({
     orderRef: opts.orderRef,
     customerName: opts.address.name,
@@ -81,14 +87,15 @@ export async function createShipmentForOrder(opts: {
     zip: opts.address.zip,
     items: JSON.stringify(opts.items),
     ounces: c.ounces,
-    service: SHIPPING_SERVICE,
+    service: c.service,
+    packaging: c.packaging,
     zone: c.zone,
     postageEstimate: c.postageEstimate,
     shippingCharged: opts.shippingCharged,
     orderTotal: opts.orderTotal,
     status: "To ship",
   });
-  console.log(`[ship] label ready #${row.id} for ${opts.orderRef} → ${opts.address.city}, ${opts.address.state} ${opts.address.zip} (${c.ounces} oz, zone ${c.zone ?? "?"})`);
+  console.log(`[ship] label ready #${row.id} for ${opts.orderRef} → ${opts.address.city}, ${opts.address.state} ${opts.address.zip} (${c.service}${c.packaging ? ` ${c.packaging}` : ""}, ${c.ounces} oz, zone ${c.zone ?? "?"})`);
   return row;
 }
 
@@ -115,6 +122,7 @@ const createSchema = z.object({
   orderTotal: z.coerce.number().min(0).optional().nullable(),
   note: z.string().trim().max(500).optional().nullable(),
   ounces: z.coerce.number().min(0.1).max(2000).optional().nullable(),
+  carrier: z.enum(["usps", "fedex"]).optional(),
 });
 const patchSchema = createSchema.partial().extend({
   status: z.enum(["To ship", "Shipped", "Cancelled"]).optional(),
@@ -189,6 +197,7 @@ function renderLabel(s: Shipment, settings: ShippingSettings): string {
   const toLines = [uspsLine(s.customerName), uspsLine(s.line1), uspsLine(s.line2)].filter(Boolean);
   const cityLine = `${uspsLine(s.city)} ${uspsLine(s.state)} ${s.zip}`.trim();
   const missingFrom = !settings.fromLine1;
+  const fedex = carrierOf(s.service) === "fedex";
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Label #${s.id} — ${esc(s.customerName)}</title><style>${LABEL_CSS}</style></head>
 <body>
 <div class="toolbar">
@@ -202,16 +211,18 @@ function renderLabel(s: Shipment, settings: ShippingSettings): string {
 ${TOOLBAR_JS(s.id)}
 <div class="label">
   <div class="from">${fromLines.map((l, i) => `<div class="${i === 0 ? "n" : ""}">${esc(l)}</div>`).join("")}${missingFrom ? `<div style="color:#999">[RETURN ADDRESS — set in Shop settings]</div>` : ""}</div>
-  <div class="svc"><b>${esc(s.service.toUpperCase())}</b><span>${weightLabel(s.ounces)}<br>${count} item${count === 1 ? "" : "s"}${s.zone ? ` · Zone ${s.zone}` : ""}</span></div>
+  <div class="svc"><b>${esc(s.service.toUpperCase())}</b><span>${fedex && s.packaging ? `FedEx ${esc(s.packaging)} · ` : ""}${weightLabel(s.ounces)}<br>${count} item${count === 1 ? "" : "s"}${s.zone ? ` · Zone ${s.zone}` : ""}</span></div>
   <div class="to">
     <div class="k">SHIP TO</div>
     ${toLines.map((l) => `<div class="l">${esc(l)}</div>`).join("")}
     <div class="l city">${esc(cityLine)}</div>
   </div>
-  <div class="postage"><b>POSTAGE PAID AT COUNTER</b>${s.postageEstimate != null ? `Est. retail ${esc(s.service)}: $${s.postageEstimate.toFixed(2)}` : "Ask for Ground Advantage"}</div>
+  ${fedex
+    ? `<div class="postage"><b>PAID AT FEDEX OFFICE</b>FedEx 2Day · One Rate${s.packaging ? ` · FedEx ${esc(s.packaging)}` : ""}${s.postageEstimate != null ? `: $${s.postageEstimate.toFixed(2)}` : ""}<br>Pack in the FedEx ${esc(s.packaging ?? "packaging")}, attach FedEx's label over this one.</div>`
+    : `<div class="postage"><b>POSTAGE PAID AT COUNTER</b>${s.postageEstimate != null ? `Est. retail ${esc(s.service)}: $${s.postageEstimate.toFixed(2)}` : "Ask for Ground Advantage"}</div>`}
   <div class="meta"><span>Order ${esc(s.orderRef ? shortRef(s.orderRef) : `#${s.id}`)}</span><span>${new Date(s.createdAt * 1000).toLocaleDateString("en-US", { timeZone: "America/Los_Angeles" })}</span><span>${esc(settings.fromName)}</span></div>
 </div>
-<p class="hint">Prints at 4 × 6 in. On iPhone, tap Print / Save PDF, then use the share icon to save or AirPrint.</p>
+<p class="hint">Prints at 4 × 6 in. On iPhone, tap Print / Save PDF, then use the share icon to save or AirPrint.${fedex ? " FedEx: take the parcel to a FedEx Office / Ship Center, ask for FedEx 2Day at One Rate in the packaging shown, and pay there — no account needed." : ""}</p>
 </body></html>`;
 }
 
@@ -259,7 +270,7 @@ function renderSlip(s: Shipment, settings: ShippingSettings): string {
 <div class="toolbar"><a class="ghost" href="/#/admin/shipping">&larr; Shipping</a><span class="sp"></span><a class="ghost" href="/api/admin/shipments/${s.id}/label">Label</a><button onclick="window.print()">Print / Save PDF</button><span class="t">Packing slip #${s.id} · ${esc(s.customerName)}</span></div>
 <div class="head">
   <div class="brand">${esc(settings.fromName)}<small>PACKING SLIP</small></div>
-  <div class="meta">Order ${esc(s.orderRef ? shortRef(s.orderRef) : `#${s.id}`)}<br>${new Date(s.createdAt * 1000).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "America/Los_Angeles" })}<br>${esc(s.service)} · ${weightLabel(s.ounces)}</div>
+  <div class="meta">Order ${esc(s.orderRef ? shortRef(s.orderRef) : `#${s.id}`)}<br>${new Date(s.createdAt * 1000).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "America/Los_Angeles" })}<br>${esc(s.service)}${s.packaging ? ` · FedEx ${esc(s.packaging)}` : ""} · ${weightLabel(s.ounces)}</div>
 </div>
 <div class="cols">
   <div><div class="k">SHIP TO</div><b>${esc(s.customerName)}</b><br>${esc(s.line1)}<br>${s.line2 ? esc(s.line2) + "<br>" : ""}${esc(s.city)}, ${esc(s.state)} ${esc(s.zip)}${s.customerEmail ? `<br>${esc(s.customerEmail)}` : ""}${s.customerPhone ? `<br>${esc(s.customerPhone)}` : ""}</div>
@@ -290,9 +301,9 @@ export function registerShipmentRoutes(app: Express) {
       const settings = await getShippingSettings();
       const zip = normalizeZip(body.zip) ?? body.zip.slice(0, 5);
       const items = body.items as ShipmentItem[];
-      const c = compute(items, zip, settings);
-      const ounces = body.ounces ?? c.ounces;
-      const postage = c.zone ? groundAdvantagePostage(ounces, c.zone)?.postage ?? null : null;
+      const c = compute(items, zip, settings, body.carrier ?? "usps", body.ounces);
+      const ounces = c.ounces;
+      const postage = c.postageEstimate;
       const row = await storage.createShipment({
         orderRef: body.orderRef || null,
         customerName: body.customerName,
@@ -305,7 +316,8 @@ export function registerShipmentRoutes(app: Express) {
         zip,
         items: JSON.stringify(items),
         ounces,
-        service: SHIPPING_SERVICE,
+        service: c.service,
+        packaging: c.packaging,
         zone: c.zone,
         postageEstimate: postage,
         shippingCharged: body.shippingCharged ?? null,
@@ -338,16 +350,19 @@ export function registerShipmentRoutes(app: Express) {
         patch.status = body.status;
         patch.shippedAt = body.status === "Shipped" ? (cur.shippedAt ?? Math.floor(Date.now() / 1000)) : null;
       }
-      // Re-price when anything affecting weight or zone changed.
-      if (body.items || body.zip || body.ounces != null) {
+      // Re-price when anything affecting weight, zone or carrier changed.
+      if (body.items || body.zip || body.ounces != null || body.carrier) {
         const settings = await getShippingSettings();
         const items = body.items ? (body.items as ShipmentItem[]) : parseItems(cur);
         const zip = patch.zip ?? cur.zip;
-        const c = compute(items, zip, settings);
-        const ounces = body.ounces ?? (body.items ? c.ounces : cur.ounces);
-        patch.ounces = ounces;
+        const carrier = body.carrier ?? carrierOf(cur.service);
+        const ounces = body.ounces ?? (body.items ? null : cur.ounces);
+        const c = compute(items, zip, settings, carrier, ounces);
+        patch.ounces = c.ounces;
         patch.zone = c.zone;
-        patch.postageEstimate = c.zone ? groundAdvantagePostage(ounces, c.zone)?.postage ?? null : null;
+        patch.service = c.service;
+        patch.packaging = c.packaging;
+        patch.postageEstimate = c.postageEstimate;
       }
       const row = await storage.updateShipment(id, patch);
       res.json(row ? { ...row, items: parseItems(row) } : null);

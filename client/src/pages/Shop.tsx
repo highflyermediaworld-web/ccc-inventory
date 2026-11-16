@@ -256,24 +256,33 @@ const byName = stockFirst((a, b) => a.name.localeCompare(b.name));
 
 // ---------- Page ----------
 /* ------------------------------------------------------------------ */
-/*  Shipping quote (USPS Ground Advantage by ZIP + weight)             */
+/*  Shipping quote (USPS Ground Advantage by ZIP + weight, FedEx 2Day)  */
 /* ------------------------------------------------------------------ */
 
+type Carrier = "usps" | "fedex";
 type ShipQuote =
-  | { ok: true; service: string; zone: number; miles: number; ounces: number; tier: string; postage: number; handling: number; amount: number; free: boolean; destZip: string }
-  | { ok: false; reason: string };
-type ShipQuoteResponse = { enabled: boolean; service: string; days: string; freeOver: number | null; quote: ShipQuote };
+  | { ok: true; carrier: Carrier; service: string; zone: number; miles: number; ounces: number; tier: string; packaging?: string; postage: number; handling: number; amount: number; free: boolean; destZip: string }
+  | { ok: false; carrier?: Carrier; reason: string };
+type ShipOption = { carrier: Carrier; service: string; days: string; quote: ShipQuote };
+type ShipQuoteResponse = { enabled: boolean; service: string; days: string; freeOver: number | null; fedexEnabled?: boolean; quote: ShipQuote; options?: ShipOption[] };
 
 const SHIP_ZIP_KEY = "ccc.shipZip";
+const SHIP_CARRIER_KEY = "ccc.shipCarrier";
 function readSavedZip(): string {
   try { return localStorage.getItem(SHIP_ZIP_KEY) ?? ""; } catch { return ""; }
 }
 function saveZip(z: string) {
   try { localStorage.setItem(SHIP_ZIP_KEY, z); } catch {}
 }
+function readSavedCarrier(): Carrier {
+  try { return localStorage.getItem(SHIP_CARRIER_KEY) === "fedex" ? "fedex" : "usps"; } catch { return "usps"; }
+}
+function saveCarrier(c: Carrier) {
+  try { localStorage.setItem(SHIP_CARRIER_KEY, c); } catch {}
+}
 const zipValid = (z: string) => /^\d{5}$/.test(z);
 
-function useShippingQuote(zip: string, items: { id: string; qty: number }[]) {
+function useShippingQuote(zip: string, items: { id: string; qty: number }[], carrier: Carrier = "usps") {
   const key = items.map((i) => `${i.id}:${i.qty}`).join(",");
   const enabled = zipValid(zip) && items.length > 0;
   const q = useQuery<ShipQuoteResponse>({
@@ -289,13 +298,41 @@ function useShippingQuote(zip: string, items: { id: string; qty: number }[]) {
   // Shipping switched off by the owner → treat as $0 without needing a ZIP.
   const cfg = useShippingConfig();
   const shippingEnabled = cfg.enabled;
-  const quote = q.data?.quote;
+  const options: ShipOption[] = q.data?.options ?? (q.data ? [{ carrier: "usps", service: q.data.service, days: q.data.days, quote: q.data.quote }] : []);
+  // Fall back to USPS when FedEx can't take this order (too big) or is switched off.
+  const picked = options.find((o) => o.carrier === carrier && o.quote.ok) ?? options.find((o) => o.carrier === "usps");
+  const quote = picked?.quote;
   const amount = !shippingEnabled ? 0 : quote && quote.ok ? quote.amount : null;
-  return { shippingEnabled, quote, amount, loading: enabled && q.isFetching && !q.data, days: q.data?.days ?? cfg.days, freeOver: cfg.freeOver, needsZip: shippingEnabled && !zipValid(zip) };
+  return {
+    shippingEnabled,
+    quote,
+    amount,
+    options,
+    carrier: picked?.carrier ?? carrier,
+    service: picked?.service ?? cfg.service,
+    loading: enabled && q.isFetching && !q.data,
+    days: picked?.days ?? cfg.days,
+    freeOver: cfg.freeOver,
+    needsZip: shippingEnabled && !zipValid(zip),
+  };
 }
 
-function ShipZipField({ zip, onChange, quote, loading, shippingEnabled, testId }: { zip: string; onChange: (z: string) => void; quote: ShipQuote | undefined; loading: boolean; shippingEnabled: boolean; testId: string }) {
+type ShipFieldProps = {
+  zip: string;
+  onChange: (z: string) => void;
+  quote: ShipQuote | undefined;
+  loading: boolean;
+  shippingEnabled: boolean;
+  testId: string;
+  options?: ShipOption[];
+  carrier?: Carrier;
+  onCarrier?: (c: Carrier) => void;
+};
+
+function ShipZipField({ zip, onChange, quote, loading, shippingEnabled, testId, options = [], carrier = "usps", onCarrier }: ShipFieldProps) {
   if (!shippingEnabled) return null;
+  const okOptions = options.filter((o) => o.quote.ok);
+  const showPicker = zipValid(zip) && !loading && okOptions.length > 1 && !!onCarrier;
   return (
     <div data-testid={`${testId}-wrap`}>
       <Label className="text-xs">Ship to ZIP code</Label>
@@ -309,17 +346,52 @@ function ShipZipField({ zip, onChange, quote, loading, shippingEnabled, testId }
         className="mt-1 tabular-nums"
         data-testid={testId}
       />
+      {showPicker && (
+        <div className="mt-2 grid gap-1.5" role="radiogroup" aria-label="Shipping method" data-testid={`${testId}-carriers`}>
+          {okOptions.map((o) => {
+            const qq = o.quote as Extract<ShipQuote, { ok: true }>;
+            const active = o.carrier === carrier;
+            return (
+              <button
+                key={o.carrier}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => onCarrier?.(o.carrier)}
+                className={cn(
+                  "flex items-center justify-between gap-3 border px-3 py-2 text-left text-sm transition-colors",
+                  active ? "border-red-600 bg-red-50 text-black" : "border-border hover:border-black/40",
+                )}
+                data-testid={`${testId}-carrier-${o.carrier}`}
+              >
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <span className={cn("h-3.5 w-3.5 shrink-0 border", active ? "border-red-600 bg-red-600" : "border-black/40")} aria-hidden="true" />
+                  <span className="min-w-0">
+                    <span className="block font-semibold leading-tight">{o.service}</span>
+                    <span className="block text-[11px] text-muted-foreground leading-tight">
+                      {o.days}{o.carrier === "fedex" && qq.packaging ? ` · ${qq.packaging}` : ""}
+                    </span>
+                  </span>
+                </span>
+                <span className="font-bold tabular-nums shrink-0">{qq.free ? "Free" : formatCurrency(qq.amount)}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <p className="mt-1 text-[11px] text-muted-foreground" data-testid={`${testId}-hint`}>
         {!zipValid(zip)
-          ? "USPS Ground Advantage, priced by distance and weight. Enter your ZIP to see the exact cost."
+          ? `USPS Ground Advantage, priced by distance and weight${options.length !== 1 ? ", or FedEx 2Day flat rate" : ""}. Enter your ZIP to see the exact cost.`
           : loading
-            ? "Checking USPS rates…"
+            ? "Checking rates…"
             : quote && !quote.ok
               ? quote.reason
               : quote && quote.ok
-                ? quote.free
-                  ? `Free shipping — USPS Ground Advantage to ${quote.destZip}.`
-                  : `USPS Ground Advantage to ${quote.destZip} · zone ${quote.zone} · ${quote.tier} parcel. Added before tax; shipping isn't taxed.`
+                ? quote.carrier === "fedex"
+                  ? `FedEx 2Day to ${quote.destZip} · flat One Rate in a FedEx ${quote.packaging ?? "Pak"}, 2 business days. Street addresses only (no PO Boxes). Added before tax; shipping isn't taxed.`
+                  : quote.free
+                    ? `Free shipping — USPS Ground Advantage to ${quote.destZip}.`
+                    : `USPS Ground Advantage to ${quote.destZip} · zone ${quote.zone} · ${quote.tier} parcel. Added before tax; shipping isn't taxed.`
                 : ""}
       </p>
     </div>
@@ -2430,12 +2502,14 @@ function CartDrawer({
   const [cardPending, setCardPending] = useState(false);
   const [mode, setMode] = useState<"cart" | "request" | "sent">("cart");
   const [shipZip, setShipZip] = useState(readSavedZip);
-  // Pick up a ZIP typed in the Buy dialog after this drawer first mounted.
+  const [shipCarrier, setShipCarrier] = useState<Carrier>(readSavedCarrier);
+  // Pick up a ZIP / carrier chosen in the Buy dialog after this drawer first mounted.
   useEffect(() => {
     if (open && !shipZip) { const z = readSavedZip(); if (z) setShipZip(z); }
+    if (open) setShipCarrier(readSavedCarrier());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-  const ship = useShippingQuote(shipZip, okRows.map((r) => ({ id: r.id, qty: r.qty })));
+  const ship = useShippingQuote(shipZip, okRows.map((r) => ({ id: r.id, qty: r.qty })), shipCarrier);
   const shippingLine = ship.amount ?? 0;
   const [form, setForm] = useState({
     customerName: "",
@@ -2467,6 +2541,7 @@ function CartDrawer({
           items: okRows.map((row) => ({ itemId: row.id, quantity: row.qty })),
           customerEmail: form.customerEmail.trim() || undefined,
           shipZip: shipZip || undefined,
+          shipCarrier: ship.carrier,
         }),
       });
       const body = await r.json().catch(() => ({}));
@@ -2488,7 +2563,7 @@ function CartDrawer({
     if (Object.keys(e).length || !okRows.length) return;
     setSending(true);
     const shipNote = ship.quote && ship.quote.ok
-      ? ship.quote.free ? " · free shipping" : ` · est. shipping ${formatCurrency(ship.quote.amount)} (USPS Ground Advantage to ${ship.quote.destZip})`
+      ? ship.quote.free ? " · free shipping" : ` · est. shipping ${formatCurrency(ship.quote.amount)} (${ship.service} to ${ship.quote.destZip})`
       : zipValid(shipZip) ? ` · ship to ${shipZip}` : "";
     const label = `Cart order · ${count} item${count === 1 ? "" : "s"} · ${formatCurrency(subtotal)} before tax${shipNote}`;
     const failures: string[] = [];
@@ -2616,7 +2691,7 @@ function CartDrawer({
             <div className={cn("border-t border-border px-5 py-4 space-y-3 bg-white shrink-0", mode === "request" && "overflow-y-auto max-h-[78dvh]")}>
               {mode === "cart" && okRows.length > 0 && <FreeShippingProgress subtotal={subtotal} />}
               {mode === "cart" && okRows.length > 0 && (
-                <ShipZipField zip={shipZip} onChange={(z) => { setShipZip(z); if (zipValid(z)) saveZip(z); }} quote={ship.quote} loading={ship.loading} shippingEnabled={ship.shippingEnabled} testId="input-cart-zip" />
+                <ShipZipField zip={shipZip} onChange={(z) => { setShipZip(z); if (zipValid(z)) saveZip(z); }} quote={ship.quote} loading={ship.loading} shippingEnabled={ship.shippingEnabled} testId="input-cart-zip" options={ship.options} carrier={ship.carrier} onCarrier={(c) => { setShipCarrier(c); saveCarrier(c); }} />
               )}
               <div className="text-sm space-y-1">
                 <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-semibold tabular-nums" data-testid="text-cart-subtotal">{formatCurrency(subtotal)}</span></div>
@@ -2627,7 +2702,7 @@ function CartDrawer({
                   <div className="flex justify-between text-muted-foreground"><span>Est. CA sales tax ({taxPct}%)</span><span className="tabular-nums">{formatCurrency(taxEstimate)}</span></div>
                 )}
                 <div className="flex justify-between text-base font-bold pt-1 border-t border-border"><span>Total</span><span className="tabular-nums" data-testid="text-cart-total">{formatCurrency(subtotal + shippingLine + (cardEnabled ? taxEstimate : 0))}</span></div>
-                <p className="text-[11px] text-muted-foreground">Ships USPS Ground Advantage within 48 hours, {ship.days}.</p>
+                <p className="text-[11px] text-muted-foreground">Ships {ship.service} within 48 hours, {ship.days}.</p>
               </div>
 
               {mode === "cart" ? (
@@ -2773,7 +2848,8 @@ function BuyDialog({
   });
   const cardEnabled = !!checkoutCfg?.enabled;
   const [shipZip, setShipZip] = useState(readSavedZip);
-  const ship = useShippingQuote(shipZip, [{ id: listing.id, qty: form.quantity }]);
+  const [shipCarrier, setShipCarrier] = useState<Carrier>(readSavedCarrier);
+  const ship = useShippingQuote(shipZip, [{ id: listing.id, qty: form.quantity }], shipCarrier);
 
   // Card checkout: Stripe hosts the payment page; we only start the session.
   async function payWithCard() {
@@ -2788,6 +2864,7 @@ function BuyDialog({
           quantity: form.quantity,
           customerEmail: form.customerEmail.trim() || undefined,
           shipZip: shipZip || undefined,
+          shipCarrier: ship.carrier,
         }),
       });
       const body = await r.json().catch(() => ({}));
@@ -2860,7 +2937,7 @@ function BuyDialog({
       offerPrice: listing.askingPrice,
       message: [
         ship.quote && ship.quote.ok
-          ? ship.quote.free ? "Free shipping" : `Est. shipping ${formatCurrency(ship.quote.amount)} (USPS Ground Advantage to ${ship.quote.destZip})`
+          ? ship.quote.free ? "Free shipping" : `Est. shipping ${formatCurrency(ship.quote.amount)} (${ship.service} to ${ship.quote.destZip})`
           : zipValid(shipZip) ? `Ship to ${shipZip}` : "",
         form.message.trim(),
       ].filter(Boolean).join("\n") || null,
@@ -2973,7 +3050,7 @@ function BuyDialog({
                 )}
               </div>
               <FreeShippingProgress subtotal={cardTotal} />
-              <ShipZipField zip={shipZip} onChange={(z) => { setShipZip(z); if (zipValid(z)) saveZip(z); }} quote={ship.quote} loading={ship.loading} shippingEnabled={ship.shippingEnabled} testId="input-buy-zip" />
+              <ShipZipField zip={shipZip} onChange={(z) => { setShipZip(z); if (zipValid(z)) saveZip(z); }} quote={ship.quote} loading={ship.loading} shippingEnabled={ship.shippingEnabled} testId="input-buy-zip" options={ship.options} carrier={ship.carrier} onCarrier={(c) => { setShipCarrier(c); saveCarrier(c); }} />
               <div>
                 <Label className="text-xs">How would you like to pay?</Label>
                 <Select

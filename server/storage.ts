@@ -234,6 +234,7 @@ export async function runMigrations() {
         items TEXT NOT NULL,
         ounces REAL NOT NULL,
         service TEXT NOT NULL DEFAULT 'USPS Ground Advantage',
+        packaging TEXT,
         zone INTEGER,
         postage_estimate REAL,
         shipping_charged REAL,
@@ -290,6 +291,11 @@ export async function runMigrations() {
 
     try {
       await client.execute(`ALTER TABLE customer_requests ADD COLUMN payment_method TEXT`);
+    } catch {
+      // column already exists — ignore
+    }
+    try {
+      await client.execute(`ALTER TABLE shipments ADD COLUMN packaging TEXT`);
     } catch {
       // column already exists — ignore
     }

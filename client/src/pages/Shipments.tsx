@@ -28,6 +28,11 @@ function weightLabel(oz: number) {
   const rem = Math.ceil(oz - lb * 16);
   return rem ? `${lb} lb ${rem} oz` : `${lb} lb`;
 }
+const isFedex = (s: { service: string }) => /fedex/i.test(s.service);
+function trackingUrl(s: { service: string; tracking: string | null }) {
+  const t = encodeURIComponent(s.tracking ?? "");
+  return isFedex(s) ? `https://www.fedex.com/fedextrack/?trknbr=${t}` : `https://tools.usps.com/go/TrackConfirmAction?tLabels=${t}`;
+}
 function addressText(s: Row) {
   return [s.customerName, s.line1, s.line2, `${s.city}, ${s.state} ${s.zip}`].filter(Boolean).join("\n");
 }
@@ -70,11 +75,14 @@ export default function ShipmentsPage() {
       <PageHeader
         eyebrow="Fulfilment"
         title="Shipping"
-        description="Every paid online order lands here with a ready-to-print USPS label and packing slip. Pay postage at the counter or on Click-N-Ship, then mark it shipped."
+        description="Every paid online order lands here with a ready-to-print address label and packing slip. USPS orders: pay postage at the counter or on Click-N-Ship. FedEx 2Day orders: pay One Rate at a FedEx Office counter in the packaging shown. Then mark it shipped."
         actions={
           <div className="flex flex-wrap gap-2">
             <a href="https://cns.usps.com/" target="_blank" rel="noopener noreferrer">
               <Button variant="outline" data-testid="button-click-n-ship"><ExternalLink className="size-4 mr-2" /> Click-N-Ship</Button>
+            </a>
+            <a href="https://local.fedex.com/en-us/ca" target="_blank" rel="noopener noreferrer">
+              <Button variant="outline" data-testid="button-fedex-locations"><ExternalLink className="size-4 mr-2" /> FedEx locations</Button>
             </a>
             <Button onClick={() => setCreating(true)} data-testid="button-new-shipment"><Plus className="size-4 mr-2" /> New shipment</Button>
           </div>
@@ -137,6 +145,7 @@ function ShipmentCard({ s, onPatch, onDelete, busy }: { s: Row; onPatch: (b: Rec
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className={cn("text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5", shipped ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-200" : "bg-primary text-primary-foreground")}>{s.status}</span>
+          <span className={cn("text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 border", isFedex(s) ? "border-[#4d148c] text-[#4d148c] dark:text-[#c9b3ea] dark:border-[#c9b3ea]" : "border-border text-muted-foreground")} data-testid={`shipment-carrier-${s.id}`}>{isFedex(s) ? "FedEx" : "USPS"}</span>
           <span className="text-xs text-muted-foreground">#{s.id} · {formatDateTime(s.createdAt)}</span>
           {s.orderRef && <span className="text-xs text-muted-foreground truncate max-w-[220px]" title={s.orderRef}>{s.orderRef.startsWith("cs_") ? `Stripe …${s.orderRef.slice(-8)}` : s.orderRef}</span>}
         </div>
@@ -148,11 +157,16 @@ function ShipmentCard({ s, onPatch, onDelete, busy }: { s: Row; onPatch: (b: Rec
           {s.items.map((i, idx) => <li key={idx} className="flex justify-between gap-3 min-w-0"><span className="truncate min-w-0">{i.quantity > 1 ? `${i.quantity}× ` : ""}{i.name}{i.setName ? <span className="text-muted-foreground"> · {i.setName}</span> : null}</span>{i.unitPrice != null && <span className="tabular-nums text-muted-foreground shrink-0">{formatCurrency(i.unitPrice * i.quantity)}</span>}</li>)}
         </ul>
         <div className="mt-2 text-xs text-muted-foreground">
-          {s.service} · {weightLabel(s.ounces)} · {count} item{count === 1 ? "" : "s"}{s.zone ? ` · zone ${s.zone}` : ""}
-          {s.postageEstimate != null && <> · est. postage <b className="text-foreground">{formatCurrency(s.postageEstimate)}</b></>}
+          {s.service}{s.packaging ? ` · FedEx ${s.packaging}` : ""} · {weightLabel(s.ounces)} · {count} item{count === 1 ? "" : "s"}{s.zone ? ` · zone ${s.zone}` : ""}
+          {s.postageEstimate != null && <> · {isFedex(s) ? "One Rate" : "est. postage"} <b className="text-foreground">{formatCurrency(s.postageEstimate)}</b></>}
           {s.shippingCharged != null && <> · customer paid {s.shippingCharged > 0 ? formatCurrency(s.shippingCharged) : "free"}</>}
         </div>
-        {s.tracking && <div className="mt-1 text-xs break-all">Tracking: <a className="underline" href={`https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(s.tracking)}`} target="_blank" rel="noopener noreferrer">{s.tracking}</a></div>}
+        {s.tracking && <div className="mt-1 text-xs break-all">Tracking: <a className="underline" href={trackingUrl(s)} target="_blank" rel="noopener noreferrer">{s.tracking}</a></div>}
+        {!shipped && (
+          <button type="button" className="mt-1 text-xs underline text-muted-foreground hover:text-foreground" disabled={busy} onClick={() => onPatch({ carrier: isFedex(s) ? "usps" : "fedex" })} data-testid={`button-switch-carrier-${s.id}`}>
+            Switch to {isFedex(s) ? "USPS Ground Advantage" : "FedEx 2Day"}
+          </button>
+        )}
         {s.note && <div className="mt-1 text-xs text-muted-foreground">{s.note}</div>}
       </div>
       <div className="flex flex-col gap-2 min-w-0">
@@ -189,6 +203,7 @@ function NewShipmentDialog({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
   const { data: inventory = [] } = useQuery<Inventory[]>({ queryKey: ["/api/inventory"] });
   const [f, setF] = useState({ customerName: "", customerEmail: "", customerPhone: "", line1: "", line2: "", city: "", state: "", zip: "", orderRef: "", shippingCharged: "", orderTotal: "", note: "" });
+  const [carrier, setCarrier] = useState<"usps" | "fedex">("usps");
   const [items, setItems] = useState<ShipmentItem[]>([]);
   const [search, setSearch] = useState("");
   const set = (k: keyof typeof f, v: string) => setF((o) => ({ ...o, [k]: v }));
@@ -208,6 +223,7 @@ function NewShipmentDialog({ onClose }: { onClose: () => void }) {
       orderTotal: f.orderTotal === "" ? null : Number(f.orderTotal),
       note: f.note || null,
       items,
+      carrier,
     })).json(),
     onSuccess: () => { toast({ title: "Shipment created", description: "Label and packing slip are ready to print." }); queryClient.invalidateQueries({ queryKey: ["/api/admin/shipments"] }); onClose(); },
     onError: (err: any) => toast({ title: "Couldn't create shipment", description: cleanErr(err), variant: "destructive" }),
@@ -267,6 +283,18 @@ function NewShipmentDialog({ onClose }: { onClose: () => void }) {
               ))}
             </ul>
           )}
+        </div>
+        <div>
+          <Label className="text-xs">Carrier</Label>
+          <div className="mt-1 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Carrier">
+            {([["usps", "USPS Ground Advantage", "2–5 business days"], ["fedex", "FedEx 2Day", "One Rate · 2 business days"]] as const).map(([k, name, sub]) => (
+              <button key={k} type="button" role="radio" aria-checked={carrier === k} onClick={() => setCarrier(k)} data-testid={`button-newship-carrier-${k}`}
+                className={cn("border px-3 py-2 text-left text-sm", carrier === k ? "border-primary bg-primary/10" : "border-border hover:bg-muted")}>
+                <span className="block font-semibold leading-tight">{name}</span>
+                <span className="block text-[11px] text-muted-foreground leading-tight">{sub}</span>
+              </button>
+            ))}
+          </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           {field("shippingCharged", "Shipping the customer paid ($)", { type: "number", step: "0.01", placeholder: "0 = free" })}

@@ -198,7 +198,10 @@ async function buildPrompt(messages: { role: "user" | "assistant"; content: stri
 
   const shipCfg = await getShippingSettings();
   const freeShip = shipCfg.enabled && shipCfg.freeOver != null ? ` Orders over $${shipCfg.freeOver} before tax ship free.` : "";
-  const faq = FAQ_GROUPS.map((g) => `## ${g.title}\n${g.items.map((f) => `Q: ${f.q}\nA: ${plainText(f.a.replace(/\{freeShipping\}/g, freeShip))}`).join("\n")}`).join("\n\n");
+  const fedexOpt = shipCfg.enabled && shipCfg.fedexEnabled
+    ? ` FedEx 2Day is also offered at checkout: a flat FedEx One Rate price by packaging (from $${(Math.min(...Object.values(shipCfg.fedexPrices)) + shipCfg.handlingFee).toFixed(2)}), delivered in 2 business days to street addresses (no PO Boxes). Free shipping covers USPS only; FedEx is a paid upgrade.`
+    : "";
+  const faq = FAQ_GROUPS.map((g) => `## ${g.title}\n${g.items.map((f) => `Q: ${f.q}\nA: ${plainText(f.a.replace(/\{freeShipping\}/g, freeShip).replace(/\{fedexOption\}/g, fedexOpt))}`).join("\n")}`).join("\n\n");
 
   const liveStatus = (await storage.getSetting("live_isLive")) === "true";
   const liveUrl = (await storage.getSetting("live_url")) || TIKTOK_URL;

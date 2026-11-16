@@ -12,9 +12,29 @@ import { requireAuth } from "./auth";
 import { storage } from "./storage";
 import { broadcast } from "./realtime";
 import type { Inventory } from "@shared/schema";
-import { quoteForLines } from "./shipping";
+import { quoteForLines, parseCarrier } from "./shipping";
 import { createShipmentForOrder, addressFromSession } from "./shipments";
-import { SHIPPING_SERVICE } from "@shared/shipping";
+import { SHIPPING_SERVICE, FEDEX_SERVICE, type Carrier } from "@shared/shipping";
+
+/**
+ * Which carrier the shopper picked on the Stripe page. Both carriers are
+ * offered as shipping options; the chosen rate's metadata carries the carrier,
+ * and the charged amount is matched against the quotes we stored as a fallback.
+ */
+function carrierFromSession(session: Stripe.Checkout.Session): Carrier {
+  const rate: any = session.shipping_cost?.shipping_rate;
+  if (rate && typeof rate === "object") {
+    if (rate.metadata?.carrier) return parseCarrier(rate.metadata.carrier);
+    if (/fedex/i.test(String(rate.display_name ?? ""))) return "fedex";
+  }
+  const charged = session.total_details?.amount_shipping ?? session.shipping_cost?.amount_total ?? null;
+  const usps = Number(session.metadata?.shipUsps);
+  const fedex = Number(session.metadata?.shipFedex);
+  if (charged != null && Number.isFinite(usps) && Number.isFinite(fedex) && usps !== fedex) {
+    return Math.round(fedex * 100) === charged ? "fedex" : "usps";
+  }
+  return parseCarrier(session.metadata?.shipCarrier);
+}
 
 const SECRET = process.env.STRIPE_SECRET_KEY || "";
 // California sales tax, as a percentage. Override with SALES_TAX_PERCENT.
@@ -131,6 +151,8 @@ export async function recordPaidSession(session: Stripe.Checkout.Session): Promi
   const taxAmount = isRegister && Number.isFinite(metaTax) ? metaTax : (session.total_details?.amount_tax ?? 0) / 100;
   const subtotal = isRegister ? Math.max(0, total - taxAmount) : (session.amount_subtotal ?? 0) / 100;
   const shippingAmount = isRegister ? 0 : (session.total_details?.amount_shipping ?? session.shipping_cost?.amount_total ?? 0) / 100;
+  const shipCarrier: Carrier = isRegister ? "usps" : carrierFromSession(session);
+  const shipService = shipCarrier === "fedex" ? FEDEX_SERVICE : SHIPPING_SERVICE;
   const details = session.customer_details;
   const registerNotes = (session.metadata?.notes ?? "").trim();
   const counterpartyOverride = (session.metadata?.counterparty ?? "").trim();
@@ -199,7 +221,7 @@ export async function recordPaidSession(session: Stripe.Checkout.Session): Promi
       counterparty: counterpartyOverride || details?.name || details?.email || (isRegister ? "Walk-up customer" : "Online order"),
       price: lineSubtotal,
       pnl: Math.round((lineSubtotal - costShare) * 100) / 100,
-      notes: `Paid via ${PAYMENT_LABEL}${isRegister ? " at register" : ""}${orderLabel} \u00b7 tax ${lineTax.toFixed(2)}${shippingAmount > 0 && l === resolved[0] ? ` \u00b7 shipping ${shippingAmount.toFixed(2)} (${SHIPPING_SERVICE})` : ""} \u00b7 order total ${total.toFixed(2)} \u00b7 ${sessionId}${shipTo ? ` \u00b7 ship to ${shipTo}` : ""}${registerNotes ? ` \u00b7 ${registerNotes}` : ""}`,
+      notes: `Paid via ${PAYMENT_LABEL}${isRegister ? " at register" : ""}${orderLabel} \u00b7 tax ${lineTax.toFixed(2)}${shippingAmount > 0 && l === resolved[0] ? ` \u00b7 shipping ${shippingAmount.toFixed(2)} (${shipService})` : ""} \u00b7 order total ${total.toFixed(2)} \u00b7 ${sessionId}${shipTo ? ` \u00b7 ship to ${shipTo}` : ""}${registerNotes ? ` \u00b7 ${registerNotes}` : ""}`,
     } as any);
     // Online orders also land in Requests so Chris sees the ship-to details;
     // register sales are already in hand.
@@ -241,6 +263,7 @@ export async function recordPaidSession(session: Stripe.Checkout.Session): Promi
         })),
         shippingCharged: shippingAmount,
         orderTotal: total,
+        carrier: shipCarrier,
       }).then((row) => { if (row) broadcast({ type: "shipments:update", payload: { id: row.id } }); })
         .catch((err: any) => console.warn(`[ship] couldn't create shipment for ${sessionId}:`, err?.message ?? err));
     } else {
@@ -289,7 +312,7 @@ export async function sweepPaidSessions(): Promise<{ checked: number; recorded: 
       status: "complete",
       created: { gte: since },
       limit: 100,
-      expand: ["data.customer_details"],
+      expand: ["data.customer_details", "data.shipping_cost.shipping_rate"],
     })) {
       checked += 1;
       if (session.payment_status !== "paid") continue;
@@ -506,9 +529,30 @@ export function registerStripeCheckoutRoutes(app: Express) {
       // from the destination ZIP the shopper typed in the cart. Charged before
       // tax and untaxed (separately stated carrier charge).
       const shipZip = String(req.body?.shipZip ?? "").trim();
-      const quote = await quoteForLines(lines, shipZip);
-      if (!quote.ok) return res.status(400).json({ code: "ship_zip", message: quote.reason });
-      const shippingCents = Math.round(quote.amount * 100);
+      const wantCarrier = parseCarrier(req.body?.shipCarrier);
+      const uspsQuote = await quoteForLines(lines, shipZip, "usps");
+      if (!uspsQuote.ok) return res.status(400).json({ code: "ship_zip", message: uspsQuote.reason });
+      const fedexQuote = await quoteForLines(lines, shipZip, "fedex");
+      const quote = wantCarrier === "fedex" && fedexQuote.ok ? fedexQuote : uspsQuote;
+      const rateFor = (q: typeof uspsQuote & { ok: true }) => ({
+        shipping_rate_data: {
+          type: "fixed_amount" as const,
+          fixed_amount: { amount: Math.round(q.amount * 100), currency: "usd" },
+          display_name: q.carrier === "fedex"
+            ? `${FEDEX_SERVICE}${q.packaging ? ` (${q.packaging})` : ""}`
+            : q.free ? `${SHIPPING_SERVICE} — free` : SHIPPING_SERVICE,
+          delivery_estimate: q.carrier === "fedex"
+            ? { minimum: { unit: "business_day" as const, value: 2 }, maximum: { unit: "business_day" as const, value: 2 } }
+            : { minimum: { unit: "business_day" as const, value: 2 }, maximum: { unit: "business_day" as const, value: 5 } },
+          tax_behavior: "exclusive" as const,
+          metadata: { carrier: q.carrier },
+        },
+      });
+      // Chosen carrier first (Stripe preselects the first option); the other
+      // stays available so the shopper can still switch on the Stripe page.
+      const shippingOptions = [rateFor(quote as any)];
+      if (fedexQuote.ok && quote.carrier !== "fedex") shippingOptions.push(rateFor(fedexQuote as any));
+      if (quote.carrier === "fedex") shippingOptions.push(rateFor(uspsQuote as any));
 
       const tax = await taxRateId();
       // Compact "ID×qty" list so the confirm step can record every line even
@@ -517,20 +561,7 @@ export function registerStripeCheckoutRoutes(app: Express) {
       const session = await client().checkout.sessions.create({
         mode: "payment",
         customer_email: email,
-        shipping_options: [
-          {
-            shipping_rate_data: {
-              type: "fixed_amount",
-              fixed_amount: { amount: shippingCents, currency: "usd" },
-              display_name: quote.free ? `${SHIPPING_SERVICE} — free` : SHIPPING_SERVICE,
-              delivery_estimate: {
-                minimum: { unit: "business_day", value: 2 },
-                maximum: { unit: "business_day", value: 5 },
-              },
-              tax_behavior: "exclusive",
-            },
-          },
-        ],
+        shipping_options: shippingOptions,
         line_items: lines.map((l) => ({
           quantity: l.quantity,
           ...(tax ? { tax_rates: [tax] } : {}),
@@ -552,6 +583,9 @@ export function registerStripeCheckoutRoutes(app: Express) {
           lineCount: String(lines.length),
           shipZip: quote.destZip,
           shipping: quote.amount.toFixed(2),
+          shipCarrier: quote.carrier,
+          shipUsps: uspsQuote.amount.toFixed(2),
+          shipFedex: fedexQuote.ok ? fedexQuote.amount.toFixed(2) : "",
           shipZone: String(quote.zone),
           shipOunces: String(quote.ounces),
           // Legacy single-item fields, kept for the first line.
@@ -578,7 +612,7 @@ export function registerStripeCheckoutRoutes(app: Express) {
       if (!/^cs_/.test(sessionId)) return res.status(400).json({ message: "Missing session." });
 
       const session = await client().checkout.sessions.retrieve(sessionId, {
-        expand: ["payment_intent", "customer_details"],
+        expand: ["payment_intent", "customer_details", "shipping_cost.shipping_rate"],
       });
       if (session.payment_status !== "paid") {
         return res.status(402).json({ ok: false, status: session.payment_status, message: "Payment not completed." });

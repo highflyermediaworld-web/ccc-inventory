@@ -136,9 +136,18 @@ function freeShippingSentence(freeOver: number | null): string {
   return freeOver == null ? "" : ` **Orders over $${Number.isInteger(freeOver) ? freeOver : freeOver.toFixed(2)} before tax ship free.**`;
 }
 
+function fedexSentence(cfg: { fedexEnabled: boolean; fedexFrom: number | null }): string {
+  if (!cfg.fedexEnabled) return "";
+  const from = cfg.fedexFrom != null ? ` from $${Number.isInteger(cfg.fedexFrom) ? cfg.fedexFrom : cfg.fedexFrom.toFixed(2)}` : "";
+  return ` Need it faster? Pick **FedEx 2Day** at checkout — a flat rate in FedEx packaging${from}, delivered in 2 business days (street addresses only, no PO Boxes).`;
+}
+
 export function Rich({ text }: { text: string }) {
-  const { freeOver } = useShippingConfig();
-  const src = text.replace(/\{handle\}/g, BRAND_HANDLE).replace(/\{freeShipping\}/g, freeShippingSentence(freeOver));
+  const cfg = useShippingConfig();
+  const src = text
+    .replace(/\{handle\}/g, BRAND_HANDLE)
+    .replace(/\{freeShipping\}/g, freeShippingSentence(cfg.freeOver))
+    .replace(/\{fedexOption\}/g, fedexSentence(cfg));
   const parts: ReactNode[] = [];
   const re = /\*\*(.+?)\*\*|\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
   let last = 0;

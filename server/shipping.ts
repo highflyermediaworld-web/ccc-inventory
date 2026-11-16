@@ -12,10 +12,15 @@ import { storage } from "./storage";
 import type { Inventory } from "@shared/schema";
 import {
   DEFAULT_SHIPPING,
+  FEDEX_PACKAGING,
+  FEDEX_SERVICE,
+  FEDEX_DAYS,
   mergeShippingSettings,
   quoteShipping,
+  quoteShippingOptions,
   SHIPPING_SERVICE,
   SHIPPING_DAYS,
+  type Carrier,
   type ShippingQuote,
   type ShippingSettings,
 } from "@shared/shipping";
@@ -32,10 +37,15 @@ export async function getShippingSettings(): Promise<ShippingSettings> {
 export async function quoteForLines(
   lines: { item: Inventory; quantity: number; unit: number }[],
   destZip: string | null | undefined,
+  carrier: Carrier = "usps",
 ): Promise<ShippingQuote> {
   const settings = await getShippingSettings();
   const subtotal = lines.reduce((n, l) => n + l.unit * l.quantity, 0);
-  return quoteShipping(lines.map((l) => ({ category: l.item.category, quantity: l.quantity })), destZip, settings, subtotal);
+  return quoteShipping(lines.map((l) => ({ category: l.item.category, quantity: l.quantity })), destZip, settings, subtotal, new Date(), carrier);
+}
+
+export function parseCarrier(v: unknown): Carrier {
+  return String(v ?? "").toLowerCase() === "fedex" ? "fedex" : "usps";
 }
 
 const settingsSchema = z.object({
@@ -52,6 +62,8 @@ const settingsSchema = z.object({
   fromLine2: z.string().trim().max(80).optional(),
   fromCity: z.string().trim().max(60).optional(),
   fromState: z.string().trim().max(2).optional(),
+  fedexEnabled: z.boolean().optional(),
+  fedexPrices: z.record(z.string(), z.coerce.number().min(0.01).max(1000)).optional(),
 });
 
 export function registerShippingRoutes(app: Express) {
@@ -86,15 +98,27 @@ export function registerShippingRoutes(app: Express) {
         }
       }
       const subtotal = lines.reduce((n, l) => n + l.unit * l.quantity, 0);
-      const quote = quoteShipping(shipItems, zip, settings, subtotal);
-      res.json({ enabled: settings.enabled, service: SHIPPING_SERVICE, days: SHIPPING_DAYS, freeOver: settings.freeOver, quote });
+      const options = quoteShippingOptions(shipItems, zip, settings, subtotal);
+      const quote = options[0].quote; // USPS, kept at the top level for older clients
+      res.json({
+        enabled: settings.enabled,
+        service: SHIPPING_SERVICE,
+        days: SHIPPING_DAYS,
+        freeOver: settings.freeOver,
+        fedexEnabled: settings.enabled && settings.fedexEnabled,
+        fedexService: FEDEX_SERVICE,
+        fedexDays: FEDEX_DAYS,
+        fedexFrom: settings.enabled && settings.fedexEnabled ? Math.min(...Object.values(settings.fedexPrices)) + settings.handlingFee : null,
+        quote,
+        options,
+      });
     } catch (err: any) {
       res.status(500).json({ message: err?.message || "Couldn't quote shipping" });
     }
   });
 
   app.get("/api/admin/shipping", requireAuth, async (_req, res) => {
-    res.json({ settings: await getShippingSettings(), defaults: DEFAULT_SHIPPING, service: SHIPPING_SERVICE });
+    res.json({ settings: await getShippingSettings(), defaults: DEFAULT_SHIPPING, service: SHIPPING_SERVICE, fedexService: FEDEX_SERVICE, fedexPackaging: FEDEX_PACKAGING });
   });
 
   app.put("/api/admin/shipping", requireAuth, async (req, res) => {
@@ -103,6 +127,7 @@ export function registerShippingRoutes(app: Express) {
       const clean = mergeShippingSettings({
         ...body,
         freeOver: body.freeOver === "" || body.freeOver == null ? null : Number(body.freeOver),
+        fedexPrices: body.fedexPrices as any,
       });
       await storage.setSetting(KEY, JSON.stringify(clean));
       res.json({ ok: true, settings: clean });

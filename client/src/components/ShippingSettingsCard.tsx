@@ -11,10 +11,22 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/format";
 import type { ShippingSettings } from "@shared/shipping";
 
-type Resp = { settings: ShippingSettings; defaults: ShippingSettings; service: string };
+type Resp = { settings: ShippingSettings; defaults: ShippingSettings; service: string; fedexService?: string; fedexPackaging?: string[] };
 type Quote =
-  | { ok: true; zone: number; miles: number; ounces: number; tier: string; postage: number; handling: number; amount: number; free: boolean; destZip: string; rates: string }
+  | { ok: true; carrier?: "usps" | "fedex"; service?: string; zone: number; miles: number; ounces: number; tier: string; packaging?: string; postage: number; handling: number; amount: number; free: boolean; destZip: string; rates: string }
   | { ok: false; reason: string };
+type QuoteOption = { carrier: "usps" | "fedex"; service: string; days: string; quote: Quote };
+
+const FEDEX_KEYS = ["Envelope", "Extra Small Box", "Pak", "Small Box", "Medium Box", "Large Box", "Extra Large Box"] as const;
+const FEDEX_HINT: Record<(typeof FEDEX_KEYS)[number], string> = {
+  "Envelope": "Up to 30 raw cards",
+  "Extra Small Box": "Up to 4 slabs",
+  "Pak": "Spare (not auto-picked)",
+  "Small Box": "5–12 slabs / bulk raw",
+  "Medium Box": "1 ETB or 13–30 slabs",
+  "Large Box": "2 sealed / 31–60 slabs",
+  "Extra Large Box": "3–4 sealed items",
+};
 
 function cleanErr(err: any) {
   const m = String(err?.message ?? err ?? "");
@@ -45,12 +57,23 @@ export function ShippingSettingsCard() {
         fromLine2: s.fromLine2 ?? "",
         fromCity: s.fromCity ?? "",
         fromState: s.fromState ?? "",
+        fedexEnabled: s.fedexEnabled !== false,
+        ...Object.fromEntries(FEDEX_KEYS.map((k) => [`fedex:${k}`, String(s.fedexPrices?.[k] ?? "")])),
       });
     }
   }, [q.data]);
 
   const save = useMutation({
-    mutationFn: async () => (await apiRequest("PUT", "/api/admin/shipping", { settings: form })).json(),
+    mutationFn: async () => {
+      const settings: Record<string, unknown> = {};
+      const fedexPrices: Record<string, string> = {};
+      for (const [k, v] of Object.entries(form)) {
+        if (k.startsWith("fedex:")) fedexPrices[k.slice(6)] = String(v);
+        else settings[k] = v;
+      }
+      settings.fedexPrices = fedexPrices;
+      return (await apiRequest("PUT", "/api/admin/shipping", { settings })).json();
+    },
     onSuccess: () => {
       toast({ title: "Shipping settings saved" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/shipping"] });
@@ -64,14 +87,17 @@ export function ShippingSettingsCard() {
   const [testRaw, setTestRaw] = useState("1");
   const [testSlab, setTestSlab] = useState("0");
   const [preview, setPreview] = useState<Quote | null>(null);
+  const [previewOptions, setPreviewOptions] = useState<QuoteOption[]>([]);
   async function runPreview() {
     setPreview(null);
+    setPreviewOptions([]);
     // Synthetic items are resolved server-side by id; use the sample-only
     // route parameters instead: the quote endpoint accepts repeated ids, so
     // we pass "category" pseudo-ids it will ignore and rely on counts here.
     const r = await fetch(`${API_BASE}/api/shop/shipping/quote?zip=${encodeURIComponent(testZip)}&sample=${encodeURIComponent(`raw:${testRaw},slab:${testSlab}`)}`, { credentials: "include" });
     const d = await r.json().catch(() => null);
     if (d?.quote) setPreview(d.quote);
+    if (Array.isArray(d?.options)) setPreviewOptions(d.options);
   }
 
   const set = (k: string, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }));
@@ -87,10 +113,10 @@ export function ShippingSettingsCard() {
     <Card data-testid="card-shipping-settings">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Truck className="h-4 w-4" /> Shipping — {q.data?.service ?? "USPS Ground Advantage"}
+          <Truck className="h-4 w-4" /> Shipping — {q.data?.service ?? "USPS Ground Advantage"} + {q.data?.fedexService ?? "FedEx 2Day"}
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Customers pay USPS's current retail postage for their distance zone and the order's weight, plus your handling fee. Shipping is added before tax and isn't taxed.
+          Customers pay USPS's current retail postage for their distance zone and the order's weight, plus your handling fee — or pick FedEx 2Day at a flat One Rate price. Shipping is added before tax and isn't taxed.
         </p>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -152,6 +178,27 @@ export function ShippingSettingsCard() {
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">USPS tiers: up to 4 oz, 8 oz, 12 oz, 15.999 oz, then whole pounds. Zones 1–8 by distance from the ship-from ZIP.</p>
         </div>
+        <div className="border border-border p-3" data-testid="card-fedex-settings">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">Offer FedEx 2Day (One Rate)</div>
+              <div className="text-[11px] text-muted-foreground">Flat price per FedEx packaging, same in every zone, surcharges included. Paid at a FedEx Office counter — no account needed. Free-shipping threshold covers USPS only.</div>
+            </div>
+            <Switch checked={form.fedexEnabled !== false} onCheckedChange={(v) => set("fedexEnabled", v)} data-testid="switch-fedex-enabled" />
+          </div>
+          <div className="mt-3 grid gap-3 grid-cols-2 sm:grid-cols-4 max-w-3xl">
+            {FEDEX_KEYS.map((k) => (
+              <div key={k}>
+                <Label className="text-xs">{k} ($)</Label>
+                <Input type="number" step="0.05" min={0} value={String(form[`fedex:${k}`] ?? "")} onChange={(e) => set(`fedex:${k}`, e.target.value)} className="mt-1 tabular-nums" data-testid={`input-fedex-${k.replace(/\s+/g, "-").toLowerCase()}`} />
+                <p className="mt-1 text-[11px] text-muted-foreground">{FEDEX_HINT[k]}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Defaults are FedEx's published One Rate prices for FedEx 2Day, effective Sept 11, 2026 (<a className="underline" href="https://www.fedex.com/en-us/shipping/one-rate.html" target="_blank" rel="noopener noreferrer">fedex.com/one-rate</a>). Update here when FedEx changes them. The packaging is picked from the order: raw-only → Envelope, slabs → boxes, sealed → Medium or larger.
+          </p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={() => save.mutate()} disabled={save.isPending || !q.data} data-testid="button-ship-save">
             <Save className="h-4 w-4" /> {save.isPending ? "Saving…" : "Save shipping settings"}
@@ -181,10 +228,17 @@ export function ShippingSettingsCard() {
           {preview && (
             <p className="mt-2 text-sm" data-testid="text-ship-preview">
               {preview.ok
-                ? <>Zone {preview.zone} ({preview.miles} mi) · {preview.ounces} oz → {preview.tier} parcel · postage {formatCurrency(preview.postage)}{preview.handling > 0 ? ` + ${formatCurrency(preview.handling)} handling` : ""} → <b>{preview.free ? "Free" : formatCurrency(preview.amount)}</b> <span className="text-muted-foreground">· {preview.rates}</span></>
+                ? <>USPS · Zone {preview.zone} ({preview.miles} mi) · {preview.ounces} oz → {preview.tier} parcel · postage {formatCurrency(preview.postage)}{preview.handling > 0 ? ` + ${formatCurrency(preview.handling)} handling` : ""} → <b>{preview.free ? "Free" : formatCurrency(preview.amount)}</b> <span className="text-muted-foreground">· {preview.rates}</span></>
                 : <span className="text-red-600">{preview.reason}</span>}
             </p>
           )}
+          {previewOptions.filter((o) => o.carrier === "fedex").map((o) => (
+            <p key={o.carrier} className="mt-1 text-sm" data-testid="text-ship-preview-fedex">
+              {o.quote.ok
+                ? <>FedEx 2Day · One Rate {o.quote.packaging ?? o.quote.tier} · {formatCurrency(o.quote.postage)}{o.quote.handling > 0 ? ` + ${formatCurrency(o.quote.handling)} handling` : ""} → <b>{formatCurrency(o.quote.amount)}</b> <span className="text-muted-foreground">· {o.days}</span></>
+                : <span className="text-muted-foreground">FedEx: {o.quote.reason}</span>}
+            </p>
+          ))}
         </div>
       </CardContent>
     </Card>

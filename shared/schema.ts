@@ -193,6 +193,7 @@ export const shipments = sqliteTable("shipments", {
   items: text("items").notNull(), // JSON [{itemId,name,setName,quantity,category,unitPrice}]
   ounces: real("ounces").notNull(),
   service: text("service").notNull().default("USPS Ground Advantage"),
+  packaging: text("packaging"), // FedEx One Rate packaging (Envelope, Pak, Small Box…); null for USPS
   zone: integer("zone"),
   postageEstimate: real("postage_estimate"),
   shippingCharged: real("shipping_charged"),
