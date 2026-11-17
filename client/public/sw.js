@@ -12,7 +12,7 @@
  * caches get purged automatically.
  */
 
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL_CACHE = `ccc-shell-${VERSION}`;
 const ASSET_CACHE = `ccc-assets-${VERSION}`;
 const IMG_CACHE = `ccc-img-${VERSION}`;

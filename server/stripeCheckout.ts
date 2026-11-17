@@ -528,6 +528,15 @@ export function registerStripeCheckoutRoutes(app: Express) {
       // Shipping: USPS Ground Advantage by zone + weight, quoted server-side
       // from the destination ZIP the shopper typed in the cart. Charged before
       // tax and untaxed (separately stated carrier charge).
+      // Pages loaded before shipping existed never send shipZip at all (the
+      // current client always sends a string, even when empty). Tell those
+      // shoppers to refresh instead of asking for a field they can't see.
+      if (req.body?.shipZip === undefined) {
+        return res.status(409).json({
+          code: "stale_client",
+          message: "This page is out of date. Refresh the page, then enter your ZIP code in the cart to see shipping and check out.",
+        });
+      }
       const shipZip = String(req.body?.shipZip ?? "").trim();
       const wantCarrier = parseCarrier(req.body?.shipCarrier);
       const uspsQuote = await quoteForLines(lines, shipZip, "usps");

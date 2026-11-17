@@ -2540,11 +2540,12 @@ function CartDrawer({
         body: JSON.stringify({
           items: okRows.map((row) => ({ itemId: row.id, quantity: row.qty })),
           customerEmail: form.customerEmail.trim() || undefined,
-          shipZip: shipZip || undefined,
+          shipZip,
           shipCarrier: ship.carrier,
         }),
       });
       const body = await r.json().catch(() => ({}));
+      if (body?.code === "stale_client") { window.location.reload(); return; }
       if (!r.ok || !body?.url) throw new Error(body?.message || "Couldn't start checkout");
       // The success page clears the cart after the payment is confirmed.
       window.location.assign(body.url);
@@ -2863,11 +2864,12 @@ function BuyDialog({
           itemId: listing.id,
           quantity: form.quantity,
           customerEmail: form.customerEmail.trim() || undefined,
-          shipZip: shipZip || undefined,
+          shipZip,
           shipCarrier: ship.carrier,
         }),
       });
       const body = await r.json().catch(() => ({}));
+      if (body?.code === "stale_client") { window.location.reload(); return; }
       if (!r.ok || !body?.url) throw new Error(body?.message || "Couldn't start checkout");
       window.location.assign(body.url);
     } catch (err: any) {

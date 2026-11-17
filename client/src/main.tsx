@@ -1,12 +1,14 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { startUpdateChecks } from "./lib/updateCheck";
 
 if (!window.location.hash) {
   window.location.hash = "#/";
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
+startUpdateChecks();
 
 // Register the service worker (production only — during dev Vite already
 // controls the page and a SW would cache the dev bundle).
