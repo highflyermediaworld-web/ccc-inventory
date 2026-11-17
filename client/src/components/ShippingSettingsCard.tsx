@@ -173,7 +173,7 @@ export function ShippingSettingsCard() {
           <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 max-w-3xl">
             {num("ozRaw", "Per raw card", "0.1", "Sleeve + toploader")}
             {num("ozSlab", "Per slab", "0.1", "PSA / CGC / BGS")}
-            {num("ozSealed", "Per sealed item", "1", "Raise for ETBs and boxes")}
+            {num("ozSealed", "Per unrecognized sealed item", "1", "Packs, blisters, bundles, ETBs and boxes use built-in weights by type")}
             {num("ozPackaging", "Packaging", "0.5", "Mailer + cardboard")}
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">USPS tiers: up to 4 oz, 8 oz, 12 oz, 15.999 oz, then whole pounds. Zones 1–8 by distance from the ship-from ZIP.</p>
@@ -196,7 +196,7 @@ export function ShippingSettingsCard() {
             ))}
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">
-            Defaults are FedEx's published One Rate prices for FedEx 2Day, effective Sept 11, 2026 (<a className="underline" href="https://www.fedex.com/en-us/shipping/one-rate.html" target="_blank" rel="noopener noreferrer">fedex.com/one-rate</a>). Update here when FedEx changes them. The packaging is picked from the order: raw-only → Envelope, slabs → boxes, sealed → Medium or larger.
+            Defaults are FedEx's published One Rate prices for FedEx 2Day, effective Sept 11, 2026 (<a className="underline" href="https://www.fedex.com/en-us/shipping/one-rate.html" target="_blank" rel="noopener noreferrer">fedex.com/one-rate</a>). Update here when FedEx changes them. The packaging is picked from what's actually in the order, using FedEx's inside dimensions: raw cards, packs and blisters ride in an Envelope or Pak; slabs, ETBs, bundles, tins, booster boxes and collections get the smallest box they fit (sealed product is sized from its title, e.g. "Elite Trainer Box", "Booster Bundle", "Blister").
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

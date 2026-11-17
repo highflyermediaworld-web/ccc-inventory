@@ -275,7 +275,8 @@ export function groundAdvantagePostage(ounces: number, zone: number, date = new 
 /*  Quote                                                              */
 /* ------------------------------------------------------------------ */
 
-export type ShipItem = { category: string | null | undefined; quantity: number };
+/** `name` lets sealed product be sized from its listing title (ETB, bundle, blister…). */
+export type ShipItem = { category: string | null | undefined; quantity: number; name?: string | null };
 
 export type ShippingQuote =
   | {
@@ -313,41 +314,167 @@ export function countByCategory(items: ShipItem[]): { raw: number; slab: number;
   return out;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Parcel contents: what's physically in the box                     */
+/* ------------------------------------------------------------------ */
+
 /**
- * Smallest FedEx packaging the order fits in, from the published inside
- * dimensions: Envelope 9½×12½ (flat cards), Extra Small Box 7¼×2½×4¹¹⁄₁₆
- * (a few slabs stacked), Pak 10¼×12¾ (soft), Small Box 10⅞×1½×12⅜,
- * Medium Box 8¾×4⅜×11¼ (one ETB), Large Box 8¾×7¾×11¼ (two ETBs / a booster
- * box), Extra Large 11⅞×10¾×11. Returns null when it won't fit One Rate.
+ * Sealed product comes in a handful of standard shapes. We infer the shape
+ * from the listing title and carry approximate outside dimensions (inches,
+ * including a little bubble wrap) and weight (ounces). Unknown sealed items
+ * fall back to ETB size and the owner's ozSealed setting.
  */
-export function fedexPackagingFor(items: ShipItem[]): FedexPackaging | null {
-  const { raw, slab, sealed } = countByCategory(items);
-  if (sealed > 0) {
-    if (sealed <= 1 && slab <= 4 && raw <= 60) return "Medium Box";
-    if (sealed <= 2 && slab <= 8 && raw <= 120) return "Large Box";
-    if (sealed <= 4) return "Extra Large Box";
-    return null;
-  }
-  if (slab > 0) {
-    if (slab <= 4 && raw <= 30) return "Extra Small Box";
-    if (slab <= 12 && raw <= 100) return "Small Box";
-    if (slab <= 30) return "Medium Box";
-    if (slab <= 60) return "Large Box";
-    return null;
-  }
-  if (raw <= 30) return "Envelope";
-  if (raw <= 300) return "Small Box";
-  if (raw <= 800) return "Medium Box";
-  return "Large Box";
+export type SealedKind =
+  | "pack" | "blister" | "blister3" | "sticker" | "illustration" | "deck" | "bundle" | "tin"
+  | "boosterBox" | "etb" | "collection" | "figure" | "poster" | "upc" | "unknown";
+
+export type PieceSpec = {
+  label: string;
+  /** Outside dims, inches, any order. */
+  dims: [number, number, number];
+  oz: number;
+  /** May ride in an Envelope / Pak (flat, not crushable). */
+  soft: boolean;
+  /** How well many of these tile a box: 1 = perfectly, lower for loose stacks. */
+  tile: number;
+};
+
+export const SEALED_KINDS: Record<SealedKind, PieceSpec> = {
+  pack:         { label: "Booster pack",              dims: [5.0, 3.5, 0.25],  oz: 1,  soft: true,  tile: 0.9 },
+  blister:      { label: "Blister pack",              dims: [7.75, 5.25, 0.75], oz: 3, soft: true,  tile: 1 },
+  blister3:     { label: "3-pack blister",            dims: [8.5, 6.0, 1.0],   oz: 5,  soft: true,  tile: 1 },
+  sticker:      { label: "Sticker collection",        dims: [7.25, 5.25, 1.5], oz: 5,  soft: false, tile: 1 },
+  illustration: { label: "Illustration collection",   dims: [8.5, 6.5, 1.75],  oz: 10, soft: false, tile: 1 },
+  deck:         { label: "Battle deck",               dims: [7.0, 4.75, 2.0],  oz: 7,  soft: false, tile: 1 },
+  bundle:       { label: "Booster bundle",            dims: [7.75, 5.25, 3.25], oz: 8, soft: false, tile: 1 },
+  tin:          { label: "Tin",                       dims: [7.0, 4.75, 3.25], oz: 12, soft: false, tile: 1 },
+  boosterBox:   { label: "Booster box",               dims: [8.0, 6.0, 3.25],  oz: 26, soft: false, tile: 1 },
+  etb:          { label: "Elite Trainer Box",         dims: [8.0, 5.25, 3.75], oz: 26, soft: false, tile: 1 },
+  collection:   { label: "Premium collection",        dims: [9.25, 6.75, 3.25], oz: 22, soft: false, tile: 1 },
+  figure:       { label: "Figure collection",         dims: [10.25, 7.25, 3.75], oz: 28, soft: false, tile: 1 },
+  poster:       { label: "Poster collection",         dims: [11.25, 8.25, 1.75], oz: 14, soft: false, tile: 1 },
+  upc:          { label: "Ultra-Premium Collection",  dims: [13.75, 9.75, 4.25], oz: 56, soft: false, tile: 1 },
+  unknown:      { label: "Sealed product",            dims: [8.0, 5.25, 3.75], oz: 12, soft: false, tile: 1 },
+};
+
+const RAW_PIECE: PieceSpec  = { label: "Raw card",   dims: [4.1, 3.1, 0.1],  oz: 0.6, soft: true,  tile: 0.7 };
+const SLAB_PIECE: PieceSpec = { label: "Graded slab", dims: [5.6, 3.4, 0.45], oz: 3.5, soft: false, tile: 1 };
+
+/** Read the product shape off a sealed listing's title. Returns one or more pieces (a Costco 2-pack is two ETBs + a bundle). */
+export function sealedKindsFor(name: string | null | undefined): SealedKind[] {
+  const n = String(name ?? "").toLowerCase();
+  if (!n) return ["unknown"];
+  if (/ultra[\s-]*premium|\bupc\b/.test(n)) return ["upc"];
+  if (/2[\s-]*pack trainer box|two trainer box/.test(n)) return /bundle/.test(n) ? ["etb", "etb", "bundle"] : ["etb", "etb"];
+  if (/elite trainer|\betb\b|trainer box/.test(n)) return ["etb"];
+  if (/booster box|display box|booster display|\bdisplay\b/.test(n)) return ["boosterBox"];
+  if (/booster bundle|\bbundle\b/.test(n)) return ["bundle"];
+  if (/\btins?\b/.test(n)) return ["tin"];
+  if (/battle deck|theme deck|starter deck|league battle|\bdeck\b/.test(n)) return ["deck"];
+  if (/sticker collection|tech sticker/.test(n)) return ["sticker"];
+  if (/figure collection|figure box/.test(n)) return ["figure"];
+  if (/poster collection/.test(n)) return ["poster"];
+  if (/illustration collection|illustration box|binder collection|\bbinder\b/.test(n)) return ["illustration"];
+  if (/premium collection|special collection|collection box|build & battle|build and battle|box set|gift box|\bcollection\b/.test(n)) return ["collection"];
+  if (/3[\s-]*pack|triple|2[\s-]*pack|enhanced.*blister|blister.*enhanced/.test(n)) return ["blister3"];
+  if (/blister|checklane|hanger/.test(n)) return ["blister"];
+  if (/booster pack|sleeved booster|\bpack\b|\bbooster\b/.test(n)) return ["pack"];
+  return ["unknown"];
 }
 
-export function ouncesFor(items: ShipItem[], s: ShippingSettings): number {
-  let oz = s.ozPackaging;
+type Piece = { spec: PieceSpec; qty: number };
+
+/** Expand an order into physical pieces (raw cards, slabs, and each sealed shape). */
+export function piecesFor(items: ShipItem[], s?: Pick<ShippingSettings, "ozRaw" | "ozSlab" | "ozSealed">): Piece[] {
+  const byLabel = new Map<string, Piece>();
+  const add = (spec: PieceSpec, qty: number) => {
+    if (qty <= 0) return;
+    const cur = byLabel.get(spec.label);
+    if (cur) cur.qty += qty; else byLabel.set(spec.label, { spec, qty });
+  };
   for (const it of items) {
     const q = Math.max(0, Math.floor(it.quantity || 0));
+    if (!q) continue;
     const c = String(it.category ?? "").toLowerCase();
-    oz += q * (c === "slab" ? s.ozSlab : c === "sealed" ? s.ozSealed : s.ozRaw);
+    if (c === "slab") add(s ? { ...SLAB_PIECE, oz: s.ozSlab } : SLAB_PIECE, q);
+    else if (c === "sealed") {
+      for (const k of sealedKindsFor(it.name)) {
+        const spec = SEALED_KINDS[k];
+        add(k === "unknown" && s ? { ...spec, oz: s.ozSealed } : spec, q);
+      }
+    } else add(s ? { ...RAW_PIECE, oz: s.ozRaw } : RAW_PIECE, q);
   }
+  return Array.from(byLabel.values());
+}
+
+/** "2 × Elite Trainer Box, 3 × Booster pack" — for packing slips and admin previews. */
+export function describePieces(items: ShipItem[]): string {
+  return piecesFor(items).map((p) => `${p.qty} × ${p.spec.label}`).join(", ");
+}
+
+/**
+ * FedEx One Rate packaging, inside dimensions from fedex.com/en-us/shipping/one-rate.html
+ * (Nov 2026). Boxes with two styles list both; an order qualifies if it fits
+ * either. Envelope and Pak are soft: only flat, non-crushable pieces go in
+ * them, and we cap their usable thickness well under FedEx's 3"/5" limits.
+ */
+type Container = { packaging: FedexPackaging; soft: boolean; maxOz: number; styles: [number, number, number][] };
+const FEDEX_CONTAINERS: Container[] = [
+  { packaging: "Envelope",        soft: true,  maxOz: 160, styles: [[12.5, 9.5, 0.75]] },
+  { packaging: "Extra Small Box", soft: false, maxOz: 800, styles: [[7.25, 4.6875, 2.5]] },
+  { packaging: "Pak",             soft: true,  maxOz: 800, styles: [[14.75, 11.75, 2.5]] },
+  { packaging: "Small Box",       soft: false, maxOz: 800, styles: [[12.375, 10.875, 1.5], [11.3125, 8.75, 2.6875]] },
+  { packaging: "Medium Box",      soft: false, maxOz: 800, styles: [[13.25, 11.5, 2.375], [11.3125, 8.75, 4.375]] },
+  { packaging: "Large Box",       soft: false, maxOz: 800, styles: [[17.5, 12.375, 3], [11.3125, 8.75, 7.75]] },
+  { packaging: "Extra Large Box", soft: false, maxOz: 800, styles: [[11.875, 10.8125, 11.0625], [15.75, 14.1875, 6]] },
+];
+
+/** How many identical pieces tile a box, best of the six orientations. */
+function capacity(box: [number, number, number], piece: PieceSpec): number {
+  const [a, b, c] = piece.dims;
+  const orients: [number, number, number][] = [[a, b, c], [a, c, b], [b, a, c], [b, c, a], [c, a, b], [c, b, a]];
+  let best = 0;
+  for (const [x, y, z] of orients) {
+    const n = Math.floor(box[0] / x) * Math.floor(box[1] / y) * Math.floor(box[2] / z);
+    if (n > best) best = n;
+  }
+  if (best <= 1) return best;
+  return Math.max(1, Math.floor(best * piece.tile));
+}
+
+/** Does this mix of pieces fit the box? Each kind uses its share of the box; shares must sum to ≤ 1. */
+function fits(box: [number, number, number], pieces: Piece[]): boolean {
+  let used = 0;
+  for (const p of pieces) {
+    const cap = capacity(box, p.spec);
+    if (cap === 0) return false;
+    used += p.qty / cap;
+    if (used > 1) return false;
+  }
+  return true;
+}
+
+/**
+ * Smallest (cheapest) FedEx One Rate packaging the order's pieces fit in,
+ * or null when it needs more than one Extra Large Box.
+ */
+export function fedexPackagingFor(items: ShipItem[], settings?: ShippingSettings): FedexPackaging | null {
+  const pieces = piecesFor(items, settings);
+  if (!pieces.length) return "Envelope";
+  const oz = ouncesFor(items, settings ?? DEFAULT_SHIPPING);
+  const allSoft = pieces.every((p) => p.spec.soft);
+  for (const c of FEDEX_CONTAINERS) {
+    if (c.soft && !allSoft) continue;
+    if (oz > c.maxOz) continue;
+    if (c.styles.some((st) => fits(st, pieces))) return c.packaging;
+  }
+  return null;
+}
+
+/** Estimated parcel weight: mailer + each piece by its shape (sealed) or the owner's per-category settings. */
+export function ouncesFor(items: ShipItem[], s: ShippingSettings): number {
+  let oz = s.ozPackaging;
+  for (const p of piecesFor(items, s)) oz += p.qty * p.spec.oz;
   return Math.round(oz * 10) / 10;
 }
 
@@ -401,7 +528,7 @@ export function quoteFedex(items: ShipItem[], destZipInput: string | null | unde
   if (!destZip) return { ok: false, carrier: "fedex", reason: "Enter a 5-digit US ZIP code." };
   const zb = zoneBetween(settings.originZip, destZip);
   if (!zb) return { ok: false, carrier: "fedex", reason: "We can't find that ZIP code. Double-check it, or DM us for a quote." };
-  const packaging = fedexPackagingFor(items);
+  const packaging = fedexPackagingFor(items, settings);
   if (!packaging) return { ok: false, carrier: "fedex", reason: "That order is too big for FedEx One Rate — DM us for a FedEx quote." };
   const ounces = ouncesFor(items, settings);
   if (ounces > (packaging === "Envelope" ? 160 : 800)) return { ok: false, carrier: "fedex", reason: "That order is too heavy for FedEx One Rate — DM us for a quote." };

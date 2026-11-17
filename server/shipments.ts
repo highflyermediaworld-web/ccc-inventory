@@ -49,7 +49,7 @@ export function addressFromSession(session: Stripe.Checkout.Session): ShipAddres
 }
 
 function compute(items: ShipmentItem[], zip: string, settings: ShippingSettings, carrier: Carrier = "usps", ouncesOverride?: number | null) {
-  const shipItems = items.map((i) => ({ category: i.category, quantity: i.quantity }));
+  const shipItems = items.map((i) => ({ category: i.category, quantity: i.quantity, name: i.name }));
   const ounces = ouncesOverride ?? ouncesFor(shipItems, settings);
   const z = zoneBetween(settings.originZip, zip);
   if (carrier === "fedex") {

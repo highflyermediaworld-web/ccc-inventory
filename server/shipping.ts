@@ -20,6 +20,9 @@ import {
   quoteShippingOptions,
   SHIPPING_SERVICE,
   SHIPPING_DAYS,
+  SEALED_KINDS,
+  type SealedKind,
+  type ShipItem,
   type Carrier,
   type ShippingQuote,
   type ShippingSettings,
@@ -41,7 +44,7 @@ export async function quoteForLines(
 ): Promise<ShippingQuote> {
   const settings = await getShippingSettings();
   const subtotal = lines.reduce((n, l) => n + l.unit * l.quantity, 0);
-  return quoteShipping(lines.map((l) => ({ category: l.item.category, quantity: l.quantity })), destZip, settings, subtotal, new Date(), carrier);
+  return quoteShipping(lines.map((l) => ({ category: l.item.category, quantity: l.quantity, name: l.item.name })), destZip, settings, subtotal, new Date(), carrier);
 }
 
 export function parseCarrier(v: unknown): Carrier {
@@ -89,12 +92,14 @@ export function registerShippingRoutes(app: Express) {
       }
       // Admin preview: "sample=raw:2,slab:1,sealed:0" quotes a synthetic parcel.
       const sample = String(req.query.sample ?? "");
-      const shipItems = lines.map((l) => ({ category: l.item.category, quantity: l.quantity }));
+      const shipItems: ShipItem[] = lines.map((l) => ({ category: l.item.category, quantity: l.quantity, name: l.item.name }));
       if (sample) {
         for (const part of sample.split(",")) {
           const [cat, n] = part.split(":");
           const qty = Math.max(0, Math.min(500, Number(n) || 0));
-          if (cat && qty) shipItems.push({ category: cat === "slab" ? "Slab" : cat === "sealed" ? "Sealed" : "Raw", quantity: qty });
+          if (!cat || !qty) continue;
+          if (cat in SEALED_KINDS) shipItems.push({ category: "Sealed", name: SEALED_KINDS[cat as SealedKind].label, quantity: qty });
+          else shipItems.push({ category: cat === "slab" ? "Slab" : cat === "sealed" ? "Sealed" : "Raw", quantity: qty });
         }
       }
       const subtotal = lines.reduce((n, l) => n + l.unit * l.quantity, 0);
