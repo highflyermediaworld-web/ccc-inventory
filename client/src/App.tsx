@@ -9,6 +9,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { AuthProvider } from "@/lib/auth";
 import Shop from "@/pages/Shop";
 import { FaqPage, AboutPage } from "@/pages/Info";
+import { PoliciesPage } from "@/pages/Policies";
 import { CheckoutSuccessPage } from "@/pages/CheckoutSuccess";
 
 // Admin, login and signup are split into their own chunks so the public
@@ -55,6 +56,8 @@ function AppRouter() {
       <Route path="/" component={Shop} />
       <Route path="/faq" component={FaqPage} />
       <Route path="/about" component={AboutPage} />
+      <Route path="/policies" component={PoliciesPage} />
+      <Route path="/policies/:slug" component={PoliciesPage} />
       <Route path="/checkout/success" component={CheckoutSuccessPage} />
       <Route component={NotFound} />
     </Switch>

@@ -21,6 +21,7 @@ import { SiTiktok, SiInstagram } from "react-icons/si";
 import { BRAND_HANDLE, TIKTOK_URL, INSTAGRAM_URL } from "@/components/SocialLinks";
 import "@/shop.css";
 import { FreeShippingNote, MobileShippingStrip, useShippingConfig } from "@/components/ShippingPromo";
+import { POLICIES } from "@shared/policies";
 
 /* ------------------------------------------------------------------ */
 /*  Shared shell: compact storefront header + footer                   */
@@ -30,19 +31,20 @@ const LINKS: Array<{ label: string; href: string; testId: string }> = [
   { label: "Shop", href: "#/", testId: "info-nav-shop" },
   { label: "FAQ", href: "#/faq", testId: "info-nav-faq" },
   { label: "About", href: "#/about", testId: "info-nav-about" },
+  { label: "Policies", href: "#/policies", testId: "info-nav-policies" },
 ];
 
-export function InfoShell({ title, kicker, intro, children, current }: { title: ReactNode; kicker: string; intro: string; children: ReactNode; current: "faq" | "about" | "checkout" }) {
+export function InfoShell({ title, kicker, intro, children, current, docTitle }: { title: ReactNode; kicker: string; intro: string; children: ReactNode; current: "faq" | "about" | "checkout" | "policies"; docTitle?: string }) {
   useEffect(() => {
     const prev = document.title;
-    document.title = `${current === "faq" ? "FAQ" : current === "checkout" ? "Order confirmed" : "About"} · Chris Collects Co`;
+    document.title = `${docTitle ?? (current === "faq" ? "FAQ" : current === "checkout" ? "Order confirmed" : current === "policies" ? "Policies" : "About")} · Chris Collects Co`;
     window.scrollTo({ top: 0 });
     return () => { document.title = prev; };
-  }, [current]);
+  }, [current, docTitle]);
 
   return (
     <div className="pc min-h-screen flex flex-col">
-      <header className="pc-header sticky top-0 z-40">
+      <header className="pc-header pc-info-header sticky top-0 z-40">
         <div className="hidden md:block border-b border-white/10">
           <div className="pc-container h-9 flex items-center justify-between text-[13px] text-white/80">
             <div className="flex items-center gap-5">
@@ -86,7 +88,7 @@ export function InfoShell({ title, kicker, intro, children, current }: { title: 
       <main className="flex-1 pc-paper-bg">{children}</main>
 
       <footer className="pc-dark pc-footer">
-        <div className="pc-container py-10 grid gap-8 md:grid-cols-[1.2fr_1fr_1fr]">
+        <div className="pc-container py-10 grid gap-8 md:grid-cols-[1.2fr_1fr_1fr_1fr]">
           <div>
             <div className="flex items-center gap-3">
               <img src="/logo-96.png" alt="" width={44} height={44} className="h-11 w-11 rounded-lg object-cover ring-1 ring-white/15" />
@@ -106,6 +108,14 @@ export function InfoShell({ title, kicker, intro, children, current }: { title: 
               <li><a href="#/">Shop the vault</a></li>
               <li><a href="#/faq">FAQ</a></li>
               <li><a href="#/about">About Chris Collects Co</a></li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="text-lg mb-3">Policies</h3>
+            <ul className="grid gap-2 text-sm pc-body">
+              {POLICIES.map((p) => (
+                <li key={p.slug}><a href={`#/policies/${p.slug}`} data-testid={`footer-policy-${p.slug}`}>{p.title}</a></li>
+              ))}
             </ul>
           </div>
           <div>
@@ -144,18 +154,27 @@ function fedexSentence(cfg: { fedexEnabled: boolean; fedexFrom: number | null })
 
 export function Rich({ text }: { text: string }) {
   const cfg = useShippingConfig();
+  const { data: checkoutCfg } = useQuery<{ enabled: boolean; taxPercent: number }>({
+    queryKey: ["/api/shop/checkout/config"],
+    staleTime: 5 * 60 * 1000,
+  });
+  const taxPct = checkoutCfg?.taxPercent ?? 8.75;
   const src = text
     .replace(/\{handle\}/g, BRAND_HANDLE)
     .replace(/\{freeShipping\}/g, freeShippingSentence(cfg.freeOver))
-    .replace(/\{fedexOption\}/g, fedexSentence(cfg));
+    .replace(/\{fedexOption\}/g, fedexSentence(cfg))
+    .replace(/\{taxPercent\}/g, String(taxPct));
   const parts: ReactNode[] = [];
-  const re = /\*\*(.+?)\*\*|\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+  // **bold**, [label](https://…), [label](#/route), [label](mailto:…)
+  const re = /\*\*(.+?)\*\*|\[([^\]]+)\]\(((?:https?:\/\/|#\/|mailto:)[^)]+)\)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let k = 0;
   while ((m = re.exec(src))) {
     if (m.index > last) parts.push(src.slice(last, m.index));
     if (m[1] !== undefined) parts.push(<b key={k++}>{m[1]}</b>);
+    else if (m[3].startsWith("#/")) parts.push(<a key={k++} href={m[3]}>{m[2]}</a>);
+    else if (m[3].startsWith("mailto:")) parts.push(<a key={k++} href={m[3]}>{m[2]}</a>);
     else parts.push(<a key={k++} href={m[3]} target="_blank" rel="noopener noreferrer">{m[2]}</a>);
     last = m.index + m[0].length;
   }

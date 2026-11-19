@@ -76,6 +76,7 @@ import {
 import { cart, useCart, CARD_MINIMUM } from "@/lib/cart";
 import { ToastAction } from "@/components/ui/toast";
 import { PAYMENT_METHODS, PAYMENT_METHODS_SENTENCE } from "@shared/storefront";
+import { POLICIES } from "@shared/policies";
 import "@/shop.css";
 import { FreeShippingNote, MobileShippingStrip, FreeShippingProgress, useShippingConfig } from "@/components/ShippingPromo";
 
@@ -1516,7 +1517,7 @@ export default function ShopPage() {
 
       {/* ============ FOOTER ============ */}
       <footer className="pc-dark pc-footer">
-        <div className="pc-container py-12 grid gap-10 md:grid-cols-[1.2fr_1fr_1fr]">
+        <div className="pc-container py-12 grid gap-10 md:grid-cols-[1.2fr_1fr_1fr_1fr]">
           <div>
             <div className="flex items-center gap-3">
               <img src="/logo-96.png" alt="" width={44} height={44} className="h-11 w-11 rounded-lg object-cover ring-1 ring-white/15" />
@@ -1539,6 +1540,14 @@ export default function ShopPage() {
               <li><button onClick={() => document.getElementById("pay")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="text-white/78 hover:text-white" data-testid="footer-link-pay">Ways to pay</button></li>
               <li><a href="#/faq" className="text-white/78 hover:text-white" data-testid="footer-link-faq">FAQ</a></li>
               <li><a href="#/about" className="text-white/78 hover:text-white" data-testid="footer-link-about">About Chris Collects Co</a></li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="text-lg mb-3">Policies</h3>
+            <ul className="grid gap-2 text-sm pc-body">
+              {POLICIES.map((p) => (
+                <li key={p.slug}><a href={`#/policies/${p.slug}`} className="text-white/78 hover:text-white" data-testid={`footer-policy-${p.slug}`}>{p.title}</a></li>
+              ))}
             </ul>
           </div>
           <div>
@@ -2742,6 +2751,7 @@ function CartDrawer({
                   {cardEnabled && (
                     <p className="text-[11px] text-muted-foreground">Credit or debit, Apple Pay and Google Pay on Stripe's secure page. Or request and pay by Zelle, Venmo, Cash App, PayPal or Apple Cash.</p>
                   )}
+                  <PolicyAgreement testId="text-cart-policy-agreement" />
                 </>
               ) : (
                 <div className="grid gap-3" data-testid="cart-request-form">
@@ -3109,6 +3119,7 @@ function BuyDialog({
                 <p className="mt-2 text-[11px] text-muted-foreground">
                   Credit or debit, Apple Pay and Google Pay on Stripe's secure page. Shipping is added before tax; {checkoutCfg?.taxPercent}% CA sales tax applies to the cards only. Ships in 48 hours.
                 </p>
+                <PolicyAgreement testId="text-buy-policy-agreement" />
                 {onAddToCart && (
                   <button type="button" onClick={onAddToCart} className="mt-2 text-xs font-semibold underline underline-offset-2 text-foreground/80 hover:text-foreground" data-testid="button-buy-add-cart">
                     Buying more than one card? Add to cart instead
@@ -3437,6 +3448,17 @@ function TradeDialog({
 }
 
 // ---------- Shared UI bits ----------
+function PolicyAgreement({ testId }: { testId: string }) {
+  return (
+    <p className="mt-2 text-[11px] text-muted-foreground" data-testid={testId}>
+      By paying or sending a request you agree to our{" "}
+      <a href="#/policies/terms" className="underline underline-offset-2 text-foreground/80 hover:text-foreground">Terms</a>,{" "}
+      <a href="#/policies/returns" className="underline underline-offset-2 text-foreground/80 hover:text-foreground">Return &amp; Refund Policy</a> and{" "}
+      <a href="#/policies/condition-guide" className="underline underline-offset-2 text-foreground/80 hover:text-foreground">Condition Guide</a>.
+    </p>
+  );
+}
+
 function Field({
   label,
   value,

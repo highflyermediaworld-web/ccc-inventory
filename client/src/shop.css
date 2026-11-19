@@ -1752,6 +1752,13 @@
   .pc .pc-nav button { font-size: 13px; padding: 0.5rem 0.6rem; letter-spacing: 0.06em; }
 }
 
+/* Narrow phones: four nav links (Shop · FAQ · About · Policies) need the room — logo stands in for the wordmark */
+@media (max-width: 479px) {
+  .pc .pc-info-header .pc-wordmark { display: none; }
+  .pc .pc-nav a,
+  .pc .pc-nav button { padding: 0.5rem 0.45rem; }
+}
+
 /* Phones: compact wordmark + nav so the info header (Shop · FAQ · About) fits */
 @media (max-width: 639px) {
   .pc .pc-wordmark { font-size: 1.02rem; }
@@ -1892,3 +1899,76 @@
 .pc .pc-totop:hover { background: #b3101d; }
 .pc .pc-totop:focus-visible { outline: 2px solid var(--pc-gold); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .pc .pc-totop { transition: none; } }
+
+/* ------------------------------------------------------------------ */
+/*  Policies                                                          */
+/* ------------------------------------------------------------------ */
+.pc .pc-faq-toc a.is-current { color: var(--pc-ink); border-left-color: var(--pc-red); background: #fff; }
+.pc .pc-policy-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.pc .pc-policy-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.9rem;
+  align-items: start;
+  background: #fff;
+  border: 1px solid var(--pc-line);
+  border-left: 4px solid var(--pc-line);
+  padding: 1.1rem 1.2rem;
+  text-decoration: none;
+  color: var(--pc-ink);
+  transition: border-color 120ms ease;
+}
+.pc .pc-policy-card:hover, .pc .pc-policy-card:focus-visible { border-left-color: var(--pc-red); outline: none; }
+.pc .pc-policy-card svg { color: var(--pc-red); margin-top: 2px; }
+.pc .pc-policy-card h3 { font-family: var(--pc-font); font-weight: 700; font-size: 17px; line-height: 1.25; }
+.pc .pc-policy-card p { font-family: var(--pc-body); font-size: 14px; color: var(--pc-ink-2); margin-top: 0.25rem; }
+.pc .pc-policy-card-arrow { color: var(--pc-muted) !important; align-self: center; }
+.pc .pc-policy { max-width: 76ch; }
+.pc .pc-policy-head { display: flex; gap: 0.9rem; align-items: flex-start; padding-bottom: 1.2rem; border-bottom: 1px solid var(--pc-line); }
+.pc .pc-policy-head svg { color: var(--pc-red); margin-top: 2px; flex-shrink: 0; }
+.pc .pc-policy-updated { font-family: var(--pc-body); font-size: 13px; color: var(--pc-muted); margin-top: 0.15rem; }
+.pc .pc-policy-section { margin-top: 2rem; }
+.pc .pc-policy-section h2 { font-family: var(--pc-font); font-weight: 700; font-size: 1.35rem; line-height: 1.25; color: var(--pc-ink); }
+.pc .pc-policy-body { margin-top: 0.7rem; display: grid; gap: 0.85rem; font-size: 16px; line-height: 1.7; color: var(--pc-ink-2); }
+.pc .pc-policy-body p:empty, .pc .pc-policy-body .pc-policy-dynamic:empty { display: none; }
+.pc .pc-policy-body b { color: var(--pc-ink); font-weight: 700; }
+.pc .pc-policy-body a { color: var(--pc-red-2); text-decoration: underline; text-underline-offset: 2px; }
+.pc .pc-policy-list { display: grid; gap: 0.5rem; padding-left: 1.2rem; list-style: square; }
+.pc .pc-policy-list li::marker { color: var(--pc-red); }
+.pc .pc-policy-note { background: #fff; border: 1px solid var(--pc-line); border-left: 4px solid var(--pc-red); padding: 0.9rem 1.1rem; }
+.pc .pc-policy-table-wrap { overflow-x: auto; border: 1px solid var(--pc-line); background: #fff; }
+.pc .pc-policy-table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 1.55; }
+.pc .pc-policy-table th, .pc .pc-policy-table td { padding: 0.8rem 0.9rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--pc-line); }
+.pc .pc-policy-table thead th { font-family: var(--pc-ui); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pc-ink-2); background: #fafafb; }
+.pc .pc-policy-table tbody tr:last-child th, .pc .pc-policy-table tbody tr:last-child td { border-bottom: 0; }
+.pc .pc-policy-table tbody th { white-space: nowrap; }
+.pc .pc-policy-table tbody td:nth-child(2) { font-weight: 600; color: var(--pc-ink); white-space: nowrap; }
+.pc .pc-cond { display: inline-block; font-family: var(--pc-ui); font-weight: 800; font-size: 13px; letter-spacing: 0.04em; padding: 0.2rem 0.5rem; background: var(--pc-black); color: #fff; }
+.pc .pc-policy-next {
+  margin-top: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.2rem;
+  background: #fff;
+  border: 1px solid var(--pc-line);
+  text-decoration: none;
+  color: var(--pc-ink);
+  font-family: var(--pc-font);
+  font-weight: 700;
+  font-size: 17px;
+}
+.pc .pc-policy-next small { display: block; font-family: var(--pc-ui); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pc-muted); margin-bottom: 0.15rem; }
+.pc .pc-policy-next:hover { border-color: var(--pc-red); }
+.pc .pc-policy-next svg { color: var(--pc-red); }
+@media (max-width: 640px) {
+  /* Stack the condition grid: badge + grade on one line, description underneath */
+  .pc .pc-policy-table, .pc .pc-policy-table tbody { display: block; }
+  .pc .pc-policy-table thead { display: none; }
+  .pc .pc-policy-table tbody tr { display: grid; grid-template-columns: auto 1fr; column-gap: 0.7rem; row-gap: 0.35rem; align-items: center; padding: 0.85rem 0.9rem; border-bottom: 1px solid var(--pc-line); }
+  .pc .pc-policy-table tbody tr:last-child { border-bottom: 0; }
+  .pc .pc-policy-table tbody th, .pc .pc-policy-table tbody td { padding: 0; border: 0; }
+  .pc .pc-policy-table tbody td:nth-child(2) { white-space: normal; }
+  .pc .pc-policy-table tbody td:nth-child(3) { grid-column: 1 / -1; }
+}

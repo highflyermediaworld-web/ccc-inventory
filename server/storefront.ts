@@ -38,6 +38,8 @@ import {
   type AboutContent,
 } from "@shared/storefront";
 import { SHOWS as DEFAULT_SHOWS, type CardShow } from "@shared/shows-data";
+import { policiesPlainText } from "@shared/policies";
+import { SALES_TAX_PERCENT } from "./stripeCheckout";
 
 const ABOUT_KEY = "shop_about";
 
@@ -203,6 +205,8 @@ async function buildPrompt(messages: { role: "user" | "assistant"; content: stri
     : "";
   const faq = FAQ_GROUPS.map((g) => `## ${g.title}\n${g.items.map((f) => `Q: ${f.q}\nA: ${plainText(f.a.replace(/\{freeShipping\}/g, freeShip).replace(/\{fedexOption\}/g, fedexOpt))}`).join("\n")}`).join("\n\n");
 
+  const policies = policiesPlainText({ freeShipping: freeShip, fedexOption: fedexOpt, taxPercent: String(SALES_TAX_PERCENT) });
+
   const liveStatus = (await storage.getSetting("live_isLive")) === "true";
   const liveUrl = (await storage.getSetting("live_url")) || TIKTOK_URL;
 
@@ -221,7 +225,7 @@ SHOP FACTS
 - Trading: tap Trade on a card, describe what you have, add photos; Chris counters within about 24 hours. Trades also happen at shows.
 - Contact: DM ${BRAND_HANDLE} — Instagram ${INSTAGRAM_URL}, TikTok ${TIKTOK_URL}.
 - Live stream right now: ${liveStatus ? `YES — watching link ${liveUrl}` : "no"}.
-- Site pages: Shop/vault at #/, FAQ at #/faq, About at #/about. Upcoming shows are on the shop page.
+- Site pages: Shop/vault at #/, FAQ at #/faq, About at #/about, Policies at #/policies (terms, privacy, shipping, returns, condition-guide, contact, disclaimer). Upcoming shows are on the shop page.
 
 ABOUT CHRIS
 ${about.intro}
@@ -237,6 +241,9 @@ ${recent.length ? `\nRECENT SHOWS (already happened)\n${recent.map(fmtShow).join
 
 FAQ
 ${faq}
+
+STORE POLICIES (summaries; the full text is at #/policies/<slug>)
+${policies}
 
 CONVERSATION
 ${transcript}
