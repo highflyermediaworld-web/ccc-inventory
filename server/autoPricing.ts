@@ -89,12 +89,17 @@ async function priceItem(item: Inventory): Promise<"updated" | "skipped" | "fail
       // price. Once a day (cached in priceGradedItemWithAlt) — when the key
       // is missing or Alt has no match we fall through to the old flow.
       let altPriced = false;
+      // Alt lookup still running after the timeout: it will write its own
+      // value shortly, so the AI estimate must not run this cycle or it
+      // would overwrite the Alt price a few seconds later.
+      let altPending = false;
       if (isGraded(item)) {
         try {
           const alt = await Promise.race<any>([
             priceGradedItemWithAlt(item),
             new Promise((resolve) => setTimeout(() => resolve(null), PER_ITEM_TIMEOUT_MS)),
           ]);
+          if (alt === null) altPending = true;
           if (alt?.item) item = alt.item;
           altPriced = !!alt?.refreshed || (item as any).marketValueSource === "alt";
         } catch (err) {
@@ -131,7 +136,7 @@ async function priceItem(item: Inventory): Promise<"updated" | "skipped" | "fail
           // Graded: Alt already set the value when it could. Otherwise the AI
           // graded estimate fills an empty value — or replaces a raw
           // TCGplayer price that was following the ungraded card.
-          if (!altPriced && (item.marketValue == null || item.marketValueSource === "tcgp")) {
+          if (!altPriced && !altPending && (item.marketValue == null || item.marketValueSource === "tcgp")) {
             const graded = await Promise.race<any>([
               getGradedEstimate({
                 name: item.name,
@@ -174,7 +179,7 @@ async function priceItem(item: Inventory): Promise<"updated" | "skipped" | "fail
         return "updated";
       } else if (altPriced) {
         return "updated";
-      } else if (isGraded(item) && item.marketValue == null) {
+      } else if (isGraded(item) && item.marketValue == null && !altPending) {
         // No TCGplayer match for a graded slab — pure AI fallback.
         const graded = await Promise.race<any>([
           getGradedEstimate({

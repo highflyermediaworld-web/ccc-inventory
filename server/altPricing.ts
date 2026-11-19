@@ -418,15 +418,31 @@ export async function priceGradedItemWithAlt(
   const now = Math.floor(Date.now() / 1000);
   const maxAge = opts.maxAgeSec ?? ALT_MAX_AGE_SEC;
   const it: any = item;
-  // One lookup per day whether or not Alt had a match — an unmatched slab
-  // must not be re-searched every hourly pass (3 credits a time).
-  if (!opts.force && it.altPricedAt && now - it.altPricedAt < maxAge) {
-    return { item, refreshed: false, quote: null, reason: "fresh" };
-  }
   const g = gradeOfItem(item)!;
   const grade = altGradeFor(g);
+  // The grade was edited in admin since Alt last priced it (PSA 10 → CGC 10):
+  // the cached value is for the wrong grade, so re-price now.
+  const gradeChanged = !!it.altCardId && !!it.altGrade && it.altGrade !== grade;
+  // One lookup per day whether or not Alt had a match — an unmatched slab
+  // must not be re-searched every hourly pass (3 credits a time).
+  if (!opts.force && !gradeChanged && it.altPricedAt && now - it.altPricedAt < maxAge) {
+    // Self-heal: Alt has a fresh value but something else (an AI estimate
+    // that raced a slow Alt lookup) owns marketValue. Alt wins unless the
+    // price was pinned by hand.
+    const altPrice = it.altValue ?? it.altLastSalePrice;
+    if (altPrice != null && it.marketValueSource !== "manual" && it.marketValueSource !== "alt") {
+      const next = Math.round(Number(altPrice) * 100) / 100;
+      const patch = { marketValue: next, marketValueSource: "alt" };
+      const updated = await storage.updateInventory(item.id, patch as any);
+      try { await storage.createPriceHistory({ itemId: item.id, price: next, source: "Alt" }); } catch { /* best-effort */ }
+      console.info(`[alt] ${item.id}: restored Alt value $${next} over ${it.marketValueSource ?? "empty"} $${it.marketValue ?? "—"}`);
+      return { item: (updated as Inventory) ?? ({ ...item, ...patch } as any), refreshed: true, quote: null, reason: "healed" };
+    }
+    return { item, refreshed: false, quote: null, reason: "fresh" };
+  }
   let quote: AltQuote | null = null;
-  if (it.altCardId && it.altGrade === grade && !opts.force) {
+  if (it.altCardId && !opts.force) {
+    // Same card, possibly a new grade — re-price by id instead of re-matching.
     quote = await altRepriceCard(it.altCardId, grade).catch(() => null);
   }
   if (!quote) quote = await altSearchForItem(item);
@@ -491,7 +507,7 @@ export async function refreshAllGraded(opts: { force?: boolean; ids?: string[] }
     for (const item of items) {
       try {
         const r = await priceGradedItemWithAlt(item, { force: opts.force });
-        if (r.reason === "fresh") continue;
+        if (r.reason === "fresh" || r.reason === "healed") continue;
         checked++;
         if (r.refreshed) priced++;
         else unmatched++;
