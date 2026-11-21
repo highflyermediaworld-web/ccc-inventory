@@ -5,7 +5,7 @@
  * Text uses the same light markup as the FAQ: **bold**, [label](url),
  * {handle}, {freeShipping}, {fedexOption}, plus {taxPercent}, {email}.
  */
-import { BRAND_HANDLE, CASH_PCT, GAMES, INSTAGRAM_URL, PAYMENT_METHODS_SENTENCE, TIKTOK_URL, TRADE_PCT } from "./storefront";
+import { BRAND_HANDLE, CASH_PCT, CLAIM_WINDOW_DAYS, GAMES, INSTAGRAM_URL, PAYMENT_METHODS_SENTENCE, TIKTOK_URL, TRADE_PCT } from "./storefront";
 
 /** Business identity used across the policies. */
 export const LEGAL_NAME = "Chris Collects Co";
@@ -16,7 +16,7 @@ export const CONTACT_EMAIL: string | null = null;
 export const POLICIES_UPDATED = "2026-11-18";
 
 /** Days a buyer has after delivery to report a problem. */
-export const CLAIM_WINDOW_DAYS = 7;
+export { CLAIM_WINDOW_DAYS };
 
 export type PolicyBlock =
   | string

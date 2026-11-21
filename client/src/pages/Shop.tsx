@@ -76,7 +76,7 @@ import {
 import { cart, useCart, CARD_MINIMUM } from "@/lib/cart";
 import { ToastAction } from "@/components/ui/toast";
 import { PAYMENT_METHODS, PAYMENT_METHODS_SENTENCE } from "@shared/storefront";
-import { POLICIES } from "@shared/policies";
+import { POLICIES, CLAIM_WINDOW_DAYS } from "@shared/policies";
 import "@/shop.css";
 import { FreeShippingNote, MobileShippingStrip, FreeShippingProgress, useShippingConfig } from "@/components/ShippingPromo";
 
@@ -789,8 +789,8 @@ export default function ShopPage() {
           </div>
         </div>
         {/* main row */}
-        <div className="pc-container h-[72px] flex items-center justify-between gap-4">
-          <a href="#/" className="flex items-center gap-3 shrink-0" aria-label="Chris Collects Co home">
+        <div className="pc-container pc-mainbar h-[72px] flex items-center justify-between gap-4">
+          <a href="#/" className="pc-brand flex items-center gap-3 shrink-0" aria-label="Chris Collects Co home">
             <img src="/logo-96.png" alt="" width={44} height={44} className="h-11 w-11 rounded-lg object-cover ring-1 ring-white/15" />
             <span className="pc-wordmark">
               Chris Collects
@@ -985,7 +985,7 @@ export default function ShopPage() {
               <span className="pc-tile-icon bg-amber-400/20 text-amber-300"><ShieldCheck className="h-6 w-6" /></span>
               <span>
                 <h3>100% Satisfaction Guarantee</h3>
-                <p>Not exactly as described? Full refund, no questions asked.</p>
+                <p>Not as described? Tell us within {CLAIM_WINDOW_DAYS} days of delivery for a full refund or replacement.</p>
               </span>
               <span className="pc-tile-go"><ArrowRight className="h-4 w-4" /></span>
             </a>
@@ -1434,10 +1434,11 @@ export default function ShopPage() {
             <div>
               <span className="pc-pill pc-pill-red">The Chris Collects Co promise</span>
               <h2 className="mt-3 text-[1.6rem] sm:text-[2.1rem] leading-tight">
-                If the card doesn't arrive exactly as described, you get a full refund — no photos, no restocking fees, no questions.
+                If your order arrives damaged or isn't what we listed, tell us within {CLAIM_WINDOW_DAYS} days of delivery for a full refund or a replacement.
               </h2>
               <p className="mt-3 text-neutral-600 pc-body leading-relaxed max-w-3xl">
-                Every order is packed by hand and cross-checked against the listing photo. On the rare occasion something is off, we make it right the same day.
+                Every order is packed by hand and cross-checked against the listing photo. On the rare occasion something is off, send us photos and we make it right, with return shipping covered when the mistake is ours. A few items, such as graded slabs and opened sealed product, are final sale. Details are in the{" "}
+                <a href="#/policies/returns" className="font-semibold underline underline-offset-2 text-neutral-900 hover:text-red-700" data-testid="link-promise-returns">Return &amp; Refund Policy</a>.
               </p>
             </div>
             <button onClick={() => browse()} className="pc-btn pc-btn-black" data-testid="button-promise-shop">
@@ -2327,8 +2328,8 @@ function Shelf({
               <p className="pc-sec-sub">{subtitle}</p>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={onViewAll} className="pc-btn pc-btn-red" data-testid={`button-viewall-${slug}`}>
-                {viewAllLabel ?? "View all"} <span className="opacity-80 font-medium">· {count} items</span> <ArrowRight className="h-4 w-4" />
+              <button onClick={onViewAll} className="pc-btn pc-btn-red pc-viewall" data-testid={`button-viewall-${slug}`}>
+                {viewAllLabel ?? "View all"} <span className="pc-viewall-count opacity-80 font-medium">· {count} items</span> <ArrowRight className="h-4 w-4" />
               </button>
               <button className="pc-arrow !hidden sm:!inline-flex" onClick={() => scrollBy(-1)} disabled={!canPrev} aria-label="Scroll left"><ChevronLeft className="h-5 w-5" /></button>
               <button className="pc-arrow !hidden sm:!inline-flex" onClick={() => scrollBy(1)} disabled={!canNext} aria-label="Scroll right"><ChevronRight className="h-5 w-5" /></button>

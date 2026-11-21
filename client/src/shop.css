@@ -1771,6 +1771,23 @@
   .pc .pc-nav a,
   .pc .pc-nav button { padding: 0.5rem 0.3rem; }
 }
+/* Narrow phones, shop header: stack the wordmark (Chris / Collects / Co) so search, cart,
+   account and menu all stay on screen instead of pushing the menu button off the edge */
+@media (max-width: 479px) {
+  .pc .pc-mainbar { gap: 0.5rem; }
+  .pc .pc-mainbar .pc-brand { gap: 0.5rem; }
+  .pc .pc-mainbar .pc-wordmark { white-space: normal; width: min-content; }
+}
+@media (max-width: 339px) {
+  .pc .pc-mainbar .pc-wordmark { display: none; }
+}
+/* Narrow phones: keep the shelf "View all · Newest first · N items" button inside the page */
+@media (max-width: 479px) {
+  .pc .pc-viewall { font-size: 12px; letter-spacing: 0.05em; padding: 0 0.9rem; max-width: 100%; }
+}
+@media (max-width: 339px) {
+  .pc .pc-viewall-count { display: none; }
+}
 /* ============ WAYS TO PAY ============ */
 .pc .pc-pay-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (min-width: 1024px) { .pc .pc-pay-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

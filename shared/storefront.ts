@@ -16,6 +16,8 @@ export const INSTAGRAM_URL = "https://www.instagram.com/cpulls.cards";
 
 export const CASH_PCT = 70;
 export const TRADE_PCT = 80;
+/** Days after delivery a customer has to report a problem with an order. */
+export const CLAIM_WINDOW_DAYS = 7;
 
 export const GAMES = ["Pokémon", "One Piece", "Magic: The Gathering", "Dragon Ball Super", "Yu-Gi-Oh!", "Riftbound", "Union Arena"];
 
@@ -85,7 +87,7 @@ export const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         q: "What if something's wrong with my order?",
-        a: "Every order carries a 100% satisfaction guarantee. If a card arrives damaged or isn't what was listed, DM {handle} with a photo and we'll make it right.",
+        a: `Every order carries a 100% satisfaction guarantee. If a card arrives damaged or isn't what was listed, DM {handle} with a photo within ${CLAIM_WINDOW_DAYS} days of delivery and we'll refund or replace it. A few items, such as graded slabs and opened sealed product, are final sale; the [Return & Refund Policy](#/policies/returns) has the details.`,
       },
     ],
   },
@@ -142,7 +144,7 @@ export function plainText(s: string): string {
     .replace(/\{freeShipping\}/g, "")
     .replace(/\{fedexOption\}/g, "")
     .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1");
+    .replace(/\[([^\]]+)\]\(((?:https?:\/\/|#\/|mailto:)[^)]+)\)/g, "$1");
 }
 
 /* ------------------------------------------------------------------ */

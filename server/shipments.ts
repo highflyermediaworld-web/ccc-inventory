@@ -13,6 +13,7 @@
 //   DELETE /api/admin/shipments/:id
 //   GET    /api/admin/shipments/:id/label       printable 4×6 label (HTML)
 //   GET    /api/admin/shipments/:id/packing-slip printable packing slip (HTML)
+import { CLAIM_WINDOW_DAYS } from "@shared/policies";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import type Stripe from "stripe";
@@ -285,7 +286,7 @@ ${items.map((i) => `<tr><td><b>${esc(i.name)}</b>${i.itemId ? `<br><span style="
   ${tax > 0 ? `<div><span>Sales tax</span><span>${money(tax)}</span></div>` : ""}
   <div class="g"><span>Total paid</span><span>${money(total)}</span></div>
 </div>
-<div class="foot">Thanks for supporting ${esc(settings.fromName)}. Not exactly as described? Full refund, no questions asked — reply to your receipt or message @cpulls.cards. ${s.note ? `<br><br>${esc(s.note)}` : ""}</div>
+<div class="foot">Thanks for supporting ${esc(settings.fromName)}. Not as described or damaged in transit? Message @cpulls.cards within ${CLAIM_WINDOW_DAYS} days of delivery with a photo for a full refund or replacement. ${s.note ? `<br><br>${esc(s.note)}` : ""}</div>
 </body></html>`;
 }
 
