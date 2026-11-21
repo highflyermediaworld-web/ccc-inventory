@@ -17,7 +17,7 @@ export const INSTAGRAM_URL = "https://www.instagram.com/cpulls.cards";
 export const CASH_PCT = 70;
 export const TRADE_PCT = 80;
 
-export const GAMES = ["Pokémon", "One Piece", "Magic: The Gathering", "Dragon Ball Super", "Yu-Gi-Oh", "Riftbound", "Union Arena"];
+export const GAMES = ["Pokémon", "One Piece", "Magic: The Gathering", "Dragon Ball Super", "Yu-Gi-Oh!", "Riftbound", "Union Arena"];
 
 /* ------------------------------------------------------------------ */
 /*  FAQ                                                                */
@@ -31,10 +31,10 @@ export const PAYMENT_METHODS = [
   "Cash App",
   "PayPal",
   "Apple Cash",
-  "Credit / debit card (tap)",
+  "Credit or debit card (tap)",
 ] as const;
 export type PaymentMethodName = (typeof PAYMENT_METHODS)[number];
-export const PAYMENT_METHODS_SENTENCE = "credit / debit card, Apple Pay and Google Pay at checkout, plus Zelle, Venmo, Cash App, PayPal and Apple Cash";
+export const PAYMENT_METHODS_SENTENCE = "credit or debit card, Apple Pay and Google Pay at checkout, plus Zelle, Venmo, Cash App, PayPal and Apple Cash";
 
 export type FaqItem = { q: string; a: string };
 export type FaqGroup = { id: "buying" | "shipping" | "selling" | "shows"; title: string; items: FaqItem[] };
@@ -58,7 +58,7 @@ export const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         q: "How are prices set?",
-        a: "Every listing shows the live TCGplayer market price next to our price, and it refreshes while you browse. Our asking price follows the market; if a card is priced under market you'll see it right on the card.",
+        a: "Every listing shows the live TCGplayer market price next to our price, and it refreshes while you browse. Our asking price follows the market; if a card is priced under market, you'll see it right on the card.",
       },
       {
         q: "What do the condition labels mean?",
@@ -77,7 +77,7 @@ export const FAQ_GROUPS: FaqGroup[] = [
       { q: "How fast do orders ship?", a: "Orders ship within 48 hours of payment by USPS Ground Advantage (2–5 business days), anywhere in the United States." },
       {
         q: "How much is shipping?",
-        a: "Shipping is USPS Ground Advantage at USPS's current retail rate, based on how far you are from California and the weight of your order — one card to the Bay Area is about $8.40, a bundle of slabs to the East Coast runs more. Enter your ZIP code in the cart to see the exact amount before you pay.{freeShipping}{fedexOption} Shipping is added before tax, and sales tax applies to the cards only.",
+        a: "Shipping is USPS Ground Advantage at USPS's current retail rate, based on how far you are from California and the weight of your order — one card to the Bay Area is about $8.40; a bundle of slabs to the East Coast runs more. Enter your ZIP code in the cart to see the exact amount before you pay.{freeShipping}{fedexOption} Shipping is added before tax, and sales tax applies to the cards only.",
       },
       {
         q: "How are cards packed?",
@@ -107,7 +107,7 @@ export const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         q: "How do trades work?",
-        a: "Pick the card you want from the vault, tap **Trade**, tell us what you've got and add photos. Chris reviews every trade personally and sends a counter, usually within 24 hours. You can also bring your binder to any show we're vending.",
+        a: "Pick the card you want from the vault, tap **Trade**, tell us what you've got and add photos. Chris reviews every trade personally and sends a counter, usually within 24 hours. You can also bring your binder to any show we're vending at.",
       },
       {
         q: "What games do you buy?",
@@ -117,7 +117,7 @@ export const FAQ_GROUPS: FaqGroup[] = [
   },
   {
     id: "shows",
-    title: "Shows & lives",
+    title: "Shows & live streams",
     items: [
       {
         q: "Where can I find you in person?",
@@ -201,7 +201,7 @@ export const DEFAULT_ABOUT: AboutContent = {
     { title: "Fair offers, in writing", body: `${CASH_PCT}% of market in cash or ${TRADE_PCT}% in trade credit, posted on the site so you know the number before you reach out.` },
   ],
   ctaHeading: "Come say hi",
-  ctaBody: "Catch a live on TikTok, find the table at the next Northern California show, or shop the vault right now.",
+  ctaBody: "Catch a live stream on TikTok, find the table at the next Northern California show, or shop the vault right now.",
 };
 
 /** Merge a partial saved record over the defaults so new fields never render blank. */

@@ -305,7 +305,7 @@ function CameraTab({ onIdentified }: { onIdentified: OpenAddFn }) {
           context:
             ided?.confidence > 0.5
               ? `Identified with ${(ided.confidence * 100).toFixed(0)}% confidence · review before saving.`
-              : "Low confidence — please fill or correct fields manually.",
+              : "Low confidence — please fill in or correct the fields manually.",
         }
       );
     } catch (err: any) {
@@ -580,7 +580,7 @@ function BarcodeTab({ onIdentified }: { onIdentified: OpenAddFn }) {
             context:
               data.confidence > 0.5
                 ? "Barcode matched a known product."
-                : "Barcode unknown — fill fields manually.",
+                : "Barcode unknown — fill in the fields manually.",
           }
         );
       }

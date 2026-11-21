@@ -400,7 +400,7 @@ export default function InventoryPage() {
   const handleExportTcgPlayer = () => {
     const count = exportTcgPlayerCsv(itemsForExport);
     toast({
-      title: "TCGPlayer CSV exported",
+      title: "TCGplayer CSV exported",
       description: `${count} item${count === 1 ? "" : "s"} ready for Pricing Tool.`,
     });
   };
@@ -579,7 +579,7 @@ export default function InventoryPage() {
               onClick={() => fetchPricePointsMutation.mutate()}
               disabled={fetchPricePointsMutation.isPending}
               data-testid="button-fetch-price-points"
-              title="Pull TCGplayer Market, Median, Volatility, 3mo history for every item"
+              title="Pull TCGplayer Market, Median, Volatility and 3-month history for every item"
             >
               <RefreshCw
                 className={`h-4 w-4 mr-1.5 ${
@@ -632,7 +632,7 @@ export default function InventoryPage() {
                   onSelect={handleExportTcgPlayer}
                   data-testid="menu-export-tcgplayer"
                 >
-                  TCGPlayer Pricing Tool (CSV)
+                  TCGplayer Pricing Tool (CSV)
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

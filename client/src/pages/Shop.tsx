@@ -155,7 +155,7 @@ const PRICE_LINES: Array<{ label: string; line: string | null }> = [
   { label: "One Piece", line: "One Piece Card Game" },
   { label: "Magic", line: "Magic: The Gathering" },
   { label: "Dragon Ball", line: "Dragon Ball Super CCG" },
-  { label: "Yu-Gi-Oh", line: "YuGiOh" },
+  { label: "Yu-Gi-Oh!", line: "YuGiOh" },
   { label: "Riftbound", line: "Riftbound" },
 ];
 function agoLabel(unixSec: number | null | undefined): string {
@@ -1078,7 +1078,7 @@ export default function ShopPage() {
           tone="paper"
           pill={<span className="pc-pill pc-pill-blue"><Package className="h-3.5 w-3.5" /> Sealed</span>}
           title="Booster Boxes, ETBs & Tins"
-          subtitle="Factory sealed product, stored and shipped with care."
+          subtitle="Factory-sealed product, stored and shipped with care."
           items={sealed.slice(0, 12)}
           count={sealed.length}
           onViewAll={() => browse({ category: "Sealed" })}
@@ -1334,7 +1334,7 @@ export default function ShopPage() {
               <div className="min-w-0">
                 <h3 className="text-xl">Next show: TBA</h3>
                 <p className="pc-body text-[15px] mt-1 text-neutral-600">
-                  New dates drop on Instagram first. Follow {BRAND_HANDLE} or ask on a live and we&apos;ll tell you where the table is next.
+                  New dates drop on Instagram first. Follow {BRAND_HANDLE} or ask during a live stream and we&apos;ll tell you where the table is next.
                 </p>
               </div>
               <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="pc-btn pc-btn-red sm:ml-auto shrink-0" data-testid="button-shows-follow">
@@ -1354,7 +1354,7 @@ export default function ShopPage() {
                   const d = showDateParts(s);
                   return (
                     <div key={`${s.name}-${s.start}`} className="pc-show-past">
-                      <span className="pc-show-past-date">{d.month} {d.day}</span>
+                      <span className="pc-show-past-date">{d.label}</span>
                       <span className="pc-show-past-name">{s.name}</span>
                       <span className="pc-show-past-city">{s.city}</span>
                     </div>
@@ -1394,7 +1394,7 @@ export default function ShopPage() {
 
           <div className="grid sm:grid-cols-3 gap-3 lg:col-span-2">
             {[
-              { Icon: ShieldCheck, title: "Every card, verified", body: "Grades, edges and centering inspected in-hand. What you see in the photo is what ships." },
+              { Icon: ShieldCheck, title: "Every card, verified", body: "Grades, edges and centering inspected in hand. What you see in the photo is what ships." },
               { Icon: Award, title: "Fair, transparent pricing", body: "Live TCGplayer market data on every listing, refreshed in real time while you browse." },
               { Icon: Truck, title: "Shipped in 48 hours", body: "Toploader, team bag and bubble mailer minimum. High-value cards ship insured with tracking." },
             ].map(({ Icon, title, body }) => (
@@ -1421,7 +1421,7 @@ export default function ShopPage() {
             <PaymentOptionCards />
           </div>
           <p className="mt-4 text-xs text-neutral-500 pc-body">
-            Please wait for the confirmation message before sending payment, and include the card name in the note. In person at shows: cash, Apple Cash, or tap to pay with any credit or debit card.
+            Please wait for the confirmation message before sending payment, and include the card name in the note. In person at shows: cash, Apple Cash or tap to pay with any credit or debit card.
           </p>
         </div>
       </section>
@@ -1494,7 +1494,7 @@ export default function ShopPage() {
               <span className="pc-social-icon"><SiTiktok className="h-6 w-6" /></span>
               <h3>TikTok</h3>
               <span className="pc-handle">{BRAND_HANDLE}</span>
-              <p>Live pack rips, big hits and giveaways on our live shows.</p>
+              <p>Live pack rips, big hits and giveaways on our live streams.</p>
               <span className="pc-btn pc-btn-sm pc-btn-white mt-auto self-start">Watch live <ArrowRight className="h-4 w-4" /></span>
             </a>
             <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="pc-social pc-social-instagram" data-testid="link-community-instagram">
@@ -2087,7 +2087,7 @@ function SellCalculator() {
         <span className="pc-calc-badge"><Calculator className="h-5 w-5" /></span>
       </div>
       <p className="mt-2 text-sm text-white/70 pc-body">
-        Scan a card with your camera or search it by name for its live TCGplayer market price, or just type a value. We pay <b className="text-white">{Math.round(CASH_RATE * 100)}% in cash</b> or <b className="text-white">{Math.round(TRADE_RATE * 100)}% in trade credit</b> toward anything in the vault.
+        Scan a card with your camera or search for it by name to get its live TCGplayer market price, or just type a value. We pay <b className="text-white">{Math.round(CASH_RATE * 100)}% in cash</b> or <b className="text-white">{Math.round(TRADE_RATE * 100)}% in trade credit</b> toward anything in the vault.
       </p>
 
       <div className="mt-5">
@@ -3283,7 +3283,7 @@ function TradeDialog({
             <DialogHeader>
               <DialogTitle className="text-lg">Propose a trade</DialogTitle>
               <DialogDescription>
-                Tell Chris what you're offering. He'll reach out if interested.
+                Tell Chris what you're offering. He'll reach out if he's interested.
               </DialogDescription>
             </DialogHeader>
             <div className="flex gap-3 p-3 rounded-md border border-border bg-muted/30">
@@ -3438,7 +3438,7 @@ function TradeDialog({
           <SuccessPane
             title="Trade request sent"
             preferredContact={form.preferredContact}
-            description="Chris will review your offer and reach out if interested."
+            description="Chris will review your offer and reach out if he's interested."
             onClose={() => onOpenChange(false)}
           />
         )}

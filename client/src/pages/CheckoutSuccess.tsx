@@ -59,12 +59,33 @@ export function CheckoutSuccessPage() {
       .catch((e) => setState({ status: "error", message: e?.message || "Couldn't verify the payment." }));
   }, []);
 
+  // The hero has to match what actually happened — never "payment went through" above an error.
+  const hero =
+    state.status === "ok"
+      ? {
+          kicker: "Order confirmed",
+          title: <>Thanks. <em>You're all set.</em></>,
+          intro: "Your card payment went through. A receipt from Stripe is on its way to your inbox, and Chris ships within 48 hours.",
+        }
+      : state.status === "loading"
+        ? {
+            kicker: "Checkout",
+            title: <>Confirming your <em>payment…</em></>,
+            intro: "One moment while we check with Stripe.",
+          }
+        : {
+            kicker: "Checkout",
+            title: <>Let's <em>double-check.</em></>,
+            intro: "We couldn't confirm a payment from this link. If you already paid, the receipt Stripe emailed you is your confirmation.",
+          };
+
   return (
     <InfoShell
       current="checkout"
-      kicker="Order confirmed"
-      title={<>Thanks. <em>You're all set.</em></>}
-      intro="Your card payment went through. A receipt from Stripe is on its way to your inbox, and Chris ships within 48 hours."
+      docTitle={state.status === "ok" ? "Order confirmed" : "Checkout"}
+      kicker={hero.kicker}
+      title={hero.title}
+      intro={hero.intro}
     >
       <div className="pc-container py-10 md:py-14 max-w-2xl">
         {state.status === "loading" && (

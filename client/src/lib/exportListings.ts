@@ -58,7 +58,7 @@ function descriptionHtml(item: Inventory): string {
     `<p><strong>Franchise:</strong> ${item.franchise}</p>`,
     `<p><strong>Category:</strong> ${item.category}</p>`,
     item.notes ? `<p>${item.notes}</p>` : "",
-    "<p>Ships in a protective sleeve + top loader. See photos for exact condition.</p>",
+    "<p>Ships in a protective sleeve and toploader. See photos for exact condition.</p>",
   ];
   return bits.filter(Boolean).join("");
 }

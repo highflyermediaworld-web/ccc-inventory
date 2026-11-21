@@ -349,9 +349,9 @@ export function AboutPage() {
             <div className="pc-sec-title"><h2>Selling to us</h2></div>
             <p className="pc-sec-sub">Point your camera at a card and get the number in seconds.</p>
             <ol className="pc-info-steps mt-5">
-              <li><Camera className="h-4 w-4" aria-hidden /><span><b>Scan or search</b> the card in the Sell &amp; Trade calculator on the shop page.</span></li>
+              <li><Camera className="h-4 w-4" aria-hidden /><span><b>Scan or search</b> for the card in the Sell &amp; Trade calculator on the shop page.</span></li>
               <li><Award className="h-4 w-4" aria-hidden /><span>See the <b>live TCGplayer market</b> and your <b>{CASH_PCT}% cash / {TRADE_PCT}% trade</b> offer instantly.</span></li>
-              <li><HandCoins className="h-4 w-4" aria-hidden /><span><b>DM or bring it to a show.</b> Chris confirms condition in hand and pays out or credits your trade.</span></li>
+              <li><HandCoins className="h-4 w-4" aria-hidden /><span><b>DM us or bring it to a show.</b> Chris confirms condition in hand and pays out or credits your trade.</span></li>
             </ol>
           </div>
         </section>

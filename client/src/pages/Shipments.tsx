@@ -73,7 +73,7 @@ export default function ShipmentsPage() {
   return (
     <div className="p-5 sm:p-8">
       <PageHeader
-        eyebrow="Fulfilment"
+        eyebrow="Fulfillment"
         title="Shipping"
         description="Every paid online order lands here with a ready-to-print address label and packing slip. USPS orders: pay postage at the counter or on Click-N-Ship. FedEx 2Day orders: pay One Rate at a FedEx Office counter in the packaging shown. Then mark it shipped."
         actions={

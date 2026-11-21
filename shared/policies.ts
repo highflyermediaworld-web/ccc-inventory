@@ -48,7 +48,7 @@ export const POLICIES: Policy[] = [
       {
         heading: "Who we are",
         blocks: [
-          `${LEGAL_NAME} is a collector-run trading card shop based in ${LEGAL_STATE}, operated by Chris. We sell online through this site, in person at card shows, and on TikTok lives at {handle}. We ship within the United States only.`,
+          `${LEGAL_NAME} is a collector-run trading card shop based in ${LEGAL_STATE}, operated by Chris. We sell online through this site, in person at card shows, and on TikTok live streams at {handle}. We ship within the United States only.`,
           "You must be 18 or older to place an order or sell cards to us. Under 18? Have a parent or guardian handle the purchase or trade.",
         ],
       },
@@ -57,7 +57,7 @@ export const POLICIES: Policy[] = [
         blocks: [
           "The photo on a listing is the actual card that ships, unless the listing is for sealed product or clearly states a stock image. Condition labels follow our [Condition Guide](#/policies/condition-guide).",
           "Our asking prices follow the live market: the TCGplayer market price shown beside a card is a third-party reference that refreshes while you browse, and our price may move with it. Graded slabs reference recent graded sales. A price is only locked once your payment is complete.",
-          "We work hard to keep listings accurate, but a listing can occasionally be wrong — a typo in the price, a card that sold at a show minutes earlier, a quantity that's off by one. If that happens we'll tell you right away and cancel and refund the affected item in full. We can't honor a price that's obviously an error.",
+          "We work hard to keep listings accurate, but a listing can occasionally be wrong — a typo in the price, a card that sold at a show minutes earlier, a quantity that's off by one. If that happens, we'll tell you right away and cancel and refund the affected item in full. We can't honor a price that's obviously an error.",
         ],
       },
       {
@@ -88,7 +88,7 @@ export const POLICIES: Policy[] = [
       {
         heading: "Liability",
         blocks: [
-          `We stand behind every order with our satisfaction guarantee (see Returns). Beyond refunding or replacing what you paid for, ${LEGAL_NAME} isn't liable for indirect losses such as changes in a card's market value, grading outcomes, or delays caused by carriers. Nothing here limits rights you have under ${LEGAL_STATE} consumer law that can't be waived.`,
+          `We stand behind every order with our satisfaction guarantee (see the [Return & Refund Policy](#/policies/returns)). Beyond refunding or replacing what you paid for, ${LEGAL_NAME} isn't liable for indirect losses such as changes in a card's market value, grading outcomes, or delays caused by carriers. Nothing here limits rights you have under ${LEGAL_STATE} consumer law that can't be waived.`,
           `These terms are governed by the laws of the State of ${LEGAL_STATE}. We may update them as the shop grows; the date at the top of this page tells you when they last changed, and the version in effect when you order is the one that applies to that order.`,
         ],
       },
@@ -170,9 +170,9 @@ export const POLICIES: Policy[] = [
       {
         heading: "Carriers and rates",
         blocks: [
-          "**USPS Ground Advantage** — 2–5 business days. The rate is USPS's current retail price for your distance zone and the weight of your order, calculated when you enter your ZIP code in the cart. One card to the Bay Area is around $8; a stack of slabs to the East Coast runs more.{freeShipping}",
+          "**USPS Ground Advantage** — 2–5 business days. The rate is USPS's current retail price for your distance zone and the weight of your order, calculated when you enter your ZIP code in the cart. One card to the Bay Area is about $8.40; a stack of slabs to the East Coast runs more.{freeShipping}",
           "{fedexOption}",
-          "Shipping is shown in the cart before you pay, added before tax, and isn't taxed. The exact amount you see at checkout is what you're charged — no surprises after.",
+          "Shipping is shown in the cart before you pay, added before tax, and isn't taxed. The exact amount you see at checkout is what you're charged — no surprises afterward.",
         ],
       },
       {
@@ -196,7 +196,7 @@ export const POLICIES: Policy[] = [
       },
       {
         heading: "Local pickup",
-        blocks: ["If you'd rather pick up at a Northern California show we're vending, send a Buy request and mention the show — Chris will hold the card for you there with no shipping charge."],
+        blocks: ["If you'd rather pick up at a Northern California show we're vending at, send a Buy request and mention the show — Chris will hold the card for you there with no shipping charge."],
       },
     ],
   },
@@ -219,7 +219,7 @@ export const POLICIES: Policy[] = [
             list: [
               "**Graded slabs** — the grade is set by the grading company, not us. Final sale unless the case arrives cracked or the slab isn't the one pictured (the certification number must match).",
               "**Sealed product** — final sale once the shrink-wrap or seal is broken. Damage in transit is covered: don't open it, photograph it, and message us.",
-              "**Change of mind / market moves** — we can't accept returns because a card's price went down, or because you found it cheaper elsewhere.",
+              "**Change of mind or market moves** — we can't accept returns because a card's price went down or because you found it cheaper elsewhere.",
               "**Trade-ins and buylist sales** — final once accepted and paid or credited.",
             ],
           },
@@ -234,8 +234,8 @@ export const POLICIES: Policy[] = [
       {
         heading: "Refunds",
         blocks: [
-          "Refunds go back to the original payment method once the return is received and inspected — usually within 2 business days of arrival. Card refunds then take 5–10 business days to appear depending on your bank; Zelle, Venmo, Cash App and PayPal refunds are sent to the same account you paid from.",
-          "Original shipping is refunded when the error was ours. If you cancel before the order ships, you're refunded in full including shipping.",
+          "Refunds go back to the original payment method once the return is received and inspected — usually within 2 business days of arrival. Card refunds then take 5–10 business days to appear, depending on your bank; Zelle, Venmo, Cash App and PayPal refunds are sent to the same account you paid from.",
+          "Original shipping is refunded when the error was ours. If you cancel before the order ships, you're refunded in full, including shipping.",
         ],
       },
       {
@@ -261,17 +261,17 @@ export const POLICIES: Policy[] = [
                 ["LP", "Lightly Played", "Minor wear from light handling: slight edge or corner whitening, a few light surface scratches, or minor edge wear. Still clean at arm's length. No creases or bends."],
                 ["MP", "Moderately Played", "Clearly played: moderate whitening on several edges or corners, noticeable scratches or scuffs, maybe a light bend. Structurally sound — no tears, no major creases."],
                 ["HP", "Heavily Played", "Significant wear: heavy whitening, deep scratches, creasing, or a small amount of edge damage. Fully intact and legible."],
-                ["DMG", "Damaged", "Tears, water damage, heavy creases, writing, or missing material. Sold as a filler or for the art, priced accordingly."],
+                ["DMG", "Damaged", "Tears, water damage, heavy creases, writing, or missing material. Sold as filler or for the art, and priced accordingly."],
               ],
             },
           },
-          "We grade conservatively. When a card is between two grades, we list the lower one. Japanese and other non-English prints are labelled with their language in the listing.",
+          "We grade conservatively. When a card is between two grades, we list the lower one. Japanese and other non-English prints are labeled with their language in the listing.",
         ],
       },
       {
         heading: "Centering, holos and print quality",
         blocks: [
-          "Centering is judged separately from wear: a NM card can be off-center from the factory. Where centering is notably off we say so in the listing. Holofoil cards show scratches more easily; we hold holos to the same standard as non-holos. Factory print lines, dimples or ink spots are noted when visible.",
+          "Centering is judged separately from wear: an NM card can be off-center from the factory. Where centering is notably off, we say so in the listing. Holofoil cards show scratches more easily; we hold holos to the same standard as non-holos. Factory print lines, dimples or ink spots are noted when visible.",
         ],
       },
       {
@@ -306,7 +306,7 @@ export const POLICIES: Policy[] = [
           {
             list: [
               `**Instagram** — DM {handle} at [instagram.com/cpulls.cards](${INSTAGRAM_URL}). Best for order questions, trades and show info.`,
-              `**TikTok** — DM {handle} at [tiktok.com/@cpulls.cards](${TIKTOK_URL}), or catch us on a live.`,
+              `**TikTok** — DM {handle} at [tiktok.com/@cpulls.cards](${TIKTOK_URL}), or catch us on a live stream.`,
               ...(CONTACT_EMAIL ? [`**Email** — [${CONTACT_EMAIL}](mailto:${CONTACT_EMAIL}). Use this for returns, privacy requests and anything you'd like in writing.`] : []),
               "**On the site** — the chat assistant in the corner answers common questions instantly and points anything else to Chris.",
             ],
@@ -342,7 +342,7 @@ export const POLICIES: Policy[] = [
       {
         heading: "Not affiliated",
         blocks: [
-          `${LEGAL_NAME} is an independent reseller of ${GAMES.join(", ")} cards and sealed product. We are not affiliated with, sponsored by or endorsed by The Pokémon Company International, Nintendo, Creatures, GAME FREAK, Bandai, Toei Animation, Shueisha, Wizards of the Coast, Hasbro, Konami, Riot Games or any other publisher. All trademarks, card names and artwork are the property of their respective owners and are used only to identify the products for sale.`,
+          `${LEGAL_NAME} is an independent reseller of ${GAMES.slice(0, -1).join(", ")} and ${GAMES[GAMES.length - 1]} cards and sealed product. We are not affiliated with, sponsored by or endorsed by The Pokémon Company International, Nintendo, Creatures, GAME FREAK, Bandai, Toei Animation, Shueisha, Wizards of the Coast, Hasbro, Konami, Riot Games or any other publisher. All trademarks, card names and artwork are the property of their respective owners and are used only to identify the products for sale.`,
         ],
       },
       {

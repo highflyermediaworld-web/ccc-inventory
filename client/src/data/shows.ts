@@ -34,5 +34,11 @@ export function showDateParts(s: CardShow) {
   const month = crossMonth ? `${MONTHS[a.getMonth()]}–${MONTHS[b!.getMonth()]}` : MONTHS[a.getMonth()];
   const day = b ? `${a.getDate()}–${b.getDate()}` : String(a.getDate());
   const weekday = b ? `${DAYS[a.getDay()]}–${DAYS[b.getDay()]}` : DAYS[a.getDay()];
-  return { month, day, weekday, year: a.getFullYear() };
+  // One-line form: "Oct 23", "Oct 24–25", or "Oct 31–Nov 1" across a month boundary.
+  const label = !b
+    ? `${MONTHS[a.getMonth()]} ${a.getDate()}`
+    : crossMonth
+      ? `${MONTHS[a.getMonth()]} ${a.getDate()}–${MONTHS[b.getMonth()]} ${b.getDate()}`
+      : `${MONTHS[a.getMonth()]} ${a.getDate()}–${b.getDate()}`;
+  return { month, day, weekday, label, year: a.getFullYear() };
 }
