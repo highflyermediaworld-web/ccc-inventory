@@ -1771,6 +1771,12 @@
   .pc .pc-nav a,
   .pc .pc-nav button { padding: 0.5rem 0.3rem; }
 }
+/* Desktop shop header: logo + nine nav links + search/cart/account + "Shop all" must fit the
+   1280px container, so the nav runs slightly tighter here than in the info header */
+@media (min-width: 1280px) {
+  .pc .pc-mainbar .pc-wordmark { font-size: 1.25rem; }
+  .pc .pc-mainbar .pc-nav button { font-size: 12px; padding: 0.5rem 0.375rem; letter-spacing: 0.03em; }
+}
 /* Narrow phones, shop header: stack the wordmark (Chris / Collects / Co) so search, cart,
    account and menu all stay on screen instead of pushing the menu button off the edge */
 @media (max-width: 479px) {

@@ -700,11 +700,18 @@ export default function ShopPage() {
     setTimeout(() => searchRef.current?.focus(), 350);
   }
 
+  // Top games by stock get a nav link. The desktop header has a fixed amount of room, so
+  // long names are shortened and the third link is dropped if the three won't fit.
+  const navFranchises = franchises.slice(0, 3).map((f) => ({
+    name: f.name,
+    label: f.name === "Magic The Gathering" ? "Magic" : f.name.startsWith("Dragon Ball") ? "Dragon Ball" : f.name,
+  }));
+  while (navFranchises.length > 1 && navFranchises.reduce((n, f) => n + f.label.length, 0) > 26) navFranchises.pop();
   const navItems: { label: string; onClick: () => void }[] = [
     { label: "Sealed", onClick: () => browse({ category: "Sealed" }) },
     { label: "Singles", onClick: () => browse({ category: "Raw" }) },
     { label: "Graded", onClick: () => browse({ category: "Slab" }) },
-    ...franchises.slice(0, 3).map((f) => ({ label: f.name === "Magic The Gathering" ? "Magic" : f.name, onClick: () => browse({ franchise: f.name }) })),
+    ...navFranchises.map((f) => ({ label: f.label, onClick: () => browse({ franchise: f.name }) })),
     { label: "New Arrivals", onClick: () => browse({ sort: "newest" }) },
     { label: "Shows", onClick: scrollToShows },
     { label: "Sell & Trade", onClick: () => { setMobileNavOpen(false); scrollToTrade(); } },
@@ -789,7 +796,7 @@ export default function ShopPage() {
           </div>
         </div>
         {/* main row */}
-        <div className="pc-container pc-mainbar h-[72px] flex items-center justify-between gap-4">
+        <div className="pc-container pc-mainbar h-[72px] flex items-center justify-between gap-4 xl:gap-3">
           <a href="#/" className="pc-brand flex items-center gap-3 shrink-0" aria-label="Chris Collects Co home">
             <img src="/logo-96.png" alt="" width={44} height={44} className="h-11 w-11 rounded-lg object-cover ring-1 ring-white/15" />
             <span className="pc-wordmark">
@@ -804,7 +811,7 @@ export default function ShopPage() {
               </button>
             ))}
           </nav>
-          <div className="flex items-center gap-1 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 xl:gap-1 shrink-0">
             <button className="pc-icon-btn" onClick={focusSearch} aria-label="Search the shop" data-testid="button-nav-search">
               <Search className="h-5 w-5" />
             </button>
@@ -833,7 +840,7 @@ export default function ShopPage() {
               </a>
             )}
             <button onClick={() => browse()} className="pc-btn pc-btn-sm pc-btn-red !hidden sm:!inline-flex" data-testid="button-nav-shop">
-              <ShoppingBag className="h-4 w-4" /> Shop all
+              <ShoppingBag className="h-4 w-4 xl:hidden" /> Shop all
             </button>
             <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
               <SheetTrigger asChild>
