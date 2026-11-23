@@ -159,7 +159,7 @@ export function ShopChat() {
             <button type="submit" disabled={busy || !input.trim()} aria-label="Send" data-testid="chat-send"><Send className="h-4 w-4" /></button>
           </form>
           <footer className="pc-chat-foot">
-            <span>Not a person — Chris confirms every order and trade. Prices follow TCGplayer.</span>
+            <span data-testid="text-chat-disclaimer"><strong>Disclaimer:</strong> This is not a real person. Our team confirms every order and trade. All of our prices follow TCGplayer.</span>
             {messages.length > 0 && <button type="button" onClick={reset} data-testid="chat-reset">Clear</button>}
           </footer>
         </section>

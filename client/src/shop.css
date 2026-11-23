@@ -1739,6 +1739,7 @@
   line-height: 1.4;
   color: var(--pc-muted);
 }
+.pc .pc-chat-foot strong { color: var(--pc-ink-2); font-weight: 700; }
 .pc .pc-chat-foot button { font-family: var(--pc-ui); font-weight: 700; color: var(--pc-ink-2); text-decoration: underline; text-underline-offset: 2px; flex-shrink: 0; }
 @media (max-width: 480px) {
   .pc .pc-chat { right: 8px; left: 8px; width: auto; bottom: 72px; height: min(600px, calc(100dvh - 88px)); }
