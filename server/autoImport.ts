@@ -525,7 +525,13 @@ export async function runAutoImport(opts: { wipe?: boolean } = {}): Promise<Auto
                 delete patch.status;
                 stockKept += 1;
               }
-              const identityChanged = IDENTITY_FIELDS.some((f) => f in patch);
+              // A spelling-only fix to the name or set ("Fusion Stike" -> "Fusion
+              // Strike") is still the same card: update the label but keep the
+              // photo and TCGplayer match it already has.
+              const curSpelled = applyNameAutocorrect({ name: cur.name, setName: cur.setName }) as Record<string, unknown>;
+              const identityChanged = IDENTITY_FIELDS.some(
+                (f) => f in patch && !((f === "name" || f === "setName") && same(patch[f], curSpelled[f]))
+              );
               if (identityChanged) {
                 // The row now describes a different card: drop the looked-up
                 // photo and TCGplayer match so they're re-resolved. Photos the

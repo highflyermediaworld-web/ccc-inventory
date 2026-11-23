@@ -762,6 +762,16 @@ export const SET_NAME_CORRECTIONS: [RegExp, string][] = [
   [/\bBlack\s+Bolt\b(\s*\(SV11B\))?/gi, "Black Bolt"],
   [/\bWhite\s+Flare\b(\s*\(SV11W\))?/gi, "White Flare"],
   [/\bBattles?\s+of\s+Legends?\s*[-:]\s*/gi, "Battles of Legend: "],
+  // Typos seen in the inventory sheet's Set Name column.
+  [/\bCosmic\s+Eclispe\b/gi, "Cosmic Eclipse"],
+  [/\bCelecrations\b/gi, "Celebrations"],
+  [/\bFusion\s+Stike\b/gi, "Fusion Strike"],
+  [/\bHighg\s+Class\b/gi, "High-Class"],
+  [/\bShiny\s+Fates\b/gi, "Shining Fates"],
+  [/^\s*Sword\s*&\s*Shield\s+Base\s+Set\s*$/gi, "Sword & Shield Base Set"],
+  [/\bMega\s+Evolutions\s+Promos?\b/gi, "Mega Evolution Promos"],
+  [/^\s*Pokemon\s+Go\s*$/gi, "Pokemon GO"],
+  [/\bHeroine's\s+Edition\b/gi, "Heroines Edition"],
 ];
 
 export function correctSetName(raw: string | null | undefined): string | null {
