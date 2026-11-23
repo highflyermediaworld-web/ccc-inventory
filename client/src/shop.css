@@ -1796,6 +1796,24 @@
   .pc .pc-viewall-count { display: none; }
 }
 /* ============ WAYS TO PAY ============ */
+.pc .pc-pay-scope { color: var(--pc-red); }
+@media (max-width: 767px) {
+  .pc .pc-pay-scope { display: block; font-size: 0.8em; margin-top: 0.15em; text-wrap: balance; }
+}
+.pc .pc-pay-accept { margin-top: 1.5rem; font-family: var(--pc-ui); font-weight: 700; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pc-ink-2); }
+.pc .pc-pay-notice {
+  margin-top: 1.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--pc-line);
+  border-left: 4px solid var(--pc-red);
+  border-radius: 3px;
+  background: #fff;
+  font-family: var(--pc-ui);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--pc-ink-2);
+}
+.pc .pc-pay-notice strong { color: var(--pc-ink); font-weight: 800; }
 .pc .pc-pay-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (min-width: 1024px) { .pc .pc-pay-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .pc .pc-pay-card {

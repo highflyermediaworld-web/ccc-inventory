@@ -1341,7 +1341,7 @@ export default function ShopPage() {
               <div className="min-w-0">
                 <h3 className="text-xl">Next show: TBA</h3>
                 <p className="pc-body text-[15px] mt-1 text-neutral-600">
-                  New dates drop on Instagram first. Follow {BRAND_HANDLE} or ask during a live stream and we&apos;ll tell you where the table is next.
+                  Announcements will be made here and on Instagram. Follow {BRAND_HANDLE} or ask during a live stream, and we&apos;ll provide venue, dates and show times.
                 </p>
               </div>
               <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="pc-btn pc-btn-red sm:ml-auto shrink-0" data-testid="button-shows-follow">
@@ -1419,16 +1419,19 @@ export default function ShopPage() {
       <section id="pay" className="pc-paper-bg scroll-mt-[72px]" data-testid="section-pay">
         <div className="pc-container py-12 sm:py-16">
           <div className="pc-sec-title">
-            <h2>Ways to Pay</h2>
+            <h2 data-testid="text-pay-heading">
+              <span>Ways to Pay <span className="pc-pay-scope">– <span className="whitespace-nowrap">In-Person</span> Show Purchases Only</span></span>
+            </h2>
           </div>
-          <p className="pc-sec-sub">
-            Once Chris confirms your card is in hand, pay with whichever app you already use. Tap to open it on your phone, or scan the code from another device.
+          <p className="pc-sec-sub" data-testid="text-pay-intro">
+            Shopping with ChrisCollectsCo at one of our vendor events? Once Chris confirms your card is physically in hand, simply scan the QR code for your preferred payment app and complete your payment.
           </p>
-          <div className="mt-6">
+          <p className="pc-pay-accept" data-testid="text-pay-accept">We accept:</p>
+          <div className="mt-3">
             <PaymentOptionCards />
           </div>
-          <p className="mt-4 text-xs text-neutral-500 pc-body">
-            Please wait for the confirmation message before sending payment, and include the card name in the note. In person at shows: cash, Apple Cash or tap to pay with any credit or debit card.
+          <p className="pc-pay-notice" role="note" data-testid="text-pay-notice">
+            <strong>Please Note:</strong> These payment options are exclusively for in-person purchases at events where ChrisCollectsCo is vending. They are not intended for online website orders. All online purchases must be completed through our website checkout.
           </p>
         </div>
       </section>
