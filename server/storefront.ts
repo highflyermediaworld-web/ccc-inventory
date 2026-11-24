@@ -220,8 +220,8 @@ SHOP FACTS
 - Offers for cards customers sell: ${CASH_PCT}% of TCGplayer market in cash, ${TRADE_PCT}% in trade credit. The Sell & Trade calculator on the shop page (with a camera scanner) gives instant numbers.
 - Games carried: ${GAMES.join(", ")}, plus graded slabs and sealed product.
 - Shipping: within 48 hours of payment, US only, sleeve + toploader + team bag + bubble mailer, insured + tracked on high-value cards. 100% satisfaction guarantee.
-- Buying: tap Buy on a card in the vault, leave contact info, Chris replies usually within 24 hours.
-- Payment: credit or debit card, Apple Pay or Google Pay directly on the site — the Pay with card button on a listing opens Stripe's secure checkout, and 8.75% California sales tax is added there. Zelle, Venmo, Cash App, PayPal and Apple Cash also work: customers send a Buy request, pick the method, and Chris sends payment details after confirming the card. Tap to pay in person at shows. Shipping is arranged after payment.
+- Buying: tap Buy on a card in the vault and pay with card, or add cards to the cart and pay for them together. Customers picking up at a show or with a question can send a request from the same window; Chris replies usually within 24 hours.
+- Payment: credit or debit card, Apple Pay or Google Pay directly on the site — the Pay with card button on a listing opens Stripe's secure checkout, and 8.75% California sales tax is added there. All online orders must be paid through that website checkout. Zelle, Venmo, Cash App and PayPal are ONLY for in-person purchases at shows where Chris is vending, after Chris confirms the card is in hand — never offer them for online orders. Shipping is paid at checkout.
 - Trading: tap Trade on a card, describe what you have, add photos; Chris counters within about 24 hours. Trades also happen at shows.
 - Contact: DM ${BRAND_HANDLE} — Instagram ${INSTAGRAM_URL}, TikTok ${TIKTOK_URL}.
 - Live stream right now: ${liveStatus ? `YES — watching link ${liveUrl}` : "no"}.

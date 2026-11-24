@@ -521,7 +521,7 @@ export function registerStripeCheckoutRoutes(app: Express) {
       if (subtotalCents < CARD_MINIMUM_CENTS) {
         return res.status(409).json({
           code: "below_minimum",
-          message: "Card payments need a $0.50 minimum. Add another item to your cart, or request to buy another way.",
+          message: "Card payments need a $0.50 minimum. Add another item to your cart to check out.",
         });
       }
 

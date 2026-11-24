@@ -25,18 +25,11 @@ export const GAMES = ["Pokémon", "One Piece", "Magic: The Gathering", "Dragon B
 /*  FAQ                                                                */
 /* ------------------------------------------------------------------ */
 
-// Ways a customer can pay once Chris confirms an order. Shown on the
-// storefront, offered as a preference in the Buy form, and used by the POS.
-export const PAYMENT_METHODS = [
-  "Zelle",
-  "Venmo",
-  "Cash App",
-  "PayPal",
-  "Apple Cash",
-  "Credit or debit card (tap)",
-] as const;
-export type PaymentMethodName = (typeof PAYMENT_METHODS)[number];
-export const PAYMENT_METHODS_SENTENCE = "credit or debit card, Apple Pay and Google Pay at checkout, plus Zelle, Venmo, Cash App, PayPal and Apple Cash";
+// Online orders are paid through card checkout only. The payment apps are
+// for in-person purchases at shows and are never offered for website orders.
+export const ONLINE_PAYMENT_SENTENCE = "credit or debit card, Apple Pay and Google Pay at checkout";
+export const SHOW_PAYMENT_SENTENCE = "Zelle, Venmo, Cash App and PayPal";
+export const SHOW_ONLY_PAYMENT_NOTE = `${SHOW_PAYMENT_SENTENCE} are for in-person show purchases only.`;
 
 export type FaqItem = { q: string; a: string };
 export type FaqGroup = { id: "buying" | "shipping" | "selling" | "shows"; title: string; items: FaqItem[] };
@@ -48,11 +41,11 @@ export const FAQ_GROUPS: FaqGroup[] = [
     items: [
       {
         q: "How do I buy a card?",
-        a: "Find the card in the vault, tap **Buy**, and leave your name and how you'd like to be contacted. Chris confirms the card is still in hand and reaches out, usually within 24 hours, to arrange payment and shipping.",
+        a: "Find the card in the vault, tap **Buy** and pay with card on Stripe's secure checkout, or add several cards to your cart and pay for them together. Picking up at a show or have a question first? Send a request from the same window and Chris replies, usually within 24 hours.",
       },
       {
         q: "What payment methods do you take?",
-        a: "Credit or debit card, Apple Pay and Google Pay right on the site — tap Pay with card on any listing and you check out on Stripe's secure page (8.75% California sales tax is added). Prefer Zelle, Venmo, Cash App, PayPal or Apple Cash? Send a Buy request instead and Chris sends the details once the card is confirmed. At shows, tap to pay in person.",
+        a: "Credit or debit card, Apple Pay and Google Pay right on the site — tap Pay with card on any listing and you check out on Stripe's secure page (8.75% California sales tax is added). All online orders are paid through that checkout. Zelle, Venmo, Cash App and PayPal are for in-person purchases at shows only.",
       },
       {
         q: "Are the photos the actual cards?",

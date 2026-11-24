@@ -5,7 +5,7 @@
  * Text uses the same light markup as the FAQ: **bold**, [label](url),
  * {handle}, {freeShipping}, {fedexOption}, plus {taxPercent}, {email}.
  */
-import { BRAND_HANDLE, CASH_PCT, CLAIM_WINDOW_DAYS, GAMES, INSTAGRAM_URL, PAYMENT_METHODS_SENTENCE, TIKTOK_URL, TRADE_PCT } from "./storefront";
+import { BRAND_HANDLE, CASH_PCT, CLAIM_WINDOW_DAYS, GAMES, INSTAGRAM_URL, ONLINE_PAYMENT_SENTENCE, SHOW_PAYMENT_SENTENCE, TIKTOK_URL, TRADE_PCT } from "./storefront";
 
 /** Business identity used across the policies. */
 export const LEGAL_NAME = "Chris Collects Co";
@@ -64,7 +64,7 @@ export const POLICIES: Policy[] = [
         heading: "Orders and payment",
         blocks: [
           "**Card checkout.** Tap Pay with card and you're taken to Stripe's secure checkout. Your order is accepted when the payment is confirmed and we've verified the card is in hand; you'll get an emailed receipt. Stripe handles your card details — we never see or store them.",
-          "**Buy requests.** Tapping Buy and leaving your contact details is a request, not a purchase. Nothing is held or sold until Chris confirms availability and you've paid. We accept " + PAYMENT_METHODS_SENTENCE + ".",
+          "**Requests.** Sending a request with your contact details is not a purchase. Nothing is held or sold until Chris confirms availability. Online orders are paid through card checkout only (" + ONLINE_PAYMENT_SENTENCE + "). " + SHOW_PAYMENT_SENTENCE + " are accepted for in-person purchases at shows only.",
           `**Sales tax.** ${LEGAL_STATE} sales tax ({taxPercent}%) is added to card checkout. Shipping is not taxed.`,
           "**Shipping.** Shipping is calculated before tax from your ZIP code, the carrier you choose and what's in the order. See the [Shipping Policy](#/policies/shipping).{freeShipping}",
           "**Cancellations.** You can cancel an order any time before it ships by messaging us. Once a tracking number exists, it's a return — see the [Return & Refund Policy](#/policies/returns).",
@@ -196,7 +196,7 @@ export const POLICIES: Policy[] = [
       },
       {
         heading: "Local pickup",
-        blocks: ["If you'd rather pick up at a Northern California show we're vending at, send a Buy request and mention the show — Chris will hold the card for you there with no shipping charge."],
+        blocks: ["If you'd rather pick up at a Northern California show we're vending at, send a request and mention the show — Chris will hold the card for you there with no shipping charge, and you pay in person at the table."],
       },
     ],
   },
@@ -234,7 +234,7 @@ export const POLICIES: Policy[] = [
       {
         heading: "Refunds",
         blocks: [
-          "Refunds go back to the original payment method once the return is received and inspected — usually within 2 business days of arrival. Card refunds then take 5–10 business days to appear, depending on your bank; Zelle, Venmo, Cash App and PayPal refunds are sent to the same account you paid from.",
+          "Refunds go back to the original payment method once the return is received and inspected — usually within 2 business days of arrival. Card refunds then take 5–10 business days to appear, depending on your bank. Refunds for in-person show purchases paid by Zelle, Venmo, Cash App or PayPal are sent to the same account you paid from.",
           "Original shipping is refunded when the error was ours. If you cancel before the order ships, you're refunded in full, including shipping.",
         ],
       },

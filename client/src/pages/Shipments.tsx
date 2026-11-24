@@ -239,11 +239,11 @@ function NewShipmentDialog({ onClose }: { onClose: () => void }) {
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>New shipment</DialogTitle>
-          <DialogDescription>For orders paid by Zelle, Venmo, Cash App or PayPal. Weight and postage are estimated from the items.</DialogDescription>
+          <DialogDescription>For orders not paid through card checkout, such as show sales shipped later. Weight and postage are estimated from the items.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
           {field("customerName", "Customer name *")}
-          {field("orderRef", "Order reference", { placeholder: "e.g. Zelle 11/12 · Request #42" })}
+          {field("orderRef", "Order reference", { placeholder: "e.g. Show sale 11/12 · Request #42" })}
           {field("line1", "Street address *", { autoComplete: "address-line1" })}
           {field("line2", "Apt / unit", { autoComplete: "address-line2" })}
           {field("city", "City *")}

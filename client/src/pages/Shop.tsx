@@ -24,7 +24,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { CardThumb } from "@/components/CardThumb";
 import { ShopChat } from "@/components/ShopChat";
 import { BackToTop } from "@/components/BackToTop";
-import { PaymentOptionCards, PaymentChips } from "@/components/PaymentOptions";
+import { PaymentOptionCards } from "@/components/PaymentOptions";
 import { BRAND_HANDLE, TIKTOK_URL, INSTAGRAM_URL } from "@/components/SocialLinks";
 import { resolveUploadUrl, thumbSrcSet } from "@/lib/uploads";
 import { formatCurrency } from "@/lib/format";
@@ -75,7 +75,7 @@ import {
 } from "lucide-react";
 import { cart, useCart, CARD_MINIMUM } from "@/lib/cart";
 import { ToastAction } from "@/components/ui/toast";
-import { PAYMENT_METHODS, PAYMENT_METHODS_SENTENCE } from "@shared/storefront";
+import { ONLINE_PAYMENT_SENTENCE, SHOW_ONLY_PAYMENT_NOTE, SHOW_PAYMENT_SENTENCE } from "@shared/storefront";
 import { POLICIES, CLAIM_WINDOW_DAYS } from "@shared/policies";
 import "@/shop.css";
 import { FreeShippingNote, MobileShippingStrip, FreeShippingProgress, useShippingConfig } from "@/components/ShippingPromo";
@@ -951,7 +951,7 @@ export default function ShopPage() {
                   </div>
                   <div className="mt-6 flex gap-2 flex-wrap">
                     <button onClick={() => setBuyTarget(feature.item!)} className="pc-btn pc-btn-red" data-testid="button-feature-buy">
-                      <ShoppingBag className="h-4 w-4" /> Request to buy
+                      <ShoppingBag className="h-4 w-4" /> Buy now
                     </button>
                     <button onClick={() => setTradeTarget(feature.item!)} className="pc-btn pc-btn-ghost-dark" data-testid="button-feature-trade">
                       <ArrowLeftRight className="h-4 w-4" /> Propose a trade
@@ -1566,7 +1566,7 @@ export default function ShopPage() {
             <ul className="grid gap-2.5 text-sm pc-body text-white/78">
               <li className="flex items-start gap-2"><MapPin className="h-4 w-4 mt-0.5 shrink-0" /> Based in California · Online orders ship nationwide</li>
               <li className="flex items-start gap-2"><Truck className="h-4 w-4 mt-0.5 shrink-0" /> Orders ship within 48 hours, tracked and insured on high-value cards</li>
-              <li className="flex items-start gap-2" data-testid="footer-payments"><Wallet className="h-4 w-4 mt-0.5 shrink-0" /> We take {PAYMENT_METHODS_SENTENCE}</li>
+              <li className="flex items-start gap-2" data-testid="footer-payments"><Wallet className="h-4 w-4 mt-0.5 shrink-0" /> <span>Online: {ONLINE_PAYMENT_SENTENCE}. At shows only: {SHOW_PAYMENT_SENTENCE}.</span></li>
               <li className="flex items-start gap-2"><SiInstagram className="h-4 w-4 mt-0.5 shrink-0" /> Questions: DM {BRAND_HANDLE} on Instagram or TikTok</li>
               <li className="flex items-start gap-2"><ShieldCheck className="h-4 w-4 mt-0.5 shrink-0" /> 100% satisfaction guarantee on every order</li>
             </ul>
@@ -2634,13 +2634,9 @@ function CartDrawer({
             <SuccessPane
               title="Request sent"
               preferredContact={form.preferredContact}
-              description={
-                form.paymentMethod
-                  ? `Chris will confirm your ${sentSummary?.count ?? 0} card${(sentSummary?.count ?? 0) === 1 ? "" : "s"} and send ${form.paymentMethod} payment details. Usually within 24 hours.`
-                  : `Chris will confirm your ${sentSummary?.count ?? 0} card${(sentSummary?.count ?? 0) === 1 ? "" : "s"} and arrange payment. Usually within 24 hours.`
-              }
+              description={`Chris will confirm your ${sentSummary?.count ?? 0} item${(sentSummary?.count ?? 0) === 1 ? "" : "s"} and reply. Usually within 24 hours.`}
               onClose={() => onOpenChange(false)}
-              payAmount={sentSummary?.total}
+              onlineNote={cardEnabled}
             />
           </div>
         ) : rows.length === 0 ? (
@@ -2733,7 +2729,7 @@ function CartDrawer({
                   )}
                   {cardEnabled && belowMinimum && (
                     <p className="text-xs text-muted-foreground" data-testid="text-cart-minimum">
-                      Card payments need a {formatCurrency(CARD_MINIMUM)} minimum — add another card, or request to buy another way.
+                      Card payments need a {formatCurrency(CARD_MINIMUM)} minimum — add another card to check out.
                     </p>
                   )}
                   {cardEnabled && (
@@ -2757,10 +2753,10 @@ function CartDrawer({
                     disabled={!okRows.length || problemRows.length > 0}
                     data-testid="button-cart-request"
                   >
-                    {cardEnabled ? "Request to buy another way" : `Request to buy for ${formatCurrency(subtotal)}`}
+                    {cardEnabled ? "Send a request instead" : `Request to buy for ${formatCurrency(subtotal)}`}
                   </Button>
                   {cardEnabled && (
-                    <p className="text-[11px] text-muted-foreground">Credit or debit, Apple Pay and Google Pay on Stripe's secure page. Or request and pay by Zelle, Venmo, Cash App, PayPal or Apple Cash.</p>
+                    <p className="text-[11px] text-muted-foreground" data-testid="text-cart-pay-note">Credit or debit, Apple Pay and Google Pay on Stripe's secure page. All online orders are paid through card checkout. Picking up at a show or have a question first? Send a request and Chris will reply.</p>
                   )}
                   <PolicyAgreement testId="text-cart-policy-agreement" />
                 </>
@@ -2770,26 +2766,18 @@ function CartDrawer({
                   <Field label="Your name *" value={form.customerName} onChange={(v) => setForm((f) => ({ ...f, customerName: v }))} error={errors.customerName} testId="input-cart-name" />
                   <Field label="Email *" type="email" value={form.customerEmail} onChange={(v) => setForm((f) => ({ ...f, customerEmail: v }))} error={errors.customerEmail} testId="input-cart-email" />
                   <Field label="Phone (optional)" value={form.customerPhone} onChange={(v) => setForm((f) => ({ ...f, customerPhone: v }))} testId="input-cart-phone" />
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-xs">Preferred contact</Label>
-                      <Select value={form.preferredContact} onValueChange={(v) => setForm((f) => ({ ...f, preferredContact: v }))}>
-                        <SelectTrigger className="mt-1" data-testid="select-cart-contact"><SelectValue /></SelectTrigger>
-                        <SelectContent className="pc">
-                          {PREFERRED_CONTACTS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Pay with</Label>
-                      <Select value={form.paymentMethod} onValueChange={(v) => setForm((f) => ({ ...f, paymentMethod: v }))}>
-                        <SelectTrigger className="mt-1" data-testid="select-cart-payment"><SelectValue placeholder="Optional" /></SelectTrigger>
-                        <SelectContent className="pc">
-                          {PAYMENT_METHODS.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div>
+                    <Label className="text-xs">Preferred contact</Label>
+                    <Select value={form.preferredContact} onValueChange={(v) => setForm((f) => ({ ...f, preferredContact: v }))}>
+                      <SelectTrigger className="mt-1" data-testid="select-cart-contact"><SelectValue /></SelectTrigger>
+                      <SelectContent className="pc">
+                        {PREFERRED_CONTACTS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
+                  {cardEnabled && (
+                    <p className="text-[11px] text-muted-foreground" data-testid="text-cart-request-note">A request is not a purchase. Online orders are paid through card checkout. {SHOW_ONLY_PAYMENT_NOTE}</p>
+                  )}
                   <Textarea value={form.message} onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))} rows={2} placeholder="Any questions, shipping notes…" data-testid="textarea-cart-message" />
                   <div className="flex gap-2">
                     <Button variant="outline" onClick={() => setMode("cart")} disabled={sending}>Back</Button>
@@ -2973,9 +2961,11 @@ function BuyDialog({
         {!submitted ? (
           <>
             <DialogHeader>
-              <DialogTitle className="text-lg">Request to buy</DialogTitle>
-              <DialogDescription>
-                Chris will review and reach out to arrange payment &amp; shipping.
+              <DialogTitle className="text-lg" data-testid="text-buy-title">{cardEnabled ? "Buy now" : "Request to buy"}</DialogTitle>
+              <DialogDescription data-testid="text-buy-description">
+                {cardEnabled
+                  ? "Pay with card to check out now. Picking up at a show or have a question first? Send a request and Chris will reply."
+                  : "Chris will review and reach out to arrange payment and shipping."}
               </DialogDescription>
             </DialogHeader>
             <div className="flex gap-3 p-3 rounded-md border border-border bg-muted/30">
@@ -3075,27 +3065,6 @@ function BuyDialog({
               <FreeShippingProgress subtotal={cardTotal} />
               <ShipZipField zip={shipZip} onChange={(z) => { setShipZip(z); if (zipValid(z)) saveZip(z); }} quote={ship.quote} loading={ship.loading} shippingEnabled={ship.shippingEnabled} testId="input-buy-zip" options={ship.options} carrier={ship.carrier} onCarrier={(c) => { setShipCarrier(c); saveCarrier(c); }} />
               <div>
-                <Label className="text-xs">How would you like to pay?</Label>
-                <Select
-                  value={form.paymentMethod}
-                  onValueChange={(v) => setForm((f) => ({ ...f, paymentMethod: v }))}
-                >
-                  <SelectTrigger className="mt-1" data-testid="select-buy-payment">
-                    <SelectValue placeholder="Pick one (optional)" />
-                  </SelectTrigger>
-                  <SelectContent className="pc">
-                    {PAYMENT_METHODS.map((m) => (
-                      <SelectItem key={m} value={m}>
-                        {m}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  For Zelle, Venmo, Cash App, PayPal or Apple Cash: Chris confirms the card, then sends payment details.
-                </p>
-              </div>
-              <div>
                 <Label className="text-xs">Message (optional)</Label>
                 <Textarea
                   value={form.message}
@@ -3142,7 +3111,7 @@ function BuyDialog({
               <div className="mt-4 border border-border p-3" data-testid="card-checkout-minimum">
                 <div className="text-sm font-semibold">Card payments need a {formatCurrency(CARD_MINIMUM)} minimum</div>
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  This card is {formatCurrency(cardTotal)}. Add it to your cart with a few other cards and pay for everything together — or request it below and Chris will sort it out.
+                  This card is {formatCurrency(cardTotal)}. Add it to your cart with a few other cards and pay for everything together.
                 </p>
                 {onAddToCart && (
                   <Button className="w-full mt-3" onClick={onAddToCart} data-testid="button-buy-add-cart">
@@ -3164,7 +3133,7 @@ function BuyDialog({
                 {mutation.isPending
                   ? "Sending…"
                   : cardEnabled
-                    ? "Request to buy another way"
+                    ? "Send a request instead"
                     : `Request to buy for ${formatCurrency(shownPrice * form.quantity)}`}
               </Button>
             </DialogFooter>
@@ -3173,13 +3142,9 @@ function BuyDialog({
           <SuccessPane
             title="Request sent"
             preferredContact={form.preferredContact}
-            description={
-              form.paymentMethod
-                ? `Chris will confirm the card and send ${form.paymentMethod} payment details. Usually within 24 hours.`
-                : "Chris will reach out to confirm and arrange payment. Usually within 24 hours."
-            }
+            description="Chris will confirm the item and reply. Usually within 24 hours."
             onClose={() => onOpenChange(false)}
-            payAmount={shownPrice * form.quantity}
+            onlineNote={cardEnabled}
           />
         )}
       </DialogContent>
@@ -3508,14 +3473,14 @@ function SuccessPane({
   description,
   preferredContact,
   onClose,
-  payAmount,
+  onlineNote,
 }: {
   title: string;
   description: string;
   preferredContact: string;
   onClose: () => void;
-  /** When set, shows the ways-to-pay chips for this amount (Buy requests). */
-  payAmount?: number;
+  /** Buy requests: remind the shopper that online orders are paid by card checkout. */
+  onlineNote?: boolean;
 }) {
   return (
     <div className="py-6 text-center space-y-4">
@@ -3530,11 +3495,10 @@ function SuccessPane({
         <p className="text-xs text-muted-foreground mt-3">
           Chris will reach out via <span className="font-semibold">{preferredContact}</span>.
         </p>
-        {payAmount ? (
-          <div className="mt-4 rounded-md border border-border bg-muted/40 p-3 text-left">
-            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground mb-2 text-center">Ways to pay once confirmed</div>
-            <PaymentChips amount={payAmount} />
-            <p className="text-[11px] text-muted-foreground mt-2 text-center">Zelle · Venmo · Cash App · PayPal — or cash at a show. Wait for Chris's confirmation before sending.</p>
+        {onlineNote ? (
+          <div className="mt-4 border border-border bg-muted/40 p-3 text-left" data-testid="text-success-pay-note">
+            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground mb-1">How payment works</div>
+            <p className="text-xs text-muted-foreground">A request is not a purchase. Online orders are paid through card checkout on this site. {SHOW_ONLY_PAYMENT_NOTE}</p>
           </div>
         ) : null}
       </div>
